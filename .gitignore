@@ -1,0 +1,12 @@
+.opencode-tmp/
+.pio/
+analysis/
+research/
+__pycache__/
+*.pyc
+*.local.*
+secrets.*
+!secrets.example.json
+.vscode/
+*.elf
+*.map

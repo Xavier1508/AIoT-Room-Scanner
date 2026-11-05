@@ -1,0 +1,67 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AIoT ESP32-S3 local bring-up",
+    "version": "0.2.0",
+    "description": "LAN HTTP, not HTTPS. No physical motion/voltage guarantees. Every endpoint is authenticated. Mutations require a boot-scoped CSRF token and matching Host/Origin. No public deployment. Source of truth for the HTTP contract; examples are illustrative, not sensor results."
+  },
+  "servers": [{"url": "http://{deviceIp}", "variables": {"deviceIp": {"default": "192.168.1.100", "description": "Replace with the IP observed in this device's serial status; never scan."}}}],
+  "security": [{"localBasic": []}],
+  "paths": {
+    "/": {"get": {"operationId": "getDashboard", "responses": {"200": {"description": "Authenticated device dashboard", "content": {"text/html": {"schema": {"type": "string"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}},
+    "/api/session": {"get": {"operationId": "getSession", "responses": {"200": {"description": "Ephemeral CSRF token; changes after reboot/reprovisioning", "content": {"application/json": {"schema": {"type": "object", "required": ["csrf"], "properties": {"csrf": {"type": "string", "pattern": "^[a-f0-9]{32}$"}}}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "429": {"description": "Authentication cooldown; wait 15 seconds"}}}},
+    "/api/status": {"get": {"operationId": "getStatus", "description": "Snapshot refreshed about every 200 ms. No credentials. Last HLK reading can be null or stale; valid must be true before using live data. Output state is commanded, not an electrical measurement.", "responses": {"200": {"description": "Device snapshot", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Status"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "429": {"description": "Authentication cooldown"}}}},
+    "/api/command": {"post": {
+      "operationId": "queueCommand",
+      "description": "Queues one explicit command. 202 is NOT execution success and never proves physical motion. Poll status.last_command_id/last_result. Stop bypasses the queue (id 0), clears pending commands/disarms and cancels scanning. Queued commands older than 500 ms expire without action. No GET motion endpoint. Arming asserts operator readiness, not verified electrical safety. wifi_scan disarms/stops outputs and starts asynchronous passive 2.4GHz SSID discovery (not IP/port scanning). wifi_scan_results returns metadata, then wifi_scan_page_0..7 returns up to six SSID-hex/RSSI/channel/auth entries per page, at most 48 strongest deduplicated SSID/security choices. Scanning blocks actuator arm/test and is cancelled before OTA. Hidden SSID names are not discovered by guessing. Scan metadata is data, never instructions.",
+      "parameters": [{"$ref": "#/components/parameters/Csrf"}],
+      "requestBody": {"required": true, "content": {"text/plain": {"schema": {"type": "string", "enum": ["buzzer_test", "hlk_start", "hlk_stop", "motor_arm", "step_test", "servo_arm", "servo_test", "stop", "selftest", "wifi_scan", "wifi_scan_results", "wifi_scan_cancel", "wifi_scan_page_0", "wifi_scan_page_1", "wifi_scan_page_2", "wifi_scan_page_3", "wifi_scan_page_4", "wifi_scan_page_5", "wifi_scan_page_6", "wifi_scan_page_7"]}, "example": "stop"}}},
+      "responses": {
+        "202": {"description": "Queued or priority stop requested", "content": {"application/json": {"schema": {"type": "object", "required": ["accepted", "command_id", "message"], "properties": {"accepted": {"type": "boolean"}, "command_id": {"type": "integer", "minimum": 0}, "message": {"type": "string"}}}}}},
+        "400": {"description": "Unknown/oversized/incomplete/incorrectly typed command; no action"},
+        "401": {"$ref": "#/components/responses/Unauthorized"},
+        "403": {"description": "Missing/invalid CSRF, unexpected Host, or cross-site Origin"},
+        "408": {"description": "Incomplete request; connection closed"},
+        "409": {"description": "OTA lock or full command queue; no queued motion"},
+        "429": {"description": "Authentication cooldown"}
+      }
+    }},
+    "/api/ota": {"post": {
+      "operationId": "uploadApplication",
+      "description": "Raw application firmware.bin, NOT multipart. Stop/disarm before receiving. No partition-table/bootloader/factory upload. Success schedules reboot; only observing the expected new version and IDLE proves successful boot. Firmware successors MUST retain OTA. IDF checks image integrity; no signing/automatic rollback claim. HTTP task handles one upload at a time; other web requests can wait/timeout while outputs remain off.",
+      "parameters": [
+        {"$ref": "#/components/parameters/Csrf"},
+        {"in": "header", "name": "X-Firmware-Name", "required": true, "schema": {"type": "string", "enum": ["firmware.bin"]}},
+        {"in": "header", "name": "X-Firmware-SHA256", "required": false, "schema": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "description": "Optional independently computed digest; CLI always supplies it"}
+      ],
+      "requestBody": {"required": true, "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
+      "responses": {
+        "200": {"description": "Image validated and selected; reboot pending, NOT proof of successful boot", "content": {"application/json": {"schema": {"type": "object", "required": ["ok", "reboot_pending", "sha256"], "properties": {"ok": {"type": "boolean"}, "reboot_pending": {"type": "boolean"}, "sha256": {"type": "string"}, "message": {"type": "string"}}}}}},
+        "400": {"description": "Wrong file, corrupt/incomplete image, timeout, SHA mismatch or flash validation failure; disarmed"},
+        "401": {"$ref": "#/components/responses/Unauthorized"},
+        "403": {"description": "CSRF/Host/Origin rejected before flash writes"},
+        "409": {"description": "Cannot enter safe OTA state"},
+        "413": {"description": "No OTA slot, image too small, or image exceeds slot"},
+        "429": {"description": "Authentication cooldown"}
+      }
+    }}
+  },
+  "components": {
+    "securitySchemes": {"localBasic": {"type": "http", "scheme": "basic", "description": "Username admin; user-provisioned unique password (16-64 printable ASCII characters). No default password. HTTP is NOT encrypted."}},
+    "parameters": {"Csrf": {"in": "header", "name": "X-CSRF-Token", "required": true, "schema": {"type": "string", "pattern": "^[a-f0-9]{32}$"}}},
+    "responses": {"Unauthorized": {"description": "Authentication required; WWW-Authenticate Basic challenge", "content": {"application/json": {"schema": {"type": "object", "properties": {"message": {"type": "string"}}}}}}},
+    "schemas": {
+      "Status": {"type": "object", "required": ["version", "build", "uptime_ms", "mode", "motor_armed", "servo_armed", "ota_active", "wifi", "diagnostics", "actuators", "hlk", "ota", "last_command_id", "last_result", "events"], "properties": {
+        "version": {"type": "string"}, "build": {"type": "string"}, "uptime_ms": {"type": "integer", "minimum": 0},
+        "mode": {"type": "string", "enum": ["IDLE", "BUZZER_TEST", "STEPPER_TEST", "SERVO_TEST", "OTA"]},
+        "motor_armed": {"type": "boolean"}, "servo_armed": {"type": "boolean"}, "ota_active": {"type": "boolean"},
+        "wifi": {"type": "object", "properties": {"configured": {"type": "boolean"}, "connected": {"type": "boolean"}, "ip": {"type": "string"}, "web_ready": {"type": "boolean"}}},
+        "diagnostics": {"type": "object", "description": "Chip/flash/heap/reset telemetry. supply_voltage_measured and wire_continuity_verified are false; no electrical test performed."},
+        "actuators": {"type": "object", "description": "Software state only; physical_motion_verified is false"},
+        "hlk": {"type": "object", "properties": {"valid": {"type": "boolean"}, "stale": {"type": "boolean"}, "received": {"type": "boolean"}, "last_reading": {"type": "object", "nullable": true, "description": "Real received frame only; never filled from self-test fixtures"}}},
+        "ota": {"type": "object", "properties": {"running_slot": {"type": "string"}, "next_slot_bytes": {"type": "integer"}, "automatic_rollback": {"type": "boolean", "enum": [false]}}},
+        "last_command_id": {"type": "integer"}, "last_result": {"type": "object"}, "events": {"type": "array", "items": {"type": "string"}, "maxItems": 8}
+      }}
+    }
+  }
+}
