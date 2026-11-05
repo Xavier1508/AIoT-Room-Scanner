@@ -8,7 +8,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 |---|---|---|
 | T01 | Lulus — identification | esptool identify-20261105T124021Z: ESP32-S3 rev0.2, 16MB flash, native USB Serial/JTAG COM9. Label N16R8 remains historical user report. |
 | T02 | Lulus — user checklist only | User confirmed jack/loads removed and USB-only. No rail-voltage/current/backfeed measurement. |
-| T03 | Lulus — build | Current build-20261105T174331130Z: 0.2.1-servo, application 785856 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
+| T03 | Lulus — build | Current build-20261105T181542772Z: 0.2.2-long-tests, application 786656 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
 | T04 | Lulus — software/USB scope | Upload verified hashes; current version returned IDLE/no arms and passed the seven-case USB check with 48 synthetic assertions. Prior 0.1.4 power-cycle/three paced runs are historical checks. This does not measure pin voltage or prove physical actuators. |
 | T05 | Lulus — physical confirmation | LAN buzzer test entered BUZZER_TEST, returned IDLE/output OFF; user heard three beep pulses. Evidence `analysis/device/buzzer-20261105T170632Z/`. |
 | T06 | Lulus parsial — UART only | 747 valid HLK frames, 0 rejected, 17,181 bytes; decoded target/distance/energy. User observed a table but expected <10 cm while frame said ~30 cm. Distance is uncalibrated; wiring/5V is user-reported, not independently measured. |
@@ -17,7 +17,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 | T09 | Lulus parsial — user-observed no-load test | User reports servo supplied from shield 5 V header with jack-only/DIP ON; voltage was not independently measured. No-load wiring followed GPIO15 mapping. |
 | T10 | Lulus — physical confirmation | After 14-bit LEDC repair in 0.2.1-servo, test returned IDLE/detached and user saw the horn move. Evidence `analysis/device/servo-fixed-20261105T174510Z/`. |
 | T11 | Tertunda | Single-device tests have not passed physically. |
-| T12 | Lulus parsial — application OTA | Wi-Fi/LAN contract passed and real OTA changed 0.2.0-scan to 0.2.1-servo; new version returned IDLE with no arms. User reports jack-only power, but electrical rail/current/rollback were not independently measured/tested. |
+| T12 | Lulus parsial — application OTA | Wi-Fi/LAN contract passed and real OTA changed 0.2.0-scan to 0.2.1-servo, then to 0.2.2-long-tests; each new version returned IDLE with no arms. User reports jack-only power, but electrical rail/current/rollback were not independently measured/tested. |
 | T13 | Partial handoff ready | Source, reusable tools, contract, documentation, USB firmware and logs exist. Research/audit retained. Real LAN/OTA and physical device results remain pending; no remote push. |
 
 Additional actual checks: **48 portable C++ synthetic parser/safety/command/SSID-list**
@@ -45,6 +45,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W03 | Lulus — provisioning | Numbered ESP SSID selection completed and device status now reports configured/connected; no password is included in evidence. |
 | W04 | Lulus — LAN dashboard/API contract | Device status reports web_ready at `192.168.1.200`, RSSI about -62 dBm. Root `/` returned HTML; `/api/status` and `/api/session` returned JSON as designed. LAN test passed auth, CSRF, POST-only control, unarmed rejection, synthetic self-test and invalid OTA rejection. |
 | W05 | Lulus parsial — HLK UART | Passive LAN observation decoded 747 valid frames with no rejected/partial frames. User reports a table in front; reported ~30 cm conflicts with expected <10 cm, so physical distance/geometry is unresolved. |
+| W06 | Lulus — long-test deployment | 0.2.2-long-tests installed via real LAN OTA and returned IDLE. Dashboard exposes bounded long tests; physical execution remains user-controlled and unverified. |
 
 Hardware result note: T05 is the first physical peripheral result. T06 remains
 pending until HLK supply and crossed wiring are confirmed by the user; a valid
@@ -67,6 +68,7 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/servo-fixed-20261105T174510Z/`
 - `analysis/device/stepper-20261105T174814Z/`
 - `analysis/device/stepper-jumper-20261105T180353Z/`
+- `analysis/device/ota-long-tests-20261105T181751Z/`
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
 - `analysis/gcc/tests-20261105T160536307Z/`
@@ -74,7 +76,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `bcb29ab0c66dbf005d696e6edf92bae966b8bda0579991024a35d7c4b3f7e546`.
-Research CLI verified 29 stored evidence artifacts with zero integrity failures.
+Research CLI verified 31 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

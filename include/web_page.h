@@ -17,10 +17,10 @@ Uji awal tanpa beban. Nilai GPIO/log bukan bukti tegangan, kontinuitas kabel, at
 <section class="card"><h2>Buzzer &amp; radar</h2>
 <button data-command="buzzer_test">3 beep</button><button data-command="hlk_start">Mulai HLK</button><button data-command="hlk_stop">Hentikan HLK</button>
 <p class="muted">HLK pasif 256000 baud; tidak mengubah konfigurasi sensor.</p><pre id="hlk">Belum ada data valid.</pre></section>
-<section class="card"><h2>Stepper</h2><button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button>
-<p class="muted">Rating motor, suplai, jumper, ground, dan mekanik harus Anda verifikasi dahulu. Langkah relatif, bukan sudut terkalibrasi.</p>
-<h2>Servo</h2><button data-command="servo_arm">Arm servo · 30 dtk</button><button data-command="servo_test">Uji pulsa kecil</button>
-<p class="muted">50 Hz, 1450–1550 µs. Jangan beri 9 V. Uji tanpa beban.</p></section>
+<section class="card"><h2>Stepper</h2><button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button><button data-command="step_test_long">512 maju / 512 mundur · panjang</button>
+<p class="muted">Uji panjang sekitar 10 dtk, tetap terbatas dan bukan putaran kontinu. Rating motor, suplai, jumper, ground, dan mekanik harus Anda verifikasi dahulu. Langkah relatif, bukan sudut terkalibrasi.</p>
+<h2>Servo</h2><button data-command="servo_arm">Arm servo · 30 dtk</button><button data-command="servo_test">Uji pulsa kecil</button><button data-command="servo_test_long">Uji pulsa kecil · panjang</button>
+<p class="muted">Uji panjang sekitar 8 dtk, hanya 1450/1500/1550 µs berulang. Jangan beri 9 V. Uji tanpa beban.</p></section>
 </div>
 <p id="result" role="status"></p>
 <section class="card"><h2>Update firmware OTA</h2>
@@ -36,7 +36,7 @@ const $=id=>document.getElementById(id);
 async function session(){const r=await fetch('/api/session',{cache:'no-store'});if(!r.ok)throw Error('Autentikasi gagal: '+r.status);csrf=(await r.json()).csrf;}
 async function command(name){
   if(uploading&&name!=='stop')return;
-  const warnings={motor_arm:'Konfirmasi: rating motor/suplai cocok, jumper teridentifikasi, ground benar, tidak ada beban dan kabel bebas. Arm motor?',servo_arm:'Konfirmasi: suplai servo sesuai rating (bukan 9 V), ground benar, horn tanpa beban dan siap menghentikan daya bila macet. Arm servo?'};
+const warnings={motor_arm:'Konfirmasi: rating motor/suplai cocok, jumper teridentifikasi, ground benar, tidak ada beban dan kabel bebas. Arm motor?',servo_arm:'Konfirmasi: suplai servo sesuai rating (bukan 9 V), ground benar, horn tanpa beban dan siap menghentikan daya bila macet. Arm servo?'};
   if(warnings[name]&&!confirm(warnings[name]))return;
   try{const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'text/plain','X-CSRF-Token':csrf},body:name});const data=await r.json();$('result').textContent=JSON.stringify(data);if(!r.ok)throw Error(data.message||r.status);setTimeout(refresh,250);}catch(e){$('result').textContent=e.message;}
 }
@@ -44,7 +44,7 @@ function render(s){
   state=s;$('summary').textContent=s.version+' · '+s.mode+' · '+s.wifi.ip+' · uptime '+Math.floor(s.uptime_ms/1000)+' dtk';
   $('hlk').textContent=(s.hlk.valid?'VALID':s.hlk.stale?'STALE — jangan dipakai sebagai data terkini':'BELUM VALID')+'\n'+JSON.stringify(s.hlk.last_reading,null,2);
   $('status').textContent=JSON.stringify(s,null,2);
-  for(const b of document.querySelectorAll('[data-command]')){const c=b.dataset.command;b.disabled=uploading||s.ota_active||((c==='step_test')&&!s.motor_armed)||((c==='servo_test')&&!s.servo_armed)||((s.mode!=='IDLE')&&['buzzer_test','motor_arm','servo_arm','step_test','servo_test','selftest'].includes(c));}
+  for(const b of document.querySelectorAll('[data-command]')){const c=b.dataset.command;b.disabled=uploading||s.ota_active||(['step_test','step_test_long'].includes(c)&&!s.motor_armed)||(['servo_test','servo_test_long'].includes(c)&&!s.servo_armed)||((s.mode!=='IDLE')&&['buzzer_test','motor_arm','servo_arm','step_test','step_test_long','servo_test','servo_test_long','selftest'].includes(c));}
 }
 async function refresh(){if(uploading||polling)return;polling=true;try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();render(s);}catch(e){$('summary').textContent='Tidak terhubung: '+e.message+' · periksa daya/Wi-Fi; tidak ada gerakan yang dijadwalkan ulang.';}finally{polling=false;}}
 for(const b of document.querySelectorAll('[data-command]'))b.onclick=()=>command(b.dataset.command);

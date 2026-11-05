@@ -19,7 +19,7 @@ class BuzzerController {
 class StepperController {
  public:
   void begin();
-  bool start(uint32_t nowUs);
+  bool start(uint32_t nowUs, int halfSteps);
   void tick(uint32_t nowUs);
   void stop();
   bool active() const { return active_; }
@@ -28,14 +28,14 @@ class StepperController {
   uint32_t schedulingLate() const { return late_; }
  private:
   bool active_ = false, energized_ = false;
-  int position_ = 0, completed_ = 0, phase_ = 0;
+  int position_ = 0, completed_ = 0, target_ = 0, phase_ = 0;
   uint32_t nextUs_ = 0, late_ = 0;
 };
 
 class ServoController {
  public:
   void begin();
-  bool start(uint32_t now);
+  bool start(uint32_t now, bool longTest);
   void tick(uint32_t now);
   void stop();
   bool active() const { return active_; }
@@ -44,6 +44,7 @@ class ServoController {
   void pulse(uint16_t us);
   bool active_ = false;
   uint8_t index_ = 0;
+  bool longTest_ = false;
   uint16_t pulseUs_ = 0;
   uint32_t at_ = 0;
 };

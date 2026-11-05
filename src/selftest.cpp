@@ -78,6 +78,8 @@ SelftestResult runSelftests() {
   check(!safety.armMotor(1) && !safety.start(Mode::Buzzer, 1));
   safety.stop(); check(safety.idle());
   check(parseCommand("step_test") == Command::StepTest);
+  check(parseCommand("step_test_long") == Command::StepTestLong);
+  check(parseCommand("servo_test_long") == Command::ServoTestLong);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);
   check(parseCommand("wifi_scan") == Command::WifiScan);

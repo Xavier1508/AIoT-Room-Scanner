@@ -8,10 +8,10 @@ verified; real OTA and physical peripheral tests remain pending.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.1-servo`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261105T174331130Z/firmware.bin`.
-  Size **785856 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `32c3aab06d565c9e374592cc9fc55e9ea6946094626409e233c46b7349aa86e0`.
+- **Running firmware: `0.2.2-long-tests`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261105T181542772Z/firmware.bin`.
+  Size **786656 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `c50570a48d3f053bcae9d0b052bd62bbc744b36a63f23e41952eeee76e316ba5`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -77,6 +77,10 @@ verified; real OTA and physical peripheral tests remain pending.
 - Real LAN OTA is now proven for the application path: `0.2.1-servo` was observed
   after reboot in IDLE with both arms false. Evidence:
   `analysis/device/ota-servo-20261105T174432Z/`. Automatic rollback remains false.
+- Real LAN OTA also installed `0.2.2-long-tests`, returning IDLE with no arms.
+  Dashboard now exposes bounded long tests: 512 half-steps forward/reverse and
+  repeated small servo pulses. Neither long test has been physically triggered
+  automatically. Evidence: `analysis/device/ota-long-tests-20261105T181751Z/`.
 - Keep USB attached and jack/peripheral loads disconnected until instructed.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
@@ -106,14 +110,15 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **29 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **31 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
   17–19 = configured-device status, LAN safety contract and root/API content check;
   20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status;
   25–27 = servo-fix build, real OTA and physical servo result; 28 = stepper
-  no-rotation software/safe-state result; 29 = jumper/no-rotation result.
+  no-rotation software/safe-state result; 29 = jumper/no-rotation result;
+  30–31 = long-test build and OTA.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

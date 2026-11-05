@@ -82,7 +82,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"servo_arm\",\"servo_test\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -137,15 +137,19 @@ String App::execute(Command command) {
   if (command == Command::BuzzerTest && safety_.start(Mode::Buzzer, now)) {
     buzzer_.start(now); event("buzzer_test_started"); return result(true, "buzzer_test_started");
   }
-  if (command == Command::StepTest) {
+  if (command == Command::StepTest || command == Command::StepTestLong) {
     if (!safety_.start(Mode::Stepper, now)) return result(false, "motor_not_armed_or_expired");
-    if (!stepper_.start(micros())) { stopAll(); return result(false, "relative_step_limit"); }
-    event("stepper_test_started_64_forward_64_reverse"); return result(true, "stepper_test_started");
+    const bool longTest = command == Command::StepTestLong;
+    if (!stepper_.start(micros(), longTest ? config::longStepCount : config::stepCount)) { stopAll(); return result(false, "relative_step_limit"); }
+    event(longTest ? "stepper_long_test_started_512_forward_512_reverse" : "stepper_test_started_64_forward_64_reverse");
+    return result(true, longTest ? "stepper_long_test_started" : "stepper_test_started");
   }
-  if (command == Command::ServoTest) {
+  if (command == Command::ServoTest || command == Command::ServoTestLong) {
     if (!safety_.start(Mode::Servo, now)) return result(false, "servo_not_armed_or_expired");
-    if (!servo_.start(now)) { stopAll(); return result(false, "servo_pwm_setup_failed"); }
-    event("servo_test_started_small_pulses"); return result(true, "servo_test_started");
+    const bool longTest = command == Command::ServoTestLong;
+    if (!servo_.start(now, longTest)) { stopAll(); return result(false, "servo_pwm_setup_failed"); }
+    event(longTest ? "servo_long_test_started_small_pulses" : "servo_test_started_small_pulses");
+    return result(true, longTest ? "servo_long_test_started" : "servo_test_started");
   }
   return result(false, "command_rejected_no_action");
 }

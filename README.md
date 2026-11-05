@@ -1,7 +1,7 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi saat ini: **0.2.1-servo**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi saat ini: **0.2.2-long-tests**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
@@ -214,6 +214,12 @@ Wi-Fi station, retry 15 detik tanpa loop tunggu koneksi; tidak membuka AP otomat
 Halaman menampilkan versi, uptime, status suplai **tidak diukur**, reset/brownout,
 memori, status perangkat, radar valid/stale, arm/test/stop, dan upload firmware.
 HTTP berjalan pada task terpisah dari loop perangkat.
+
+Dashboard menyediakan tes panjang yang tetap bounded: stepper 512 half-step
+maju lalu 512 mundur, serta pengulangan pulsa servo kecil sekitar 8 detik.
+Tes tersebut bukan putaran kontinu atau sweep absolut dan tidak dijalankan
+otomatis setelah OTA. Lakukan hard-refresh browser setelah OTA untuk memuat
+tombol baru.
 
 Dashboard utama adalah root URL:
 
