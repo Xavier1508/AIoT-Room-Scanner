@@ -13,7 +13,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 | T05 | Lulus — physical confirmation | LAN buzzer test entered BUZZER_TEST, returned IDLE/output OFF; user heard three beep pulses. Evidence `analysis/device/buzzer-20261105T170632Z/`. |
 | T06 | Lulus parsial — UART only | 747 valid HLK frames, 0 rejected, 17,181 bytes; decoded target/distance/energy. User observed a table but expected <10 cm while frame said ~30 cm. Distance is uncalibrated; wiring/5V is user-reported, not independently measured. |
 | T07 | Tertunda — supply blocked | User reports shield/unknown actuator source; shield input reported about 7–12 V but 5 V rail capacity/regulation is unverified. Motor label, ULN VCC and jumper remain unknown. |
-| T08 | Tertunda — no movement observed | User reports no stepper movement. This is not classified as a GPIO/motor failure because supply, common ground, jumper and no-load mechanics are not verified. |
+| T08 | Tertunda — no movement after jumper | Temporary enable jumper caused indicator LEDs to illuminate, but user still saw no rotation. This is not classified as a GPIO/motor failure because ULN +/- rail, jumper contact, socket and motor cable remain unverified. |
 | T09 | Lulus parsial — user-observed no-load test | User reports servo supplied from shield 5 V header with jack-only/DIP ON; voltage was not independently measured. No-load wiring followed GPIO15 mapping. |
 | T10 | Lulus — physical confirmation | After 14-bit LEDC repair in 0.2.1-servo, test returned IDLE/detached and user saw the horn move. Evidence `analysis/device/servo-fixed-20261105T174510Z/`. |
 | T11 | Tertunda | Single-device tests have not passed physically. |
@@ -66,6 +66,7 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/ota-servo-20261105T174432Z/`
 - `analysis/device/servo-fixed-20261105T174510Z/`
 - `analysis/device/stepper-20261105T174814Z/`
+- `analysis/device/stepper-jumper-20261105T180353Z/`
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
 - `analysis/gcc/tests-20261105T160536307Z/`
@@ -73,7 +74,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `bcb29ab0c66dbf005d696e6edf92bae966b8bda0579991024a35d7c4b3f7e546`.
-Research CLI verified 28 stored evidence artifacts with zero integrity failures.
+Research CLI verified 29 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

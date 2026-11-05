@@ -66,6 +66,11 @@ verified; real OTA and physical peripheral tests remain pending.
 - Current safe LAN status after stop: IDLE, both arms false, stepper off, servo
   detached. HLK remains enabled/valid with 6,229 valid frames; current decoded
   distance is 30 cm. Evidence: `analysis/device/actuator-blocked-20261105T173300Z/`.
+- A temporary jumper was installed across the ULN motor-enable header. The
+  indicator LEDs illuminated during the next software test, but the user still
+  saw no motor rotation. LEDs do not prove motor-coil supply. Close-up ULN
+  `+/-`, jumper contact, socket and motor cable inspection is now required.
+  Evidence: `analysis/device/stepper-jumper-20261105T180353Z/`.
 - Servo T10 is now physically confirmed Lulus: the 14-bit LEDC repair accepted
   the test, SERVO_TEST was observed, user saw the horn move, and firmware returned
   IDLE/detached. Evidence: `analysis/device/servo-fixed-20261105T174510Z/`.
@@ -101,14 +106,14 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **28 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **29 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
   17–19 = configured-device status, LAN safety contract and root/API content check;
   20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status;
   25–27 = servo-fix build, real OTA and physical servo result; 28 = stepper
-  no-rotation software/safe-state result.
+  no-rotation software/safe-state result; 29 = jumper/no-rotation result.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
