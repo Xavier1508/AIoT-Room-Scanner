@@ -1,7 +1,7 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Baseline USB terverifikasi saat ini: **0.2.0-scan**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi saat ini: **0.2.1-servo**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan

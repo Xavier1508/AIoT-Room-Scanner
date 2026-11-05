@@ -8,10 +8,10 @@ verified; real OTA and physical peripheral tests remain pending.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.0-scan`**, built and flashed with verified hashes.
-  Current application artifact: `analysis/platformio/build-20261105T160253954Z/firmware.bin`.
-  Size **785856 bytes** / OTA slot **6553600 bytes**. Hash is in that run's manifest.
-  Application SHA-256: `bcb29ab0c66dbf005d696e6edf92bae966b8bda0579991024a35d7c4b3f7e546`.
+- **Running firmware: `0.2.1-servo`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261105T174331130Z/firmware.bin`.
+  Size **785856 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `32c3aab06d565c9e374592cc9fc55e9ea6946094626409e233c46b7349aa86e0`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -22,7 +22,7 @@ verified; real OTA and physical peripheral tests remain pending.
   Host uses 250 ms between requests; this is NOT a high-rate USB stress guarantee.
   Evidence: `analysis/device/usb-conservative-20261105T154820Z/` and
   `analysis/device/usb-confirmed-20261105T154856Z/`.
-- Current `0.2.0-scan`: USB seven-case verification passed, **48/48 on-device
+- Earlier `0.2.0-scan`: USB seven-case verification passed, **48/48 on-device
   synthetic assertions**, IDLE with no arms. Real ESP passive scan completed:
   **5 APs / 3 unique SSID-security choices**, no hidden SSID, no truncation.
   Credentials were not entered and no Wi-Fi association was attempted by this test.
@@ -66,6 +66,12 @@ verified; real OTA and physical peripheral tests remain pending.
 - Current safe LAN status after stop: IDLE, both arms false, stepper off, servo
   detached. HLK remains enabled/valid with 6,229 valid frames; current decoded
   distance is 30 cm. Evidence: `analysis/device/actuator-blocked-20261105T173300Z/`.
+- Servo T10 is now physically confirmed Lulus: the 14-bit LEDC repair accepted
+  the test, SERVO_TEST was observed, user saw the horn move, and firmware returned
+  IDLE/detached. Evidence: `analysis/device/servo-fixed-20261105T174510Z/`.
+- Real LAN OTA is now proven for the application path: `0.2.1-servo` was observed
+  after reboot in IDLE with both arms false. Evidence:
+  `analysis/device/ota-servo-20261105T174432Z/`. Automatic rollback remains false.
 - Keep USB attached and jack/peripheral loads disconnected until instructed.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
@@ -95,19 +101,22 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **24 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **28 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
   17–19 = configured-device status, LAN safety contract and root/API content check;
-  20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status.
+  20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status;
+  25–27 = servo-fix build, real OTA and physical servo result; 28 = stepper
+  no-rotation software/safe-state result.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.0-scan` and verified `0.1.4-usb`
-  baseline, clearly separated by run folder. Prefer the current scan build.
+- Retained binary deliverables: current `0.2.1-servo`, prior `0.2.0-scan` and
+  verified `0.1.4-usb` baseline, clearly separated by run folder. Prefer the
+  current servo-fix build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

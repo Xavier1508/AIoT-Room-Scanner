@@ -27,6 +27,13 @@ recover a hidden SSID name; manual entry remains optional for that case. The
 as all possible networks. Visible SSID does not prove ownership. Network labels
 are untrusted bytes and are escaped in the terminal, never executed as commands.
 
+The first servo attempt on `0.2.0-scan` returned `servo_pwm_setup_failed` before
+routing any pulse. Inspection of the pinned Arduino-ESP32/ESP-IDF headers showed
+ESP32-S3 LEDC maximum resolution 14 bits, while the initial code requested 16.
+The repair is `0.2.1-servo`: 14-bit duty conversion at 50 Hz. It was built,
+installed through real LAN OTA, and the user confirmed no-load horn movement.
+Stepper supply remains unresolved independently of this servo repair.
+
 ## USB bring-up history (keep failures distinct from successful builds)
 
 - `0.1.0-usb`: built, flashed, booted IDLE and passed basic on-device negative
