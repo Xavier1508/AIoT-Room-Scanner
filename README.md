@@ -215,6 +215,16 @@ Halaman menampilkan versi, uptime, status suplai **tidak diukur**, reset/brownou
 memori, status perangkat, radar valid/stale, arm/test/stop, dan upload firmware.
 HTTP berjalan pada task terpisah dari loop perangkat.
 
+Dashboard utama adalah root URL:
+
+```text
+http://<IP-ESP>/
+```
+
+Contoh saat ini: `http://192.168.1.200/`. Endpoint `/api/status` dan
+`/api/session` memang menampilkan JSON; jika browser menampilkan JSON, hapus
+bagian `/api/status` dari URL dan buka root `/`.
+
 Seluruh halaman/API memakai HTTP Basic; POST kontrol/update juga membutuhkan
 token CSRF per boot, Host yang cocok, dan penolakan Origin lintas situs.
 **Autentikasi bukan enkripsi**: LAN HTTP dapat disadap/manipulasi di jaringan

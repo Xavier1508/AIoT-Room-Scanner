@@ -1,7 +1,7 @@
 # Project state
 
-Updated: 2026-11-05. USB bring-up and SSID-discovery phase handed off;
-network provisioning, real OTA and physical peripheral tests remain pending.
+Updated: 2026-11-06. USB bring-up, SSID discovery and LAN dashboard access are
+verified; real OTA and physical peripheral tests remain pending.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - ESP32-S3 rev0.2, 16 MB quad flash, native USB Serial/JTAG COM9 identified.
@@ -36,25 +36,46 @@ network provisioning, real OTA and physical peripheral tests remain pending.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
   do not use the unsuccessful 0.1.1/0.1.2 console experiments.
 - Wi-Fi credentials have NOT been requested in chat, read from Windows, or guessed.
-- LAN/real OTA/peripheral hardware tests are NOT yet established.
+- Wi-Fi provisioning is now complete according to device status: configured,
+  connected at `192.168.1.200`, RSSI about -62 dBm, web server ready. User reports
+  the jack power is still disconnected; standalone-power status remains unproven.
+- Root `http://192.168.1.200/` returns the HTML dashboard. `/api/status` and
+  `/api/session` intentionally return JSON; seeing JSON at those paths is expected.
+- LAN contract evidence: `analysis/device/lan-web-20261105T170121Z/`. It passed
+  auth-required status, CSRF-required mutation, POST-only control, unarmed motion
+  rejection, synthetic self-test, invalid OTA rejection and root/API content checks.
+- Real OTA/peripheral hardware tests are NOT yet established.
+- Buzzer T05 is now physically confirmed Lulus: LAN command started the test,
+  firmware observed BUZZER_TEST and returned IDLE with output OFF; user heard
+  three beep pulses. Evidence: `analysis/device/buzzer-20261105T170632Z/`.
+- HLK T06 communication is now partially verified: `hlk_start`/passive observation
+  produced 747 valid frames, 0 rejected, 17,181 bytes, and a decoded target state
+  with moving/stationary distance about 30 cm and energy 100. User observed a
+  table in front of the sensor and expected <10 cm, so the distance is explicitly
+  uncalibrated and may reflect mounting/blind-spot/reflective-surface behavior.
+  This is not a coordinate or approach-direction result. Evidence:
+  `analysis/device/hlk-passive-20261105T172057Z/`.
+- User intentionally armed motor/servo during the HLK observation; `stop` then
+  returned IDLE with motor/servo/buzzer outputs off. No physical motor or servo
+  movement was confirmed. Supply ratings and actuator readiness remain pending.
+- User now confirms servo and stepper did not move during the attempted checks.
+  The actuator source is still the shield/unknown: shield input is reported as
+  about 7–12 V, but 5 V rail regulation/capacity is not verified. This is recorded
+  as blocked/untested, not as a GPIO or device failure. No repeat actuator command
+  will be sent until motor label, ULN VCC, servo supply and common ground are clear.
+- Current safe LAN status after stop: IDLE, both arms false, stepper off, servo
+  detached. HLK remains enabled/valid with 6,229 valid frames; current decoded
+  distance is 30 cm. Evidence: `analysis/device/actuator-blocked-20261105T173300Z/`.
 - Keep USB attached and jack/peripheral loads disconnected until instructed.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** run `tools/ops/setup.ps1` when ready. It presents a
-numbered ESP-scanned SSID menu, then asks for Wi-Fi and unique web passwords.
-The old manual-SSID setup was cancelled at the user's request. The replacement
-window was opened but ended with exit code 1 before configuration was stored;
-the exact user-terminal message/cause was not captured. A subsequent safe status
-check still showed configured=false, connected=false, IDLE. Do not assume a
-password/network error or a successful join from that window's exit alone.
-
-On a future setup error the window now stays visible until Enter and saves only
-a fixed stage/error type (no input or exception text) under analysis/device.
-Only one monitor/setup process may own COM9. Never send passwords to chat or read
-`tools/ops/device.local.json` into agent output. No setup window is currently
-left running by the agent.
+**Current next action:** clarify physical servo/stepper results and supply before
+any repeat movement command. Do not arm either actuator again until motor label,
+ULN2003 motor VCC source/jumper, servo red-wire source, common ground, and no-load
+mechanics are confirmed. The agent will keep the device IDLE. HLK remains a
+communication success but its distance needs a later controlled observation.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -74,10 +95,12 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **16 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **24 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
-  15 = intermediate-retention cleanup; 16 = current application binary.
+  15 = intermediate-retention cleanup; 16 = current application binary;
+  17–19 = configured-device status, LAN safety contract and root/API content check;
+  20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
