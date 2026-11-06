@@ -1,7 +1,7 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi saat ini: **0.2.2-long-tests**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi saat ini: **0.2.3-park-pose**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
@@ -17,7 +17,8 @@ Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
   tetap harus sesuai rating yang diverifikasi. Jangan berikan 9 V ke SG90.
 - Kapasitas adaptor/regulator dan voltase rail belum diukur. Board menyala atau
   tidak reset **bukan** bukti suplai aman. Brownout log bukan voltmeter.
-- Stop melepas kumparan dan detach servo: beban dapat turun. Uji tanpa beban,
+- Mode `PARKED` mempertahankan kumparan stepper dan PWM servo untuk menahan pose;
+  `release_pose`/`stop` melepasnya sehingga beban dapat turun. Uji tanpa beban,
   dukung mekanik, dan siapkan pemutusan daya fisik. Software bukan emergency-stop fisik.
 - Firmware tidak bisa membuktikan kontinuitas kabel, arus, tegangan, atau gerakan
   motor tanpa pengukuran/umpan balik tambahan. Jangan memasukkan 5/9 V ke GPIO.
@@ -176,6 +177,9 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | hlk_start / hlk_stop | Mulai/hentikan UART pasif, tanpa perintah konfigurasi |
 | motor_arm / step_test | Arm 30 detik, satu uji 64 half-step maju lalu mundur ~100/s |
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
+| step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
+| park_pose | Dari referensi stepper relatif 0, gerak nominal: servo 2000 µs dan stepper 512 half-step dengan tanda arah yang dikonfigurasi; lalu tahan keduanya |
+| release_pose | Hanya dari `PARKED`; lepas hold dan kembali IDLE |
 | stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm |
 | selftest | Fixture parser/safety terisolasi; tidak menguji sensor fisik |
 | wifi_scan | Hentikan/disarm aktuator; mulai scan SSID pasif asynchronous |
@@ -201,8 +205,11 @@ Tanpa `--summary`, CLI menampilkan hasil metadata scan. Menu interaktif tetap
 berada di `setup`. WEP/WPA1/Enterprise tidak didukung alur password sederhana ini;
 gunakan jaringan WPA2/WPA3 Personal yang sesuai atau OPEN yang sengaja diizinkan
 (dengan peringatan). Tidak mengubah jaringan Wi-Fi laptop atau router.
-Stepper mempunyai soft limit ±128 langkah relatif dari boot, bukan homing,
-encoder, atau sudut absolut. Jangan putar horizontal searah terus-menerus.
+Stepper mempunyai soft limit ±128 langkah untuk uji pendek dan ±1024 langkah
+untuk uji panjang/pose relatif dari boot, bukan homing, encoder, atau sudut
+absolut. `park_pose` memperkirakan 45° dengan 512 half-step pada varian
+4096 half-step/rev; arah clockwise dan sudut aktual harus diverifikasi secara
+fisik. Jangan putar horizontal searah terus-menerus.
 OUT HLK bersifat raw/unverified; presence live hanya boleh ditafsirkan dari frame
 valid dan belum stale. Batas stale 2 detik, timeout frame parsial 100 ms.
 Jarak HLK bukan koordinat manusia atau bukti objek mendekat.
@@ -220,6 +227,14 @@ maju lalu 512 mundur, serta pengulangan pulsa servo kecil sekitar 8 detik.
 Tes tersebut bukan putaran kontinu atau sweep absolut dan tidak dijalankan
 otomatis setelah OTA. Lakukan hard-refresh browser setelah OTA untuk memuat
 tombol baru.
+
+Dashboard juga menyediakan `park_pose` untuk merapikan posisi dari referensi
+stepper relatif 0: servo diberi pulsa nominal 2000 µs dan stepper bergerak 512
+half-step searah tanda clockwise yang dikonfigurasi, lalu keduanya tetap
+menahan posisi. Ini bukan posisi absolut;
+tidak ada encoder/homing dan firmware tidak melakukan park otomatis saat boot
+atau OTA. Gunakan `release_pose` atau tombol STOP untuk melepas hold setelah
+mekanik sudah aman.
 
 Dashboard utama adalah root URL:
 

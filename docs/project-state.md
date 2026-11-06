@@ -1,17 +1,18 @@
 # Project state
 
-Updated: 2026-11-06. USB bring-up, SSID discovery and LAN dashboard access are
-verified; real OTA and physical peripheral tests remain pending.
+Updated: 2026-11-06. USB bring-up, SSID discovery, LAN dashboard access and real
+application OTA are verified; the new park pose still requires user-controlled
+physical direction/clearance verification.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - ESP32-S3 rev0.2, 16 MB quad flash, native USB Serial/JTAG COM9 identified.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.2-long-tests`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261105T181542772Z/firmware.bin`.
-  Size **786656 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `c50570a48d3f053bcae9d0b052bd62bbc744b36a63f23e41952eeee76e316ba5`.
+- **Running firmware: `0.2.3-park-pose`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T164416774Z/firmware.bin`.
+  Size **788976 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `0ccdd0cc752476e2f917fd847efeb8faf21640cf3f328be645079cd0f0007d6d`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -31,8 +32,9 @@ verified; real OTA and physical peripheral tests remain pending.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **48 C++ assertions + 19 Python tests passed**; dashboard JS
-  syntax check passed. Physical peripherals and live network remain separate.
+- Portable tests: **56 C++ assertions + 19 Python tests passed**; dashboard JS
+  syntax and OpenAPI checks passed. Physical pose direction/clearance remains
+  separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
   do not use the unsuccessful 0.1.1/0.1.2 console experiments.
 - Wi-Fi credentials have NOT been requested in chat, read from Windows, or guessed.
@@ -44,7 +46,9 @@ verified; real OTA and physical peripheral tests remain pending.
 - LAN contract evidence: `analysis/device/lan-web-20261105T170121Z/`. It passed
   auth-required status, CSRF-required mutation, POST-only control, unarmed motion
   rejection, synthetic self-test, invalid OTA rejection and root/API content checks.
-- Real OTA/peripheral hardware tests are NOT yet established.
+- Real application OTA is established. The new park pose has not been physically
+  triggered in this deployment, so no angle, clockwise direction, cable-clearance,
+  or holding-current result is claimed.
 - Buzzer T05 is now physically confirmed Lulus: LAN command started the test,
   firmware observed BUZZER_TEST and returned IDLE with output OFF; user heard
   three beep pulses. Evidence: `analysis/device/buzzer-20261105T170632Z/`.
@@ -55,14 +59,14 @@ verified; real OTA and physical peripheral tests remain pending.
   uncalibrated and may reflect mounting/blind-spot/reflective-surface behavior.
   This is not a coordinate or approach-direction result. Evidence:
   `analysis/device/hlk-passive-20261105T172057Z/`.
-- User intentionally armed motor/servo during the HLK observation; `stop` then
-  returned IDLE with motor/servo/buzzer outputs off. No physical motor or servo
-  movement was confirmed. Supply ratings and actuator readiness remain pending.
-- User now confirms servo and stepper did not move during the attempted checks.
-  The actuator source is still the shield/unknown: shield input is reported as
-  about 7–12 V, but 5 V rail regulation/capacity is not verified. This is recorded
-  as blocked/untested, not as a GPIO or device failure. No repeat actuator command
-  will be sent until motor label, ULN VCC, servo supply and common ground are clear.
+- During the earlier HLK observation, the user intentionally armed motor/servo;
+  `stop` then returned IDLE with motor/servo/buzzer outputs off. At that
+  checkpoint no physical motor or servo movement was confirmed, and supply
+  ratings/readiness were still pending.
+- An earlier user report said servo and stepper did not move during those checks.
+  The actuator source was then still the shield/unknown: shield input was
+  reported as about 7–12 V, but 5 V rail regulation/capacity was not verified.
+  This remains historical blocked/untested evidence, not a GPIO/device failure.
 - Current safe LAN status after stop: IDLE, both arms false, stepper off, servo
   detached. HLK remains enabled/valid with 6,229 valid frames; current decoded
   distance is 30 cm. Evidence: `analysis/device/actuator-blocked-20261105T173300Z/`.
@@ -81,26 +85,33 @@ verified; real OTA and physical peripheral tests remain pending.
   Dashboard now exposes bounded long tests: 512 half-steps forward/reverse and
   repeated small servo pulses. Neither long test has been physically triggered
   automatically. Evidence: `analysis/device/ota-long-tests-20261105T181751Z/`.
-- Keep USB attached and jack/peripheral loads disconnected until instructed.
+- Real LAN OTA installed `0.2.3-park-pose`, returning IDLE with both arms false,
+  stepper de-energized, servo detached and OTA inactive. `park_pose` was not
+  triggered automatically. Evidence: `analysis/device/ota-park-pose-20261106T164819Z/`.
+- User now reports that the existing actuator tests/signals work and that the
+  servo bracket and arm have been installed. This is a user report, not an
+  independent electrical or motion measurement.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** clarify physical servo/stepper results and supply before
-any repeat movement command. Do not arm either actuator again until motor label,
-ULN2003 motor VCC source/jumper, servo red-wire source, common ground, and no-load
-mechanics are confirmed. The agent will keep the device IDLE. HLK remains a
-communication success but its distance needs a later controlled observation.
+**Current next action:** with the mechanism supported and cable clearance confirmed,
+the user may press `park_pose` once and observe the nominal servo/stepper direction.
+If direction or clearance is wrong, use STOP or remove power physically; do not
+repeat the pose command. `release_pose` intentionally removes holding torque.
+The agent did not trigger motion automatically and makes no physical pose claim.
+HLK remains a communication success but its distance needs a later controlled
+observation.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
 Credentials are sent only after the user explicitly selects an authorized network.
 
-After the provisioning process completes: use `device.py status` and `lan-test`
-against only the IP obtained from the board, then ask the user to unplug USB
-before connecting jack power. Prove standalone LAN access, build a different
-version, perform real OTA, and verify new version + IDLE + no arms. T12 is pending
-until those real steps succeed. Motor/servo still require physical readiness.
+For future reprovisioning, use `device.py status` and `lan-test` against only the
+IP obtained from the board, and unplug USB before connecting jack power. The
+current standalone LAN path, real OTA, new-version reboot, IDLE state and no-arm
+state are already evidenced. Motor/servo pose direction and physical readiness
+still require operator verification.
 
 Unexpected side effect: PlatformIO initially auto-installed OpenOCD
 `tool-openocd-esp32@2.1100.20220706` outside the workspace. The triggering explicit
@@ -110,7 +121,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **31 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **35 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -118,15 +129,16 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   20 = buzzer result; 21–23 = HLK/actuator stop evidence; 24 = current safe status;
   25–27 = servo-fix build, real OTA and physical servo result; 28 = stepper
   no-rotation software/safe-state result; 29 = jumper/no-rotation result;
-  30–31 = long-test build and OTA.
+  30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
+  evidence.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.1-servo`, prior `0.2.0-scan` and
-  verified `0.1.4-usb` baseline, clearly separated by run folder. Prefer the
-  current servo-fix build.
+- Retained binary deliverables: current `0.2.3-park-pose`, prior `0.2.2-long-tests`,
+  `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly
+  separated by run folder. Prefer the current park-pose build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

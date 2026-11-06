@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.2.2-long-tests";
+constexpr char version[] = "0.2.3-park-pose";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -16,6 +16,10 @@ constexpr int stepCount = 64;
 constexpr int longStepCount = 512;
 constexpr int relativeStepLimit = 128;  // Relative to boot, NOT absolute angle.
 constexpr int longRelativeStepLimit = 1024;
+// Nominal pose only: 28BYJ-48 variants have no absolute encoder/homing here.
+constexpr int parkHalfSteps = 512;          // Estimated 45 degrees for 4096 half-steps/rev.
+constexpr int stepperClockwiseSign = 1;     // Invert to -1 after a controlled direction check.
+constexpr uint16_t servoParkPulseUs = 2000; // Nominal 90 degrees; horn orientation must be verified.
 constexpr uint32_t wifiRetryMs = 15000;
 constexpr uint32_t otaReceiveLimitMs = 120000;
 constexpr uint32_t provisioningTimeoutMs = 90000;

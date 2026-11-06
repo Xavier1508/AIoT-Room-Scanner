@@ -4,7 +4,8 @@
 
 enum class Command {
   Invalid, Help, Status, BuzzerTest, HlkStart, HlkStop,
-  MotorArm, StepTest, StepTestLong, ServoArm, ServoTest, ServoTestLong, Stop, Selftest,
+  MotorArm, StepTest, StepTestLong, ServoArm, ServoTest, ServoTestLong,
+  ParkPose, ReleasePose, Stop, Selftest,
   WifiScan, WifiScanResults, WifiScanCancel,
   WifiScanPage0, WifiScanPage1, WifiScanPage2, WifiScanPage3,
   WifiScanPage4, WifiScanPage5, WifiScanPage6, WifiScanPage7
@@ -19,6 +20,7 @@ inline Command parseCommand(const char* text) {
       {"step_test", Command::StepTest}, {"servo_arm", Command::ServoArm},
       {"step_test_long", Command::StepTestLong},
       {"servo_test", Command::ServoTest}, {"servo_test_long", Command::ServoTestLong},
+      {"park_pose", Command::ParkPose}, {"release_pose", Command::ReleasePose},
       {"stop", Command::Stop},
       {"selftest", Command::Selftest}, {"wifi_scan", Command::WifiScan},
       {"wifi_scan_results", Command::WifiScanResults},

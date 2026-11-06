@@ -12,7 +12,7 @@ constexpr uint8_t servoResolutionBits = 14;
 constexpr uint32_t servoDutyMax = (1u << servoResolutionBits) - 1u;
 
 void ServoController::begin() {
-  digitalWrite(pins::servo, LOW); pinMode(pins::servo, OUTPUT); active_ = false;
+  digitalWrite(pins::servo, LOW); pinMode(pins::servo, OUTPUT); active_ = false; attached_ = false;
 }
 void ServoController::pulse(uint16_t us) {
   pulseUs_ = us;
@@ -22,7 +22,12 @@ bool ServoController::start(uint32_t now, bool longTest) {
   if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
   // Load neutral duty BEFORE routing the peripheral onto the pin.
   pulse(1500); ledcAttachPin(pins::servo, 0);
-  active_ = true; longTest_ = longTest; index_ = 0; at_ = now; return true;
+  active_ = true; attached_ = true; longTest_ = longTest; index_ = 0; at_ = now; return true;
+}
+bool ServoController::holdAt(uint32_t, uint16_t pulseUs) {
+  if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
+  pulse(pulseUs); ledcAttachPin(pins::servo, 0);
+  active_ = false; attached_ = true; longTest_ = false; return true;
 }
 void ServoController::tick(uint32_t now) {
   static const uint16_t pulses[] = {1500, 1450, 1500, 1550, 1500};
@@ -36,8 +41,8 @@ void ServoController::tick(uint32_t now) {
   pulse(sequence[index_]); at_ = now;
 }
 void ServoController::stop() {
-  if (active_) { ledcDetachPin(pins::servo); ledcWrite(0, 0); }
+  if (attached_) { ledcDetachPin(pins::servo); ledcWrite(0, 0); }
   digitalWrite(pins::servo, LOW); pinMode(pins::servo, OUTPUT);
-  active_ = false; pulseUs_ = 0;
+  active_ = false; attached_ = false; pulseUs_ = 0;
   longTest_ = false;
 }

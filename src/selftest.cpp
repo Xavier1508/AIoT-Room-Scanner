@@ -77,9 +77,17 @@ SelftestResult runSelftests() {
   safety.ota(); check(safety.mode() == Mode::Ota && !safety.motorArmed());
   check(!safety.armMotor(1) && !safety.start(Mode::Buzzer, 1));
   safety.stop(); check(safety.idle());
+  SafetyState parked;
+  check(parked.beginPark(20) && parked.mode() == Mode::Parked && !parked.idle());
+  check(!parked.beginPark(21) && !parked.start(Mode::Parked, 21));
+  parked.stop(); check(parked.idle());
+  check(parked.armMotor(30) && !parked.beginPark(31));
+  parked.stop();
   check(parseCommand("step_test") == Command::StepTest);
   check(parseCommand("step_test_long") == Command::StepTestLong);
   check(parseCommand("servo_test_long") == Command::ServoTestLong);
+  check(parseCommand("park_pose") == Command::ParkPose);
+  check(parseCommand("release_pose") == Command::ReleasePose);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);
   check(parseCommand("wifi_scan") == Command::WifiScan);

@@ -82,7 +82,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_pose\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -102,6 +102,11 @@ String App::execute(Command command) {
     const bool started = network_.startScan();
     if (started) event("passive_wifi_scan_started_disarmed");
     return result(started, started ? "wifi_scan_started" : "wifi_scan_busy_or_failed");
+  }
+  if (command == Command::ReleasePose) {
+    if (safety_.mode() != Mode::Parked) return result(false, "not_parked_no_action");
+    stopAll(); event("park_pose_released_outputs_off");
+    return result(true, "pose_released_idle");
   }
   if (command == Command::Selftest) {
     if (!safety_.idle()) return result(false, "busy");
@@ -126,6 +131,18 @@ String App::execute(Command command) {
   if (!safety_.idle()) return result(false, "busy_no_action");
   if (network_.scanning()) return result(false, "wifi_scan_in_progress_actuators_idle");
   if (settings_.configured() && !network_.connected()) return result(false, "wifi_offline_actuators_remain_idle");
+  if (command == Command::ParkPose) {
+    if (stepper_.relativeSteps() != 0) return result(false, "park_requires_neutral_relative_reference");
+    if (!safety_.beginPark(now)) return result(false, "park_requires_idle_and_no_arms");
+    if (!stepper_.startPark(micros(), config::parkHalfSteps, config::stepperClockwiseSign)) {
+      stopAll(); return result(false, "park_stepper_relative_limit");
+    }
+    if (!servo_.holdAt(now, config::servoParkPulseUs)) {
+      stopAll(); return result(false, "park_servo_pwm_setup_failed");
+    }
+    event("park_pose_started_nominal_servo_90_stepper_45_clockwise_hold");
+    return result(true, "park_pose_started_hold");
+  }
   if (command == Command::MotorArm) {
     safety_.armMotor(now); event("motor_armed_30s_physical_readiness_is_operator_responsibility");
     return result(true, "motor_armed_one_test_30s");
@@ -204,7 +221,7 @@ void App::publish(uint32_t now) {
   s += String(",\"actuators\":{\"buzzer_commanded_on\":") + (buzzer_.sounding() ? "true" : "false") +
        ",\"stepper_energized\":" + (stepper_.energized() ? "true" : "false") +
        ",\"relative_half_steps\":" + stepper_.relativeSteps() + ",\"step_scheduling_late\":" + stepper_.schedulingLate() +
-       ",\"servo_attached\":" + (servo_.active() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
+       ",\"servo_attached\":" + (servo_.attached() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
        ",\"physical_motion_verified\":false}";
   s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +

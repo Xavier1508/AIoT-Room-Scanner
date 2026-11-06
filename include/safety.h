@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include "config.h"
 
-enum class Mode { Idle, Buzzer, Stepper, Servo, Ota };
+enum class Mode { Idle, Buzzer, Stepper, Servo, Parked, Ota };
 
 // Pure state only. No persistent arm flags; shared by host tests and firmware.
 class SafetyState {
@@ -12,6 +12,11 @@ class SafetyState {
   bool motorArmed() const { return motorArmed_; }
   bool servoArmed() const { return servoArmed_; }
   bool idle() const { return mode_ == Mode::Idle; }
+  bool beginPark(uint32_t now) {
+    expire(now);
+    if (!idle() || motorArmed_ || servoArmed_) return false;
+    mode_ = Mode::Parked; startedAt_ = now; return true;
+  }
   bool armMotor(uint32_t now) {
     if (!idle()) return false;
     motorArmed_ = true; motorAt_ = now; return true;
@@ -22,7 +27,7 @@ class SafetyState {
   }
   bool start(Mode next, uint32_t now) {
     expire(now);
-    if (!idle() || next == Mode::Idle || next == Mode::Ota) return false;
+    if (!idle() || next == Mode::Idle || next == Mode::Parked || next == Mode::Ota) return false;
     if (next == Mode::Stepper && !motorArmed_) return false;
     if (next == Mode::Servo && !servoArmed_) return false;
     motorArmed_ = servoArmed_ = false;  // A test consumes all arms.
@@ -35,7 +40,7 @@ class SafetyState {
     if (static_cast<uint32_t>(now - servoAt_) >= config::armTimeoutMs) servoArmed_ = false;
   }
   bool overdue(uint32_t now) const {
-    return mode_ != Mode::Idle && mode_ != Mode::Ota &&
+    return mode_ != Mode::Idle && mode_ != Mode::Ota && mode_ != Mode::Parked &&
            static_cast<uint32_t>(now - startedAt_) >= config::testTimeoutMs;
   }
  private:
@@ -49,6 +54,7 @@ inline const char* modeName(Mode mode) {
     case Mode::Buzzer: return "BUZZER_TEST";
     case Mode::Stepper: return "STEPPER_TEST";
     case Mode::Servo: return "SERVO_TEST";
+    case Mode::Parked: return "PARKED";
     case Mode::Ota: return "OTA";
     default: return "IDLE";
   }
