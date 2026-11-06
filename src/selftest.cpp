@@ -92,6 +92,7 @@ SelftestResult runSelftests() {
   check(parseCommand("stepper_right_10") == Command::StepperRight10);
   check(parseCommand("release_stepper") == Command::ReleaseStepper);
   check(parseCommand("park_servo") == Command::ParkServo);
+  check(parseCommand("servo_1800") == Command::Servo1800);
   check(parseCommand("servo_up_50") == Command::ServoUp50);
   check(parseCommand("servo_down_50") == Command::ServoDown50);
   check(parseCommand("release_servo") == Command::ReleaseServo);

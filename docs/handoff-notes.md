@@ -13,7 +13,7 @@ physical measurements that were not taken.
   application OTA, passive 2.4 GHz Wi-Fi scan/provisioning, HLK-LD2410C UART
   parser, 28BYJ-48/ULN2003 stepper, SG90-class servo.
 - No 3D mapping, TinyML, CSI, ToF ranging, or CDM324 implementation yet.
-- Current verified firmware: `0.2.6-servo-1800-hold` (verify again with
+- Current verified firmware: `0.2.7-servo-base-reset` (verify again with
   `device.py status` after any further OTA).
 
 ## Pin map (from the latest workbook)
@@ -44,11 +44,15 @@ actual breakout labels before powering sensors.
 - Servo: the user reports the legacy small-pulse test moves normally. The older
   hold attempt at 1950/2000 µs did not produce the expected movement under the
   installed arm; the exact cause was not isolated. The current tuning design uses
-  a saved base target, default **1800 µs**, with `park_servo` holding the current
-  target (initially the base) and `servo_up_50` / `servo_down_50` moving the
-  target by 50 µs while holding. `save_servo_here` stores the found base in NVS.
-  Status exposes `pose.servo_base_source`, `pose.servo_base_saved`, and
+  a saved base target. This device has a provisional saved base of **1000 µs**
+  (the firmware lower clamp); the compiled default remains **1800 µs**.
+  `park_servo` returns to the saved base, `servo_1800` resets to 1800 µs,
+  `servo_up_50` / `servo_down_50` adjust the target by 50 µs and keep holding,
+  and `save_servo_here` overwrites the saved base in NVS. Status exposes
+  `pose.servo_base_source`, `pose.servo_base_saved`, `pose.servo_base_us`, and
   `actuators.servo_target_us` so the next session can see which base is active.
+  The 1000 µs value is a firmware bound and may also be the mechanical endpoint;
+  the servo's true safe range has not been measured.
 - Servo supply/current and the 5 V rail capacity are still unmeasured. Do not
   claim the SG90 can lift the arm until loaded movement is observed. Do not use
   9 V on the servo; common ground is required.
@@ -64,8 +68,8 @@ actual breakout labels before powering sensors.
 - The old `park_pose` command is intentionally rejected with
   `use_separate_axis_commands`.
 - `servo_test` / `servo_test_long` remain the legacy small-pulse tests.
-- `park_servo` and `servo_up_50` / `servo_down_50` hold position; they do not
-  detach after each adjustment. `release_servo` detaches.
+- `park_servo`, `servo_1800`, and `servo_up_50` / `servo_down_50` hold position;
+  they do not detach after each adjustment. `release_servo` detaches.
 - NVS pose references are relative/assumed, never absolute. A reboot restores the
   saved stepper reference and servo base, but physical movement while unpowered
   invalidates the assumption.
@@ -78,11 +82,14 @@ actual breakout labels before powering sensors.
 ## Next steps
 
 1. Hard-refresh the dashboard and support the arm.
-2. Press `park_servo` to hold the base target (initially 1800 µs).
-3. Use `servo_up_50` / `servo_down_50` one click at a time until the sensor arm
-   faces forward. Record the pulse shown in status.
-4. Press `save_servo_here`; reboot/OTA and verify `park_servo` returns to the
-   saved base. Confirm loaded movement and measure the servo supply under load.
+2. Press `park_servo` to return to the saved base (currently 1000 µs); use
+   `servo_1800` only to test the rough 1800 µs midpoint.
+3. Use `servo_up_50` / `servo_down_50` one click at a time for fine adjustment.
+   Record the pulse shown in status.
+4. Press `save_servo_here` to overwrite the base; reboot/OTA and verify
+   `park_servo` returns to it. Confirm loaded movement and measure the servo
+   supply under load. If the arm is already at the desired forward position at
+   1000 µs, keep that as the provisional base and do not force beyond it.
 5. Only after the servo/arm is mechanically stable, add sensors:
    - VL53L1X on I2C GPIO8/9; detect address and range, no fabricated values.
    - HC-SR04 3.3 V on TRIG10/ECHO11; bounded trigger and timeout handling.

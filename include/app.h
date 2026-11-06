@@ -58,6 +58,7 @@ class App {
   bool servoBasePersisted_ = false;
   String poseReferenceSource_ = "migration_default_1024";
   String servoBaseSource_ = "default_1800";
+  uint16_t servoBaseUs_ = config::servoParkPulseUs;
   uint16_t servoTargetUs_ = config::servoParkPulseUs;
   uint32_t hlkBytes_ = 0, lastPublish_ = 0, maxLoopUs_ = 0;
   uint32_t bootReason_ = 0, lastCommandId_ = 0;

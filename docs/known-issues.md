@@ -41,9 +41,11 @@ expected loaded servo movement in the user's observation. The user then reported
 that the legacy small-pulse sequence (`1500 -> 1450/1550 -> 1500 us`) moved the
 servo normally. The root cause of the hold-specific failure was not isolated;
 possible mechanical limit, supply sag, or load torque remain unproven. `0.2.5`
-restored the legacy sequence, and `0.2.6` adds a 1800 us base-hold tuning mode
-with +/-50 us hold adjustments. Physical loaded movement and rail voltage still
-require operator measurement.
+restored the legacy sequence, `0.2.6` added a 1800 us base-hold tuning mode, and
+`0.2.7` makes `servo_1800` a true reset while `park_servo` returns to the saved
+base. The device has a provisional saved base of 1000 us, which is the firmware
+lower clamp; the servo's actual mechanical range is still unknown. Physical
+loaded movement and rail voltage still require operator measurement.
 
 The updated workbook maps HC-SR04 3.3 V to TRIG10/ECHO11 and VL53L1X to
 SDA8/SCL9, with optional INT14/XSHUT13. Sensor firmware is intentionally not

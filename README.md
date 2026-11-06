@@ -1,7 +1,7 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi saat ini: **0.2.6-servo-1800-hold**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi saat ini: **0.2.7-servo-base-reset**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
@@ -179,7 +179,7 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
 | step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
 | park_stepper / stepper_left_10 / stepper_right_10 | Hold posisi stepper sekarang atau nudge 114 half-step nominal (±10°) |
-| park_servo / servo_up_50 / servo_down_50 | `park_servo` hold di base tersimpan (awal 1800 µs); tombol ± menggeser target 50 µs lalu tetap hold |
+| park_servo / servo_1800 / servo_up_50 / servo_down_50 | `park_servo` hold di base tersimpan (awal 1800 µs); `servo_1800` reset ke 1800 µs; tombol ± menggeser target 50 µs lalu tetap hold |
 | release_stepper / release_servo / release_pose | Lepas satu axis atau kedua axis; torsi dapat hilang dan beban dapat turun |
 | zero_stepper_here / save_servo_here | Simpan referensi relatif stepper atau target pulse servo ke NVS lokal |
 | stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm |
@@ -228,8 +228,10 @@ HTTP berjalan pada task terpisah dari loop perangkat.
 Dashboard menyediakan tes panjang yang tetap bounded dan dua kartu axis terpisah.
 Axis X mengontrol stepper horizontal; Axis Y mengontrol servo elevasi. Gunakan
 `park_stepper`/tombol nudge stepper untuk hold dan mencari titik seimbang. Tombol
-`park_servo` menahan servo pada base tersimpan (awal 1800 µs) agar posisi base/0
-dapat diukur; tombol ± menggeser target 50 µs dan tetap menahan posisi. Tidak ada encoder/homing
+`park_servo` menahan servo pada base tersimpan (awal 1800 µs), `servo_1800`
+mengembalikan target ke 1800 µs, dan tombol ± menggeser target 50 µs lalu tetap
+menahan posisi. Base 1000 µs yang tersimpan di perangkat ini adalah batas bawah
+firmware, bukan bukti batas mekanis servo. Tidak ada encoder/homing
 dan firmware tidak melakukan gerakan otomatis saat boot atau OTA. Lakukan
 hard-refresh browser setelah OTA untuk memuat tombol baru.
 

@@ -10,10 +10,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.6-servo-1800-hold`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T201527036Z/firmware.bin`.
-  Size **797472 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `4529ee7abf3845b2a72a2354492c8e67e04d5d1b8b95681e3ca3426418aad8ad`.
+- **Running firmware: `0.2.7-servo-base-reset`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T203007924Z/firmware.bin`.
+  Size **797840 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `aab922132f0f073809096f42e4d7b83a544d13b462cc9c630ab96bb544c571a1`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -33,7 +33,7 @@ physical direction/clearance verification.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **68 C++ assertions + 19 Python tests passed**; dashboard JS
+- Portable tests: **69 C++ assertions + 19 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -100,10 +100,20 @@ physical direction/clearance verification.
   `analysis/device/ota-servo-small-test-20261106T181851Z/`.
 - Real LAN OTA installed `0.2.6-servo-1800-hold`, returning IDLE with stepper
   reference 0, servo detached, servo target 1800 µs, and
-  `servo_base_source=default_1800`. `park_servo` now holds the current target;
-  `servo_up_50`/`servo_down_50` adjust it by 50 µs and keep holding;
-  `save_servo_here` persists the found base. Evidence:
+  `servo_base_source=default_1800`. `park_servo` held the current target;
+  `servo_up_50`/`servo_down_50` adjusted it by 50 µs and kept holding;
+  `save_servo_here` persisted the found base. Evidence:
   `analysis/device/ota-servo-hold-tune-20261106T201809Z/`.
+- User tuned the servo down to the firmware lower clamp **1000 µs** and saved it
+  as the provisional base. The next `−50` was rejected with `servo_pulse_limit`;
+  this is the firmware bound, not proof of the servo's mechanical limit. The
+  original `park_servo` held the current target rather than resetting to 1800.
+- Real LAN OTA installed `0.2.7-servo-base-reset`, returning IDLE with stepper
+  reference 0, servo detached, saved base/target **1000 µs**, and
+  `servo_base_source=nvs`. `park_servo` now returns to the saved base;
+  `servo_1800` truly resets the target to 1800 µs; `servo_up_50`/`down_50`
+  continue to adjust and hold. Evidence:
+  `analysis/device/ota-servo-base-reset-20261106T203314Z/`.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
@@ -111,11 +121,12 @@ physical direction/clearance verification.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** hard-refresh the dashboard and support the arm. Press
-`Hold di base 1800 µs`, then use `Geser +50 µs · hold` / `Geser −50 µs · hold`
-one click at a time until the sensor arm faces forward. Record the pulse shown in
-status, press `Simpan base servo`, and verify after reboot/OTA that `park_servo`
-returns to that saved base. If the servo moves unloaded but not loaded, investigate
+**Current next action:** hard-refresh the dashboard and support the arm. The saved
+base is **1000 µs**; `Hold base tersimpan` returns there. Use `Reset 1800 µs ·
+hold` only to test the rough midpoint, and use `Geser +50 µs · hold` / `Geser
+−50 µs · hold` for fine adjustment. `servo_1800` now truly commands 1800 µs; if
+the servo buzzes or stalls there, release immediately. `Simpan base servo`
+overwrites the saved base. If the servo moves unloaded but not loaded, investigate
 servo rail/current and leverage; if it does not move at all, inspect signal, horn
 spline and servo power. No physical servo motion was triggered automatically by
 the agent and no angle claim is made. Sensor implementation remains deferred until
@@ -141,7 +152,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **44 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **46 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -152,16 +163,17 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
   evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
   post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA;
-  43–44 = servo-hold-tune build and OTA.
+  43–44 = servo-hold-tune build and OTA; 45–46 = servo-base-reset build and OTA.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.6-servo-1800-hold`, prior
-  `0.2.5-servo-small-test`, `0.2.4-pose-axes`, `0.2.3-park-pose`,
-  `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb`
-  baseline, clearly separated by run folder. Prefer the current hold-tune build.
+- Retained binary deliverables: current `0.2.7-servo-base-reset`, prior
+  `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`, `0.2.4-pose-axes`,
+  `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and
+  verified `0.1.4-usb` baseline, clearly separated by run folder. Prefer the
+  current base-reset build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.
