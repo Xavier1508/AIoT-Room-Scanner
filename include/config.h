@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.2.7-servo-base-reset";
+constexpr char version[] = "0.2.8-servo-scan-range";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -21,10 +21,11 @@ constexpr int parkHalfSteps = 512;          // Estimated 45 degrees for 4096 hal
 constexpr int stepperClockwiseSign = 1;     // Invert to -1 after a controlled direction check.
 constexpr int initialStepperReferenceHalfSteps = 1024; // Migrated from the observed 0.2.3 live status.
 constexpr int stepperNudgeHalfSteps = 114;             // Nominal 10 degrees at 4096 half-steps/rev.
-constexpr uint16_t servoParkPulseUs = 1800;            // Measurement/base target; save after physical calibration.
+constexpr uint16_t servoParkPulseUs = 900;             // Requested base; saved after physical calibration.
 constexpr uint16_t servoNudgeUs = 50;
-constexpr uint16_t servoMinPulseUs = 1000;
-constexpr uint16_t servoMaxPulseUs = 2000;
+constexpr uint16_t servoCoarseUs = 200;
+constexpr uint16_t servoMinPulseUs = 500;
+constexpr uint16_t servoMaxPulseUs = 1400;
 constexpr uint32_t wifiRetryMs = 15000;
 constexpr uint32_t otaReceiveLimitMs = 120000;
 constexpr uint32_t provisioningTimeoutMs = 90000;

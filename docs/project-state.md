@@ -10,10 +10,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.7-servo-base-reset`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T203007924Z/firmware.bin`.
-  Size **797840 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `aab922132f0f073809096f42e4d7b83a544d13b462cc9c630ab96bb544c571a1`.
+- **Running firmware: `0.2.8-servo-scan-range`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T205207136Z/firmware.bin`.
+  Size **798080 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `f702ec54952d3cd1c5f997c8c7d77a298c6446218e1d5f5b8ed6fee9d3bf22b6`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -33,7 +33,7 @@ physical direction/clearance verification.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **69 C++ assertions + 19 Python tests passed**; dashboard JS
+- Portable tests: **72 C++ assertions + 19 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -110,10 +110,15 @@ physical direction/clearance verification.
   original `park_servo` held the current target rather than resetting to 1800.
 - Real LAN OTA installed `0.2.7-servo-base-reset`, returning IDLE with stepper
   reference 0, servo detached, saved base/target **1000 µs**, and
-  `servo_base_source=nvs`. `park_servo` now returns to the saved base;
-  `servo_1800` truly resets the target to 1800 µs; `servo_up_50`/`down_50`
-  continue to adjust and hold. Evidence:
+  `servo_base_source=nvs`. `park_servo` returned to the saved base;
+  `servo_1800` truly reset the target to 1800 µs; `servo_up_50`/`down_50`
+  continued to adjust and hold. Evidence:
   `analysis/device/ota-servo-base-reset-20261106T203314Z/`.
+- Real LAN OTA installed `0.2.8-servo-scan-range`, returning IDLE with stepper
+  reference 0, servo detached, migrated base/target **900 µs**, clamp
+  **500–1400 µs**, and `servo_base_source=migration_default_saved`. The old
+  1800 command is removed; ±200 and ±50 hold buttons are available. Evidence:
+  `analysis/device/ota-servo-scan-range-20261106T205530Z/`.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
@@ -122,10 +127,10 @@ physical direction/clearance verification.
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
 **Current next action:** hard-refresh the dashboard and support the arm. The saved
-base is **1000 µs**; `Hold base tersimpan` returns there. Use `Reset 1800 µs ·
-hold` only to test the rough midpoint, and use `Geser +50 µs · hold` / `Geser
-−50 µs · hold` for fine adjustment. `servo_1800` now truly commands 1800 µs; if
-the servo buzzes or stalls there, release immediately. `Simpan base servo`
+base is **900 µs**; `Hold base tersimpan` returns there. Range is **500–1400 µs**.
+Use `Geser ±200 µs · hold` for fast movement and `Geser ±50 µs · hold` for fine
+adjustment; both hold position. Test the lower end in stages (900 → 700 → 500)
+and release immediately if the servo buzzes or stalls. `Simpan base servo`
 overwrites the saved base. If the servo moves unloaded but not loaded, investigate
 servo rail/current and leverage; if it does not move at all, inspect signal, horn
 spline and servo power. No physical servo motion was triggered automatically by
@@ -152,7 +157,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **46 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **48 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -163,17 +168,18 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
   evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
   post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA;
-  43–44 = servo-hold-tune build and OTA; 45–46 = servo-base-reset build and OTA.
+  43–44 = servo-hold-tune build and OTA; 45–46 = servo-base-reset build and OTA;
+  47–48 = servo-scan-range build and OTA.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.7-servo-base-reset`, prior
-  `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`, `0.2.4-pose-axes`,
-  `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and
-  verified `0.1.4-usb` baseline, clearly separated by run folder. Prefer the
-  current base-reset build.
+- Retained binary deliverables: current `0.2.8-servo-scan-range`, prior
+  `0.2.7-servo-base-reset`, `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`,
+  `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,
+  `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly separated by run
+  folder. Prefer the current scan-range build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

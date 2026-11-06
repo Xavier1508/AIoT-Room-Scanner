@@ -5,6 +5,7 @@
 
 namespace {
 constexpr uint32_t magic = 0x41494f54;
+constexpr uint8_t poseServoSchema = 2;  // 0.2.8 changes the servo base/range.
 void wipe(void* pointer, size_t size) {
   volatile uint8_t* p = static_cast<volatile uint8_t*>(pointer);
   while (size--) *p++ = 0;
@@ -66,7 +67,7 @@ bool SettingsStore::loadPose(PoseSettings& pose) {
       pose.stepperReferenceHalfSteps = value; pose.stepperReferenceValid = true;
     }
   }
-  if (preferences.isKey("servo_us")) {
+  if (preferences.getUChar("servo_rev", 0) == poseServoSchema && preferences.isKey("servo_us")) {
     const uint16_t value = preferences.getUShort("servo_us", config::servoParkPulseUs);
     if (value >= config::servoMinPulseUs && value <= config::servoMaxPulseUs) {
       pose.servoParkPulseUs = value; pose.servoParkPulseValid = true;
@@ -91,6 +92,7 @@ bool SettingsStore::saveServoParkPulse(uint16_t pulseUs) {
   Preferences preferences;
   if (!preferences.begin("aiot-pose", false)) return false;
   const bool ok = preferences.putUChar("schema", 1) == 1 &&
+                  preferences.putUChar("servo_rev", poseServoSchema) == 1 &&
                   preferences.putUShort("servo_us", pulseUs) == sizeof(pulseUs);
   preferences.end();
   return ok;

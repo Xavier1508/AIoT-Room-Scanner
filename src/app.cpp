@@ -50,6 +50,12 @@ void App::begin() {
     servoTargetUs_ = servoBaseUs_;
     servoBasePersisted_ = true;
     servoBaseSource_ = "nvs";
+  } else {
+    // 0.2.8 intentionally migrates the old servo base to the requested 900 us.
+    servoBaseUs_ = config::servoParkPulseUs;
+    servoTargetUs_ = servoBaseUs_;
+    servoBasePersisted_ = settings_.saveServoParkPulse(servoBaseUs_);
+    servoBaseSource_ = servoBasePersisted_ ? "migration_default_saved" : "migration_default_unsaved";
   }
   network_.begin(*this, settings_);
   event("boot_idle_all_actuators_off");
@@ -196,8 +202,8 @@ String App::execute(Command command) {
     event("hlk_passive_uart_started"); return result(true, "hlk_receiving_no_config_writes");
   }
   const bool poseCommand = command == Command::ParkStepper || command == Command::StepperLeft10 ||
-      command == Command::StepperRight10 || command == Command::ParkServo || command == Command::Servo1800 ||
-      command == Command::ServoUp50 || command == Command::ServoDown50;
+      command == Command::StepperRight10 || command == Command::ParkServo || command == Command::ServoUp200 ||
+      command == Command::ServoDown200 || command == Command::ServoUp50 || command == Command::ServoDown50;
   if ((!poseCommand && !safety_.idle()) || (poseCommand && safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked)) {
     return result(false, "busy_no_action");
   }
@@ -220,29 +226,32 @@ String App::execute(Command command) {
     event(command == Command::StepperRight10 ? "stepper_nudge_right_10_started" : "stepper_nudge_left_10_started");
     return result(true, command == Command::StepperRight10 ? "stepper_right_10_started" : "stepper_left_10_started");
   }
-  if (command == Command::ParkServo || command == Command::Servo1800 ||
-      command == Command::ServoUp50 || command == Command::ServoDown50) {
+  if (command == Command::ParkServo || command == Command::ServoUp200 ||
+      command == Command::ServoDown200 || command == Command::ServoUp50 ||
+      command == Command::ServoDown50) {
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (servo_.active()) return result(false, "servo_busy");
-    if (command == Command::Servo1800) {
-      servoTargetUs_ = config::servoParkPulseUs;
-    } else if (command == Command::ParkServo) {
-      servoTargetUs_ = servoBasePersisted_ ? servoBaseUs_ : config::servoParkPulseUs;
-    } else if (command == Command::ServoUp50) {
-      if (servoTargetUs_ > config::servoMaxPulseUs - config::servoNudgeUs) return result(false, "servo_pulse_limit");
-      servoTargetUs_ += config::servoNudgeUs;
+    int next = servoTargetUs_;
+    if (command == Command::ParkServo) {
+      next = servoBasePersisted_ ? servoBaseUs_ : config::servoParkPulseUs;
     } else {
-      if (servoTargetUs_ < config::servoMinPulseUs + config::servoNudgeUs) return result(false, "servo_pulse_limit");
-      servoTargetUs_ -= config::servoNudgeUs;
+      int delta = 0;
+      if (command == Command::ServoUp200) delta = config::servoCoarseUs;
+      else if (command == Command::ServoDown200) delta = -int(config::servoCoarseUs);
+      else if (command == Command::ServoUp50) delta = config::servoNudgeUs;
+      else delta = -int(config::servoNudgeUs);
+      next += delta;
     }
+    if (next < int(config::servoMinPulseUs) || next > int(config::servoMaxPulseUs)) {
+      return result(false, "servo_pulse_limit");
+    }
+    servoTargetUs_ = uint16_t(next);
     if (!servo_.holdAt(now, servoTargetUs_)) {
       syncPoseMode(now); return result(false, "servo_pwm_setup_failed");
     }
     servoHolding_ = true;
-    event(command == Command::ParkServo ? "servo_axis_hold_base" :
-          (command == Command::Servo1800 ? "servo_axis_reset_1800" : "servo_axis_nudge_hold"));
-    return result(true, command == Command::ParkServo ? "servo_hold_base" :
-                  (command == Command::Servo1800 ? "servo_reset_1800" : "servo_nudge_hold"));
+    event(command == Command::ParkServo ? "servo_axis_hold_base" : "servo_axis_nudge_hold");
+    return result(true, command == Command::ParkServo ? "servo_hold_base" : "servo_nudge_hold");
   }
   if (command == Command::MotorArm) {
     safety_.armMotor(now); event("motor_armed_30s_physical_readiness_is_operator_responsibility");

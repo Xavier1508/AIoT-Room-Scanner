@@ -92,7 +92,9 @@ SelftestResult runSelftests() {
   check(parseCommand("stepper_right_10") == Command::StepperRight10);
   check(parseCommand("release_stepper") == Command::ReleaseStepper);
   check(parseCommand("park_servo") == Command::ParkServo);
-  check(parseCommand("servo_1800") == Command::Servo1800);
+  check(parseCommand("servo_up_200") == Command::ServoUp200);
+  check(parseCommand("servo_down_200") == Command::ServoDown200);
+  check(parseCommand("servo_1800") == Command::Invalid);
   check(parseCommand("servo_up_50") == Command::ServoUp50);
   check(parseCommand("servo_down_50") == Command::ServoDown50);
   check(parseCommand("release_servo") == Command::ReleaseServo);
@@ -100,7 +102,8 @@ SelftestResult runSelftests() {
   check(parseCommand("save_servo_here") == Command::SaveServoHere);
   check(parseCommand("release_pose") == Command::ReleasePose);
   check(config::stepperNudgeHalfSteps == 114 && config::servoNudgeUs == 50);
-  check(config::servoMinPulseUs < config::servoParkPulseUs && config::servoParkPulseUs < config::servoMaxPulseUs);
+  check(config::servoMinPulseUs == 500 && config::servoParkPulseUs == 900 && config::servoMaxPulseUs == 1400);
+  check(config::servoNudgeUs == 50 && config::servoCoarseUs == 200);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);
   check(parseCommand("wifi_scan") == Command::WifiScan);

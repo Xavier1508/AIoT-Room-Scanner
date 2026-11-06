@@ -8,7 +8,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 |---|---|---|
 | T01 | Lulus — identification | esptool identify-20261105T124021Z: ESP32-S3 rev0.2, 16MB flash, native USB Serial/JTAG COM9. Label N16R8 remains historical user report. |
 | T02 | Lulus — user checklist only | User confirmed jack/loads removed and USB-only. No rail-voltage/current/backfeed measurement. |
-| T03 | Lulus — build | Current build-20261106T203007924Z: 0.2.7-servo-base-reset, application 797840 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
+| T03 | Lulus — build | Current build-20261106T205207136Z: 0.2.8-servo-scan-range, application 798080 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
 | T04 | Lulus — software/USB scope | Upload verified hashes; current version returned IDLE/no arms and passed the seven-case USB check with 48 synthetic assertions. Prior 0.1.4 power-cycle/three paced runs are historical checks. This does not measure pin voltage or prove physical actuators. |
 | T05 | Lulus — physical confirmation | LAN buzzer test entered BUZZER_TEST, returned IDLE/output OFF; user heard three beep pulses. Evidence `analysis/device/buzzer-20261105T170632Z/`. |
 | T06 | Lulus parsial — UART only | 747 valid HLK frames, 0 rejected, 17,181 bytes; decoded target/distance/energy. User observed a table but expected <10 cm while frame said ~30 cm. Distance is uncalibrated; wiring/5V is user-reported, not independently measured. |
@@ -16,11 +16,11 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 | T08 | Tertunda — no movement after jumper | Temporary enable jumper caused indicator LEDs to illuminate, but user still saw no rotation. This is not classified as a GPIO/motor failure because ULN +/- rail, jumper contact, socket and motor cable remain unverified. |
 | T09 | Lulus parsial — user-observed no-load test | User reports servo supplied from shield 5 V header with jack-only/DIP ON; voltage was not independently measured. No-load wiring followed GPIO15 mapping. |
 | T10 | Lulus — physical confirmation | After 14-bit LEDC repair in 0.2.1-servo, test returned IDLE/detached and user saw the horn move. Evidence `analysis/device/servo-fixed-20261105T174510Z/`. |
-| T11 | Tertunda — servo/load physical verification | User reports the legacy small-pulse sequence moves the servo normally. Servo was tuned to the 1000 µs lower clamp and saved as provisional base; 0.2.7 adds a true 1800 µs reset plus saved-base hold and ±50 µs hold adjustments. Loaded movement, actual mechanical range, direction, angle, clearance and holding current remain unobserved. |
-| T12 | Lulus parsial — application OTA | Wi-Fi/LAN contract passed and real OTA changed 0.2.0-scan through 0.2.7-servo-base-reset; each successful new version returned IDLE with no arms. The final image SHA matched the server response; electrical rail/current/rollback were not independently measured/tested. |
-| T13 | Partial handoff ready | Source, reusable tools, contract, documentation, current hold-tune firmware and handoff notes exist. Research/audit retained. Real OTA is verified; physical servo base/loaded movement remains user-controlled and unverified; no remote push. |
+| T11 | Tertunda — servo/load physical verification | User reports the legacy small-pulse sequence moves the servo normally. 0.2.8 sets the base to 900 µs, clamp to 500–1400 µs, and adds ±200/±50 hold tuning; 1800 is removed. Loaded movement, actual mechanical range, direction, angle, clearance and holding current remain unobserved. |
+| T12 | Lulus parsial — application OTA | Wi-Fi/LAN contract passed and real OTA changed 0.2.0-scan through 0.2.8-servo-scan-range; each successful new version returned IDLE with no arms. The final image SHA matched the server response; electrical rail/current/rollback were not independently measured/tested. |
+| T13 | Partial handoff ready | Source, reusable tools, contract, documentation, current scan-range firmware and handoff notes exist. Research/audit retained. Real OTA is verified; physical servo base/loaded movement remains user-controlled and unverified; no remote push. |
 
-Additional actual checks: **69 portable C++ synthetic parser/safety/command/SSID-list**
+Additional actual checks: **72 portable C++ synthetic parser/safety/command/SSID-list**
 assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, and OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing.
@@ -50,7 +50,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W08 | Lulus — two-axis deployment | 0.2.4-pose-axes installed via real LAN OTA and returned IDLE. Status reported migrated reference 1024 half-step, 114-half-step stepper nudge, 2000 µs servo target, and both axes released; no physical nudge was triggered automatically. |
 | W09 | Lulus — legacy servo deployment | 0.2.5-servo-small-test installed via real LAN OTA and returned IDLE with servo detached. Axis-Y controls then ran the legacy small-pulse sequence; physical movement remains user-controlled and unverified. |
 | W10 | Lulus — servo hold-tune deployment | 0.2.6-servo-1800-hold installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, target 1800 µs, and default base source. No servo motion was triggered automatically. |
-| W11 | Lulus — servo base-reset deployment | 0.2.7-servo-base-reset installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, saved base/target 1000 µs, and base source NVS. `servo_1800` now truly resets to 1800 µs; no motion was triggered automatically. |
+| W11 | Lulus — servo base-reset deployment | 0.2.7-servo-base-reset installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, saved base/target 1000 µs, and base source NVS. `servo_1800` then reset to 1800 µs; no motion was triggered automatically. |
+| W12 | Lulus — servo scan-range deployment | 0.2.8-servo-scan-range installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, migrated base/target 900 µs, clamp 500–1400 µs, and `servo_1800` removed. No motion was triggered automatically. |
 
 Hardware result note: T05 is the first physical peripheral result. T06 remains
 pending until HLK supply and crossed wiring are confirmed by the user; a valid
@@ -84,14 +85,16 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/ota-servo-hold-tune-20261106T201809Z/`
 - `analysis/platformio/build-20261106T203007924Z/`
 - `analysis/device/ota-servo-base-reset-20261106T203314Z/`
+- `analysis/platformio/build-20261106T205207136Z/`
+- `analysis/device/ota-servo-scan-range-20261106T205530Z/`
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
 - `analysis/gcc/tests-20261105T160536307Z/`
 - `analysis/gcc/tests-20261105T161636731Z/` (final host regression run)
 
 The current application SHA-256 is
-`aab922132f0f073809096f42e4d7b83a544d13b462cc9c630ab96bb544c571a1`.
-Research CLI verified 46 stored evidence artifacts with zero integrity failures.
+`f702ec54952d3cd1c5f997c8c7d77a298c6446218e1d5f5b8ed6fee9d3bf22b6`.
+Research CLI verified 48 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.
