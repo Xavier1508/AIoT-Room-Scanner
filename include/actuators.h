@@ -40,7 +40,6 @@ class ServoController {
  public:
   void begin();
   bool start(uint32_t now, bool longTest);
-  bool startNudge(uint32_t now, bool positive);
   bool holdAt(uint32_t now, uint16_t pulseUs);
   void tick(uint32_t now);
   void stop();
@@ -51,7 +50,6 @@ class ServoController {
   void pulse(uint16_t us);
   bool active_ = false, attached_ = false;
   uint8_t index_ = 0;
-  uint8_t sequence_ = 0;
   bool longTest_ = false;
   uint16_t pulseUs_ = 0;
   uint32_t at_ = 0;

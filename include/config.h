@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.2.5-servo-small-test";
+constexpr char version[] = "0.2.6-servo-1800-hold";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -21,7 +21,7 @@ constexpr int parkHalfSteps = 512;          // Estimated 45 degrees for 4096 hal
 constexpr int stepperClockwiseSign = 1;     // Invert to -1 after a controlled direction check.
 constexpr int initialStepperReferenceHalfSteps = 1024; // Migrated from the observed 0.2.3 live status.
 constexpr int stepperNudgeHalfSteps = 114;             // Nominal 10 degrees at 4096 half-steps/rev.
-constexpr uint16_t servoParkPulseUs = 2000;            // Initial target; calibrate with ±50 us nudges.
+constexpr uint16_t servoParkPulseUs = 1800;            // Measurement/base target; save after physical calibration.
 constexpr uint16_t servoNudgeUs = 50;
 constexpr uint16_t servoMinPulseUs = 1000;
 constexpr uint16_t servoMaxPulseUs = 2000;

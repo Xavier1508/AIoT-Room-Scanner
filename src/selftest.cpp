@@ -99,7 +99,7 @@ SelftestResult runSelftests() {
   check(parseCommand("save_servo_here") == Command::SaveServoHere);
   check(parseCommand("release_pose") == Command::ReleasePose);
   check(config::stepperNudgeHalfSteps == 114 && config::servoNudgeUs == 50);
-  check(config::servoMinPulseUs < config::servoMaxPulseUs && config::servoParkPulseUs == config::servoMaxPulseUs);
+  check(config::servoMinPulseUs < config::servoParkPulseUs && config::servoParkPulseUs < config::servoMaxPulseUs);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);
   check(parseCommand("wifi_scan") == Command::WifiScan);

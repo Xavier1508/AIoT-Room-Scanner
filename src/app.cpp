@@ -45,7 +45,11 @@ void App::begin() {
     stepperReferencePersisted_ = settings_.saveStepperReference(config::initialStepperReferenceHalfSteps);
     poseReferenceSource_ = stepperReferencePersisted_ ? "migration_default_saved" : "migration_default_unsaved";
   }
-  if (poseLoaded && pose.servoParkPulseValid) servoTargetUs_ = pose.servoParkPulseUs;
+  if (poseLoaded && pose.servoParkPulseValid) {
+    servoTargetUs_ = pose.servoParkPulseUs;
+    servoBasePersisted_ = true;
+    servoBaseSource_ = "nvs";
+  }
   network_.begin(*this, settings_);
   event("boot_idle_all_actuators_off");
   publish(millis());
@@ -58,7 +62,7 @@ void App::event(const char* text) {
 }
 void App::stopAll() {
   buzzer_.stop(); stepper_.stop(); servo_.stop();
-  stepperHolding_ = servoHolding_ = stepperMovePending_ = servoTestPending_ = false;
+  stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
   safety_.stop();
 }
 bool App::beginPose(uint32_t now) {
@@ -77,7 +81,7 @@ void App::releaseStepper() {
   syncPoseMode(millis());
 }
 void App::releaseServo() {
-  servo_.stop(); servoHolding_ = false; servoTestPending_ = false;
+  servo_.stop(); servoHolding_ = false;
   syncPoseMode(millis());
 }
 void App::clearQueue() {
@@ -149,7 +153,7 @@ String App::execute(Command command) {
     releaseStepper(); event("stepper_axis_released"); return result(true, "stepper_released");
   }
   if (command == Command::ReleaseServo) {
-    if (safety_.mode() != Mode::Parked || (!servoHolding_ && !servoTestPending_)) return result(false, "servo_not_active_no_action");
+    if (safety_.mode() != Mode::Parked || !servoHolding_) return result(false, "servo_not_held_no_action");
     releaseServo(); event("servo_axis_released"); return result(true, "servo_released");
   }
   if (command == Command::ZeroStepperHere) {
@@ -164,6 +168,8 @@ String App::execute(Command command) {
     if (safety_.mode() != Mode::Parked) return result(false, "pose_not_active_no_reference_change");
     if (!servoHolding_ || !servo_.attached()) return result(false, "servo_not_held_no_reference_change");
     const bool saved = settings_.saveServoParkPulse(servoTargetUs_);
+    servoBasePersisted_ = saved;
+    servoBaseSource_ = saved ? "nvs" : "nvs_save_failed";
     event(saved ? "servo_park_pulse_saved_nvs" : "servo_park_pulse_save_failed");
     return result(saved, saved ? "servo_park_pulse_saved" : "servo_park_pulse_save_failed");
   }
@@ -215,14 +221,21 @@ String App::execute(Command command) {
   if (command == Command::ParkServo || command == Command::ServoUp50 || command == Command::ServoDown50) {
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (servo_.active()) return result(false, "servo_busy");
-    const bool nudge = command != Command::ParkServo;
-    const bool started = nudge ? servo_.startNudge(now, command == Command::ServoUp50) : servo_.start(now, false);
-    if (!started) {
+    if (command != Command::ParkServo) {
+      if (command == Command::ServoUp50) {
+        if (servoTargetUs_ > config::servoMaxPulseUs - config::servoNudgeUs) return result(false, "servo_pulse_limit");
+        servoTargetUs_ += config::servoNudgeUs;
+      } else {
+        if (servoTargetUs_ < config::servoMinPulseUs + config::servoNudgeUs) return result(false, "servo_pulse_limit");
+        servoTargetUs_ -= config::servoNudgeUs;
+      }
+    }
+    if (!servo_.holdAt(now, servoTargetUs_)) {
       syncPoseMode(now); return result(false, "servo_pwm_setup_failed");
     }
-    servoHolding_ = false; servoTestPending_ = true;
-    event(command == Command::ParkServo ? "servo_old_small_test_started" : "servo_old_directional_nudge_started");
-    return result(true, command == Command::ParkServo ? "servo_small_test_started" : "servo_small_nudge_started");
+    servoHolding_ = true;
+    event(command == Command::ParkServo ? "servo_axis_hold_base" : "servo_axis_nudge_hold");
+    return result(true, command == Command::ParkServo ? "servo_hold_base" : "servo_nudge_hold");
   }
   if (command == Command::MotorArm) {
     safety_.armMotor(now); event("motor_armed_30s_physical_readiness_is_operator_responsibility");
@@ -302,6 +315,8 @@ void App::publish(uint32_t now) {
    s += String(",\"pose\":{\"stepper_reference_source\":") + jsonQuote(poseReferenceSource_) +
         ",\"stepper_reference_saved\":" + (stepperReferencePersisted_ ? "true" : "false") +
         ",\"stepper_nudge_half_steps\":" + config::stepperNudgeHalfSteps +
+        ",\"servo_base_source\":" + jsonQuote(servoBaseSource_) +
+        ",\"servo_base_saved\":" + (servoBasePersisted_ ? "true" : "false") +
         ",\"servo_target_us\":" + servoTargetUs_ + ",\"servo_nudge_us\":" + config::servoNudgeUs +
         ",\"servo_min_us\":" + config::servoMinPulseUs + ",\"servo_max_us\":" + config::servoMaxPulseUs + "},";
    s += String("\"actuators\":{\"buzzer_commanded_on\":") + (buzzer_.sounding() ? "true" : "false") +
@@ -311,7 +326,7 @@ void App::publish(uint32_t now) {
         ",\"relative_degrees_nominal\":" + String(stepper_.relativeSteps() * 360.0f / 4096.0f, 1) +
         ",\"step_scheduling_late\":" + stepper_.schedulingLate() +
         ",\"servo_attached\":" + (servo_.attached() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
-        ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") + ",\"servo_test_pending\":" + (servoTestPending_ ? "true" : "false") +
+        ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") +
         ",\"servo_target_us\":" + servoTargetUs_ +
         ",\"physical_motion_verified\":false}";
   s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
@@ -380,13 +395,7 @@ void App::tick() {
     poseReferenceSource_ = stepperReferencePersisted_ ? "nvs" : "nvs_save_failed";
     event("stepper_nudge_complete_hold");
   }
-  const bool servoWasActive = servo_.active();
   servo_.tick(now);
-  if (servoTestPending_ && servoWasActive && !servo_.active()) {
-    servoTestPending_ = false;
-    event("servo_old_small_test_complete_detached");
-    syncPoseMode(now);
-  }
   if ((safety_.mode() == Mode::Buzzer && !buzzer_.active()) ||
       (safety_.mode() == Mode::Stepper && !stepper_.active()) ||
       (safety_.mode() == Mode::Servo && !servo_.active())) {

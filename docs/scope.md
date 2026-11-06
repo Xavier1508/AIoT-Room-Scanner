@@ -18,9 +18,10 @@ readiness confirmation and matching supply ratings.
 Initially observed USB target: COM9, VID 303A / PID 1001,
 USB JTAG/serial debug unit. Re-enumerate rather than assuming this stays fixed.
 
-Handoff workbook: AIoT_ESP32S3_Handoff.xlsx, 18,244 bytes,
-SHA-256 17c402a42ad4f1fdf4f38083065d55204a5404799ebd62ca4c872ba2e04fec3b.
-All six sheets were read. Workbook T01-T13 initially say Belum diuji. Historical
+Handoff workbook: AIoT_ESP32S3_Handoff.xlsx, 19,159 bytes,
+SHA-256 2febfb7946b78157479461946c7f77f229ac8156b7b194a0f2d7c2b842975750.
+All sheets were read. The updated mapping adds HC-SR04 3.3 V on TRIG10/ECHO11
+and VL53L1X on SDA8/SCL9/INT14/XSHUT13. Workbook T01-T13 initially say Belum diuji. Historical
 photos referenced there are not embedded in the file. Mapping is a design,
 not continuity evidence. User master prompt overrides the workbook's optional
 OTA wording: web and authenticated OTA are mandatory in the first firmware.

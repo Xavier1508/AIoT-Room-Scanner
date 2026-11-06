@@ -22,28 +22,26 @@ bool ServoController::start(uint32_t now, bool longTest) {
   if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
   // Load neutral duty BEFORE routing the peripheral onto the pin.
   pulse(1500); ledcAttachPin(pins::servo, 0);
-  active_ = true; attached_ = true; longTest_ = longTest; sequence_ = 0; index_ = 0; at_ = now; return true;
-}
-bool ServoController::startNudge(uint32_t now, bool positive) {
-  if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
-  pulse(1500); ledcAttachPin(pins::servo, 0);
-  active_ = true; attached_ = true; longTest_ = false; sequence_ = positive ? 1 : 2; index_ = 0; at_ = now; return true;
+  active_ = true; attached_ = true; longTest_ = longTest; index_ = 0; at_ = now; return true;
 }
 bool ServoController::holdAt(uint32_t, uint16_t pulseUs) {
-  if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
-  pulse(pulseUs); ledcAttachPin(pins::servo, 0);
-  active_ = false; attached_ = true; longTest_ = false; return true;
+  if (!attached_) {
+    if (ledcSetup(0, 50, servoResolutionBits) == 0) return false;
+    pulse(pulseUs); ledcAttachPin(pins::servo, 0);
+    attached_ = true;
+  } else {
+    pulse(pulseUs);
+  }
+  active_ = false; longTest_ = false; return true;
 }
 void ServoController::tick(uint32_t now) {
   static const uint16_t pulses[] = {1500, 1450, 1500, 1550, 1500};
-  static const uint16_t positiveNudge[] = {1500, 1550, 1500};
-  static const uint16_t negativeNudge[] = {1500, 1450, 1500};
   static const uint16_t longPulses[] = {
       1500, 1450, 1500, 1550, 1500, 1450, 1500,
       1550, 1500, 1450, 1500, 1550, 1500};
   if (!active_ || uint32_t(now - at_) < 700) return;
-  const uint16_t* sequence = longTest_ ? longPulses : (sequence_ == 1 ? positiveNudge : (sequence_ == 2 ? negativeNudge : pulses));
-  const size_t length = longTest_ ? sizeof(longPulses) / sizeof(longPulses[0]) : (sequence_ == 0 ? sizeof(pulses) / sizeof(pulses[0]) : 3);
+  const uint16_t* sequence = longTest_ ? longPulses : pulses;
+  const size_t length = longTest_ ? sizeof(longPulses) / sizeof(longPulses[0]) : sizeof(pulses) / sizeof(pulses[0]);
   if (++index_ >= length) { stop(); return; }
   pulse(sequence[index_]); at_ = now;
 }
@@ -51,5 +49,5 @@ void ServoController::stop() {
   if (attached_) { ledcDetachPin(pins::servo); ledcWrite(0, 0); }
   digitalWrite(pins::servo, LOW); pinMode(pins::servo, OUTPUT);
   active_ = false; attached_ = false; pulseUs_ = 0;
-  longTest_ = false; sequence_ = 0;
+  longTest_ = false;
 }

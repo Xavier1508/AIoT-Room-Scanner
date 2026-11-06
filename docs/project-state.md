@@ -5,14 +5,15 @@ application OTA are verified; the new park pose still requires user-controlled
 physical direction/clearance verification.
 
 - Scope/physical checklist: [scope.md](scope.md).
+- Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
 - ESP32-S3 rev0.2, 16 MB quad flash, native USB Serial/JTAG COM9 identified.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.5-servo-small-test`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T181633271Z/firmware.bin`.
-  Size **797424 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `6f6f2ddf536f7b1a253a3d6085299a735a9c97bda1ffaa1d9a6e2ed93f24af6c`.
+- **Running firmware: `0.2.6-servo-1800-hold`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T201527036Z/firmware.bin`.
+  Size **797472 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `4529ee7abf3845b2a72a2354492c8e67e04d5d1b8b95681e3ca3426418aad8ad`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -94,9 +95,15 @@ physical direction/clearance verification.
   are available; no nudge was triggered automatically. Evidence:
   `analysis/device/ota-pose-axes-20261106T174847Z/`.
 - Real LAN OTA installed `0.2.5-servo-small-test`, returning IDLE with both arms
-  false, stepper off and servo detached. Servo axis buttons now run the legacy
-  small-pulse tests and detach instead of holding. Evidence:
+  false, stepper off and servo detached. Servo axis buttons then ran the legacy
+  small-pulse tests and detached. Evidence:
   `analysis/device/ota-servo-small-test-20261106T181851Z/`.
+- Real LAN OTA installed `0.2.6-servo-1800-hold`, returning IDLE with stepper
+  reference 0, servo detached, servo target 1800 µs, and
+  `servo_base_source=default_1800`. `park_servo` now holds the current target;
+  `servo_up_50`/`servo_down_50` adjust it by 50 µs and keep holding;
+  `save_servo_here` persists the found base. Evidence:
+  `analysis/device/ota-servo-hold-tune-20261106T201809Z/`.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
@@ -104,13 +111,15 @@ physical direction/clearance verification.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** hard-refresh the dashboard and support the arm. Test the
-servo first without the heavy arm/load using `Uji kecil pola lama` or one
-directional nudge; the sequence is 1500→1450/1550→1500 µs and then detach.
-If it moves unloaded but not loaded, investigate servo rail/current and leverage;
-if it does not move unloaded, inspect signal, horn spline and servo power. No
-physical servo motion was triggered automatically by the agent and no angle claim
-is made. Sensor implementation remains deferred until this servo check passes.
+**Current next action:** hard-refresh the dashboard and support the arm. Press
+`Hold di base 1800 µs`, then use `Geser +50 µs · hold` / `Geser −50 µs · hold`
+one click at a time until the sensor arm faces forward. Record the pulse shown in
+status, press `Simpan base servo`, and verify after reboot/OTA that `park_servo`
+returns to that saved base. If the servo moves unloaded but not loaded, investigate
+servo rail/current and leverage; if it does not move at all, inspect signal, horn
+spline and servo power. No physical servo motion was triggered automatically by
+the agent and no angle claim is made. Sensor implementation remains deferred until
+this servo check passes.
 HLK remains a communication success but its distance needs a later controlled
 observation.
 
@@ -132,7 +141,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **42 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **44 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -142,16 +151,17 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   no-rotation software/safe-state result; 29 = jumper/no-rotation result;
   30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
   evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
-  post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA.
+  post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA;
+  43–44 = servo-hold-tune build and OTA.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.5-servo-small-test`, prior
-  `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,
-  `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly separated by run
-  folder. Prefer the current servo-small-test build.
+- Retained binary deliverables: current `0.2.6-servo-1800-hold`, prior
+  `0.2.5-servo-small-test`, `0.2.4-pose-axes`, `0.2.3-park-pose`,
+  `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb`
+  baseline, clearly separated by run folder. Prefer the current hold-tune build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

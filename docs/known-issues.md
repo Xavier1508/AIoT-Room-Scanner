@@ -7,8 +7,10 @@ ULN2003 jumper layout, supply current ratings, rail voltages, backfeed protectio
 servo variant and mechanics still require operator confirmation/measurement.
 No multimeter result exists. GPIO state is not continuity/voltage evidence.
 
-No real HLK readings, buzzer sounds, stepper rotation, servo motion, or combined
-load stability have been established. No ToF/3D/AI/CSI/CDM324 result exists.
+Real HLK UART frames, buzzer sound, and no-load servo movement have been observed
+by the user; those observations are not electrical measurements. Stepper rotation
+under load, loaded servo movement, and combined load stability remain unresolved.
+No ToF/3D/AI/CSI/CDM324 result exists.
 
 ## Network boundary
 
@@ -33,6 +35,19 @@ ESP32-S3 LEDC maximum resolution 14 bits, while the initial code requested 16.
 The repair is `0.2.1-servo`: 14-bit duty conversion at 50 Hz. It was built,
 installed through real LAN OTA, and the user confirmed no-load horn movement.
 Stepper supply remains unresolved independently of this servo repair.
+
+The `0.2.4-pose-axes` hold experiment used 1950/2000 us and did not produce the
+expected loaded servo movement in the user's observation. The user then reported
+that the legacy small-pulse sequence (`1500 -> 1450/1550 -> 1500 us`) moved the
+servo normally. The root cause of the hold-specific failure was not isolated;
+possible mechanical limit, supply sag, or load torque remain unproven. `0.2.5`
+restored the legacy sequence, and `0.2.6` adds a 1800 us base-hold tuning mode
+with +/-50 us hold adjustments. Physical loaded movement and rail voltage still
+require operator measurement.
+
+The updated workbook maps HC-SR04 3.3 V to TRIG10/ECHO11 and VL53L1X to
+SDA8/SCL9, with optional INT14/XSHUT13. Sensor firmware is intentionally not
+implemented yet. A 5 V HC-SR04 must not connect ECHO directly to the ESP.
 
 ## USB bring-up history (keep failures distinct from successful builds)
 
