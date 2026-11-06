@@ -6,6 +6,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include "actuators.h"
+#include "config.h"
 #include "commands.h"
 #include "console.h"
 #include "hlk_protocol.h"
@@ -38,6 +39,10 @@ class App {
   void publish(uint32_t now);
   void event(const char* text);
   void clearQueue();
+  bool beginPose(uint32_t now);
+  void syncPoseMode(uint32_t now);
+  void releaseStepper();
+  void releaseServo();
   Console console_;
   SettingsStore settings_;
   Network network_;
@@ -48,6 +53,10 @@ class App {
   HardwareSerial hlkSerial_{1};
   HlkParser hlk_;
   bool hlkEnabled_ = false, wifiWasConnected_ = false;
+  bool stepperHolding_ = false, servoHolding_ = false, stepperMovePending_ = false;
+  bool stepperReferencePersisted_ = false;
+  String poseReferenceSource_ = "migration_default_1024";
+  uint16_t servoTargetUs_ = config::servoParkPulseUs;
   uint32_t hlkBytes_ = 0, lastPublish_ = 0, maxLoopUs_ = 0;
   uint32_t bootReason_ = 0, lastCommandId_ = 0;
   String lastResult_ = "{}", snapshot_ = "{}";

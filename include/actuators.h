@@ -21,6 +21,8 @@ class StepperController {
   void begin();
   bool start(uint32_t nowUs, int halfSteps);
   bool startPark(uint32_t nowUs, int halfSteps, int direction);
+  void holdCurrent();
+  void setRelativeSteps(int halfSteps) { if (!active_) position_ = halfSteps; }
   void tick(uint32_t nowUs);
   void stop();
   bool active() const { return active_; }

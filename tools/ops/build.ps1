@@ -29,6 +29,11 @@ try {
     $env:PLATFORMIO_SETTING_CHECK_PLATFORMIO_INTERVAL = '36500'
     $env:PLATFORMIO_SETTING_CHECK_PRUNE_SYSTEM_THRESHOLD = '0'
     $freeBefore = (Get-PSDrive C).Free
+    $sourcePaths = @('platformio.ini') + @(Get-ChildItem include, src -File -Recurse | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+    $sourceBefore = @{}
+    foreach ($sourcePath in $sourcePaths) {
+        $sourceBefore[$sourcePath] = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
     $preflight = @'
 from platformio.platform.factory import PlatformFactory
 from platformio.package.manager.core import get_core_package_dir
@@ -59,8 +64,11 @@ print('Offline dependency preflight passed; all required packages already instal
     $files = @(Get-ChildItem -LiteralPath $run -File | ForEach-Object {
         [ordered]@{name=$_.Name; bytes=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
-    $sourcePaths = @('platformio.ini') + @(Get-ChildItem include, src -File -Recurse | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
-    $sources = @($sourcePaths | ForEach-Object { [ordered]@{path=$_; sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()} })
+    $sources = @($sourcePaths | ForEach-Object {
+        $after = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($after -ne $sourceBefore[$_]) { throw "Source changed during build: $_" }
+        [ordered]@{path=$_; sha256=$after}
+    })
     $version = [regex]::Match((Get-Content include\config.h -Raw), 'version\[\]\s*=\s*"([^"]+)"').Groups[1].Value
     [ordered]@{version=$version; utc=$stamp; platform='espressif32@6.12.0'; arduino='2.0.17'; flash_bytes=16777216; psram_enabled=$false; ota_slot_bytes=$slot; firmware_bytes=$firmware.Length; ota_headroom_bytes=($slot-$firmware.Length); free_bytes_before=$freeBefore; artifacts=$files; sources=$sources} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $run 'manifest.json') -Encoding UTF8
     @"

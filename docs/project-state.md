@@ -1,6 +1,6 @@
 # Project state
 
-Updated: 2026-11-06. USB bring-up, SSID discovery, LAN dashboard access and real
+Updated: 2026-11-07. USB bring-up, SSID discovery, LAN dashboard access and real
 application OTA are verified; the new park pose still requires user-controlled
 physical direction/clearance verification.
 
@@ -9,10 +9,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.3-park-pose`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T164416774Z/firmware.bin`.
-  Size **788976 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `0ccdd0cc752476e2f917fd847efeb8faf21640cf3f328be645079cd0f0007d6d`.
+- **Running firmware: `0.2.4-pose-axes`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T173907305Z/firmware.bin`.
+  Size **797168 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `69edf4a345afe88dd4968f0aa0dccdba0b70bbd231c0c2eb2377a98b4ed22e97`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -32,7 +32,7 @@ physical direction/clearance verification.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **56 C++ assertions + 19 Python tests passed**; dashboard JS
+- Portable tests: **68 C++ assertions + 19 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -88,6 +88,11 @@ physical direction/clearance verification.
 - Real LAN OTA installed `0.2.3-park-pose`, returning IDLE with both arms false,
   stepper de-energized, servo detached and OTA inactive. `park_pose` was not
   triggered automatically. Evidence: `analysis/device/ota-park-pose-20261106T164819Z/`.
+- Real LAN OTA installed `0.2.4-pose-axes`, returning IDLE with both arms false,
+  stepper off, servo detached, and a migrated NVS reference of 1024 half-step
+  (90° nominal). The 114-half-step nudge controls and independent axis controls
+  are available; no nudge was triggered automatically. Evidence:
+  `analysis/device/ota-pose-axes-20261106T174847Z/`.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
@@ -95,11 +100,12 @@ physical direction/clearance verification.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** with the mechanism supported and cable clearance confirmed,
-the user may press `park_pose` once and observe the nominal servo/stepper direction.
-If direction or clearance is wrong, use STOP or remove power physically; do not
-repeat the pose command. `release_pose` intentionally removes holding torque.
-The agent did not trigger motion automatically and makes no physical pose claim.
+**Current next action:** hard-refresh the dashboard. For the requested correction,
+press `Kiri 10° nominal` once; it should move 114 half-step from the migrated
+1024 reference to 910 (80° nominal) and hold. For servo calibration, use
+`Pulse −50 µs` or `Pulse +50 µs` one click at a time, then `Simpan target servo`.
+Use per-axis release or STOP if clearance/direction is wrong. No motion was
+triggered automatically by the agent and no physical angle claim is made.
 HLK remains a communication success but its distance needs a later controlled
 observation.
 
@@ -121,7 +127,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **35 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **40 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -130,15 +136,16 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   25–27 = servo-fix build, real OTA and physical servo result; 28 = stepper
   no-rotation software/safe-state result; 29 = jumper/no-rotation result;
   30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
-  evidence.
+  evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
+  post-OTA-helper compatibility test.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.3-park-pose`, prior `0.2.2-long-tests`,
-  `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly
-  separated by run folder. Prefer the current park-pose build.
+- Retained binary deliverables: current `0.2.4-pose-axes`, prior `0.2.3-park-pose`,
+  `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb`
+  baseline, clearly separated by run folder. Prefer the current pose-axes build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

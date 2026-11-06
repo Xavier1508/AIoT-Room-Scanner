@@ -1,6 +1,7 @@
 #include "settings.h"
 #include <Preferences.h>
 #include <string.h>
+#include "config.h"
 
 namespace {
 constexpr uint32_t magic = 0x41494f54;
@@ -50,6 +51,49 @@ bool SettingsStore::load() {
   configured_ = ok && valid(value_);
   if (!configured_) wipe(&value_, sizeof(value_));
   return configured_;
+}
+
+bool SettingsStore::loadPose(PoseSettings& pose) {
+  pose = PoseSettings{};
+  Preferences preferences;
+  if (!preferences.begin("aiot-pose", true)) return false;
+  if (preferences.getUChar("schema", 0) != 1) {
+    preferences.end(); return false;
+  }
+  if (preferences.isKey("step_ref")) {
+    const int32_t value = preferences.getInt("step_ref", 0);
+    if (value >= -config::longRelativeStepLimit && value <= config::longRelativeStepLimit) {
+      pose.stepperReferenceHalfSteps = value; pose.stepperReferenceValid = true;
+    }
+  }
+  if (preferences.isKey("servo_us")) {
+    const uint16_t value = preferences.getUShort("servo_us", config::servoParkPulseUs);
+    if (value >= config::servoMinPulseUs && value <= config::servoMaxPulseUs) {
+      pose.servoParkPulseUs = value; pose.servoParkPulseValid = true;
+    }
+  }
+  preferences.end();
+  return pose.stepperReferenceValid || pose.servoParkPulseValid;
+}
+
+bool SettingsStore::saveStepperReference(int32_t halfSteps) {
+  if (halfSteps < -config::longRelativeStepLimit || halfSteps > config::longRelativeStepLimit) return false;
+  Preferences preferences;
+  if (!preferences.begin("aiot-pose", false)) return false;
+  const bool ok = preferences.putUChar("schema", 1) == 1 &&
+                  preferences.putInt("step_ref", halfSteps) == sizeof(halfSteps);
+  preferences.end();
+  return ok;
+}
+
+bool SettingsStore::saveServoParkPulse(uint16_t pulseUs) {
+  if (pulseUs < config::servoMinPulseUs || pulseUs > config::servoMaxPulseUs) return false;
+  Preferences preferences;
+  if (!preferences.begin("aiot-pose", false)) return false;
+  const bool ok = preferences.putUChar("schema", 1) == 1 &&
+                  preferences.putUShort("servo_us", pulseUs) == sizeof(pulseUs);
+  preferences.end();
+  return ok;
 }
 
 bool SettingsStore::provision(char* line) {

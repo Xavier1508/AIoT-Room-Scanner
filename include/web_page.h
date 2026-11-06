@@ -17,14 +17,18 @@ Uji awal tanpa beban. Nilai GPIO/log bukan bukti tegangan, kontinuitas kabel, at
 <section class="card"><h2>Buzzer &amp; radar</h2>
 <button data-command="buzzer_test">3 beep</button><button data-command="hlk_start">Mulai HLK</button><button data-command="hlk_stop">Hentikan HLK</button>
 <p class="muted">HLK pasif 256000 baud; tidak mengubah konfigurasi sensor.</p><pre id="hlk">Belum ada data valid.</pre></section>
-<section class="card"><h2>Stepper</h2><button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button><button data-command="step_test_long">512 maju / 512 mundur · panjang</button>
-<p class="muted">Uji panjang sekitar 10 dtk, tetap terbatas dan bukan putaran kontinu. Rating motor, suplai, jumper, ground, dan mekanik harus Anda verifikasi dahulu. Langkah relatif, bukan sudut terkalibrasi.</p>
-<h2>Servo</h2><button data-command="servo_arm">Arm servo · 30 dtk</button><button data-command="servo_test">Uji pulsa kecil</button><button data-command="servo_test_long">Uji pulsa kecil · panjang</button>
-<p class="muted">Uji panjang sekitar 8 dtk, hanya 1450/1500/1550 µs berulang. Jangan beri 9 V. Uji tanpa beban.</p></section>
-<section class="card"><h2>Pose parkir</h2>
-<button data-command="park_pose">Park pose · servo 90° kanan + stepper 45° kanan</button>
-<button data-command="release_pose">Release pose · lepas hold</button>
-<p class="warn">Park pose adalah gerakan relatif nominal: servo memakai pulsa 2000 µs dan stepper 512 half-step. Tidak ada encoder/homing, jadi sudut absolut dan arah kanan harus Anda verifikasi. Pose mempertahankan PWM servo dan kumparan stepper; release/STOP melepas torsi dan dapat menjatuhkan lengan. Pastikan clearance, kabel tidak tertarik, dan siapkan pemutus daya fisik.</p></section>
+<section class="card"><h2>Axis X · Stepper horizontal</h2>
+<button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button><button data-command="step_test_long">512 maju / 512 mundur · panjang</button>
+<button data-command="park_stepper">Hold stepper di posisi sekarang</button><button data-command="stepper_left_10">Kiri 10° nominal</button><button data-command="stepper_right_10">Kanan 10° nominal</button><button data-command="release_stepper">Release stepper</button>
+<button data-command="zero_stepper_here">Set referensi 0 di sini</button>
+<p class="muted">Nudge 10° = 114 half-step nominal. Referensi relatif/NVS, bukan encoder atau homing. Arah kanan mengikuti tabel coil dan harus diverifikasi.</p>
+<h2>Uji stepper</h2><p class="muted">Uji panjang tetap bounded dan bukan putaran kontinu. Rating motor, suplai, jumper, ground, dan mekanik harus Anda verifikasi.</p></section>
+<section class="card"><h2>Axis Y · Servo elevasi</h2>
+<button data-command="servo_arm">Arm servo · 30 dtk</button><button data-command="servo_test">Uji pulsa kecil</button><button data-command="servo_test_long">Uji pulsa kecil · panjang</button>
+<button data-command="park_servo">Hold servo di target tersimpan</button><button data-command="servo_up_50">Pulse +50 µs</button><button data-command="servo_down_50">Pulse −50 µs</button><button data-command="release_servo">Release servo</button><button data-command="save_servo_here">Simpan target servo</button>
+<p class="muted">Target awal 2000 µs; range dibatasi 1000–2000 µs. +/− pulse belum otomatis berarti atas/bawah secara fisik; amati arm dan gunakan nudge kecil. Jangan beri 9 V.</p>
+<h2>Pose &amp; keselamatan</h2><button data-command="release_pose">Release kedua axis</button>
+<p class="warn">Kedua axis dapat ditahan bersamaan. Hold mempertahankan PWM/kumparan dan dapat panas; release/STOP melepas torsi sehingga lengan dapat turun. Pastikan clearance, kabel tidak tertarik, dan siapkan pemutus daya fisik.</p></section>
 </div>
 <p id="result" role="status"></p>
 <section class="card"><h2>Update firmware OTA</h2>
@@ -40,7 +44,7 @@ const $=id=>document.getElementById(id);
 async function session(){const r=await fetch('/api/session',{cache:'no-store'});if(!r.ok)throw Error('Autentikasi gagal: '+r.status);csrf=(await r.json()).csrf;}
 async function command(name){
   if(uploading&&name!=='stop')return;
-const warnings={motor_arm:'Konfirmasi: rating motor/suplai cocok, jumper teridentifikasi, ground benar, tidak ada beban dan kabel bebas. Arm motor?',servo_arm:'Konfirmasi: suplai servo sesuai rating (bukan 9 V), ground benar, horn tanpa beban dan siap menghentikan daya bila macet. Arm servo?',park_pose:'Konfirmasi: clearance mekanik aman, kabel/lengan tidak tertarik, stepper dan servo siap bergerak, serta Anda siap menekan STOP atau memutus daya fisik. Park pose nominal 90°/45° searah jarum jam dan menahan torsi?',release_pose:'Konfirmasi: melepas hold servo dan kumparan stepper dapat membuat lengan turun atau kabel berubah posisi. Lepaskan pose?'};
+const warnings={motor_arm:'Konfirmasi: rating motor/suplai cocok, jumper teridentifikasi, ground benar, tidak ada beban dan kabel bebas. Arm motor?',servo_arm:'Konfirmasi: suplai servo sesuai rating (bukan 9 V), horn tanpa beban dan siap menghentikan daya bila macet. Arm servo?',park_stepper:'Konfirmasi: mekanik stepper aman. Perintah ini memberi arus hold pada posisi sekarang.',stepper_left_10:'Konfirmasi: clearance stepper aman dan kabel tidak tertarik. Geser kiri nominal 10°?',stepper_right_10:'Konfirmasi: clearance stepper aman dan kabel tidak tertarik. Geser kanan nominal 10°?',park_servo:'Konfirmasi: horn/arm servo aman bergerak dan tidak mentok. Terapkan target pulse servo?',servo_up_50:'Konfirmasi: nudge servo +50 µs aman dan Anda siap STOP bila mendekati batas.',servo_down_50:'Konfirmasi: nudge servo −50 µs aman dan Anda siap STOP bila mendekati batas.',release_stepper:'Konfirmasi: melepas stepper dapat membuat axis horizontal bergerak jatuh.',release_servo:'Konfirmasi: melepas servo dapat membuat axis elevasi turun.',release_pose:'Konfirmasi: melepas hold kedua axis dapat membuat lengan turun atau kabel berubah posisi?',zero_stepper_here:'Konfirmasi: posisi mekanik saat ini akan dijadikan referensi relatif 0 dan disimpan lokal.',save_servo_here:'Simpan pulse servo saat ini sebagai target park lokal?' };
   if(warnings[name]&&!confirm(warnings[name]))return;
   try{const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'text/plain','X-CSRF-Token':csrf},body:name});const data=await r.json();$('result').textContent=JSON.stringify(data);if(!r.ok)throw Error(data.message||r.status);setTimeout(refresh,250);}catch(e){$('result').textContent=e.message;}
 }
@@ -48,7 +52,7 @@ function render(s){
   state=s;$('summary').textContent=s.version+' · '+s.mode+' · '+s.wifi.ip+' · uptime '+Math.floor(s.uptime_ms/1000)+' dtk';
   $('hlk').textContent=(s.hlk.valid?'VALID':s.hlk.stale?'STALE — jangan dipakai sebagai data terkini':'BELUM VALID')+'\n'+JSON.stringify(s.hlk.last_reading,null,2);
   $('status').textContent=JSON.stringify(s,null,2);
-  for(const b of document.querySelectorAll('[data-command]')){const c=b.dataset.command;b.disabled=uploading||s.ota_active||(['step_test','step_test_long'].includes(c)&&!s.motor_armed)||(['servo_test','servo_test_long'].includes(c)&&!s.servo_armed)||(c==='park_pose'&&(s.mode!=='IDLE'||s.motor_armed||s.servo_armed||s.actuators.relative_half_steps!==0))||(c==='release_pose'&&s.mode!=='PARKED')||((s.mode!=='IDLE')&&['buzzer_test','motor_arm','servo_arm','step_test','step_test_long','servo_test','servo_test_long','park_pose','selftest'].includes(c));}
+  for(const b of document.querySelectorAll('[data-command]')){const c=b.dataset.command;const pose=['park_stepper','stepper_left_10','stepper_right_10','park_servo','servo_up_50','servo_down_50','zero_stepper_here','save_servo_here','release_stepper','release_servo','release_pose'].includes(c);b.disabled=uploading||s.ota_active||(['step_test','step_test_long'].includes(c)&&!s.motor_armed)||(['servo_test','servo_test_long'].includes(c)&&!s.servo_armed)||(pose&&(s.mode!=='IDLE'&&s.mode!=='PARKED'))||(['park_stepper','stepper_left_10','stepper_right_10','zero_stepper_here'].includes(c)&&s.actuators.stepper_energized&&!s.actuators.stepper_holding)||(['release_stepper'].includes(c)&&!s.actuators.stepper_holding)||(['release_servo','save_servo_here'].includes(c)&&!s.actuators.servo_holding)||(c==='release_pose'&&s.mode!=='PARKED')||((s.mode!=='IDLE')&&['buzzer_test','motor_arm','servo_arm','step_test','step_test_long','servo_test','servo_test_long','selftest'].includes(c));}
 }
 async function refresh(){if(uploading||polling)return;polling=true;try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();render(s);}catch(e){$('summary').textContent='Tidak terhubung: '+e.message+' · periksa daya/Wi-Fi; tidak ada gerakan yang dijadwalkan ulang.';}finally{polling=false;}}
 for(const b of document.querySelectorAll('[data-command]'))b.onclick=()=>command(b.dataset.command);

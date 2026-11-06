@@ -1,7 +1,7 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi saat ini: **0.2.3-park-pose**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi saat ini: **0.2.4-pose-axes**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
@@ -178,8 +178,10 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | motor_arm / step_test | Arm 30 detik, satu uji 64 half-step maju lalu mundur ~100/s |
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
 | step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
-| park_pose | Dari referensi stepper relatif 0, gerak nominal: servo 2000 µs dan stepper 512 half-step dengan tanda arah yang dikonfigurasi; lalu tahan keduanya |
-| release_pose | Hanya dari `PARKED`; lepas hold dan kembali IDLE |
+| park_stepper / stepper_left_10 / stepper_right_10 | Hold posisi stepper sekarang atau nudge 114 half-step nominal (±10°) |
+| park_servo / servo_up_50 / servo_down_50 | Hold target servo atau nudge pulse ±50 µs; target dibatasi 1000–2000 µs |
+| release_stepper / release_servo / release_pose | Lepas satu axis atau kedua axis; torsi dapat hilang dan beban dapat turun |
+| zero_stepper_here / save_servo_here | Simpan referensi relatif stepper atau target pulse servo ke NVS lokal |
 | stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm |
 | selftest | Fixture parser/safety terisolasi; tidak menguji sensor fisik |
 | wifi_scan | Hentikan/disarm aktuator; mulai scan SSID pasif asynchronous |
@@ -206,10 +208,11 @@ berada di `setup`. WEP/WPA1/Enterprise tidak didukung alur password sederhana in
 gunakan jaringan WPA2/WPA3 Personal yang sesuai atau OPEN yang sengaja diizinkan
 (dengan peringatan). Tidak mengubah jaringan Wi-Fi laptop atau router.
 Stepper mempunyai soft limit ±128 langkah untuk uji pendek dan ±1024 langkah
-untuk uji panjang/pose relatif dari boot, bukan homing, encoder, atau sudut
-absolut. `park_pose` memperkirakan 45° dengan 512 half-step pada varian
-4096 half-step/rev; arah clockwise dan sudut aktual harus diverifikasi secara
-fisik. Jangan putar horizontal searah terus-menerus.
+untuk pose relatif, bukan homing, encoder, atau sudut absolut. Nudge 10° memakai
+114 half-step pada asumsi 4096 half-step/rev; arah clockwise dan sudut aktual
+harus diverifikasi secara fisik. Referensi migrasi awal perangkat ini berasal dari
+status firmware sebelumnya (1024 half-step), lalu dapat diubah dengan
+`zero_stepper_here`. Jangan putar horizontal searah terus-menerus.
 OUT HLK bersifat raw/unverified; presence live hanya boleh ditafsirkan dari frame
 valid dan belum stale. Batas stale 2 detik, timeout frame parsial 100 ms.
 Jarak HLK bukan koordinat manusia atau bukti objek mendekat.
@@ -222,19 +225,12 @@ Halaman menampilkan versi, uptime, status suplai **tidak diukur**, reset/brownou
 memori, status perangkat, radar valid/stale, arm/test/stop, dan upload firmware.
 HTTP berjalan pada task terpisah dari loop perangkat.
 
-Dashboard menyediakan tes panjang yang tetap bounded: stepper 512 half-step
-maju lalu 512 mundur, serta pengulangan pulsa servo kecil sekitar 8 detik.
-Tes tersebut bukan putaran kontinu atau sweep absolut dan tidak dijalankan
-otomatis setelah OTA. Lakukan hard-refresh browser setelah OTA untuk memuat
-tombol baru.
-
-Dashboard juga menyediakan `park_pose` untuk merapikan posisi dari referensi
-stepper relatif 0: servo diberi pulsa nominal 2000 µs dan stepper bergerak 512
-half-step searah tanda clockwise yang dikonfigurasi, lalu keduanya tetap
-menahan posisi. Ini bukan posisi absolut;
-tidak ada encoder/homing dan firmware tidak melakukan park otomatis saat boot
-atau OTA. Gunakan `release_pose` atau tombol STOP untuk melepas hold setelah
-mekanik sudah aman.
+Dashboard menyediakan tes panjang yang tetap bounded dan dua kartu axis terpisah.
+Axis X mengontrol stepper horizontal; Axis Y mengontrol servo elevasi. Gunakan
+`park_stepper`/`park_servo` untuk hold, tombol nudge untuk mencari titik seimbang,
+kemudian simpan referensi dengan tombol NVS. Tidak ada encoder/homing dan firmware
+tidak melakukan gerakan otomatis saat boot atau OTA. Lakukan hard-refresh browser
+setelah OTA untuk memuat tombol baru.
 
 Dashboard utama adalah root URL:
 

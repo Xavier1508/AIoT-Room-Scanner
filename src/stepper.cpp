@@ -21,6 +21,14 @@ bool StepperController::startPark(uint32_t nowUs, int halfSteps, int direction) 
   holdAtEnd_ = true; active_ = true; nextUs_ = nowUs + config::stepIntervalUs;
   return true;
 }
+void StepperController::holdCurrent() {
+  if (active_) return;
+  static const uint8_t halfSteps[] = {1, 3, 2, 6, 4, 12, 8, 9};
+  for (unsigned i = 0; i < 4; ++i) {
+    digitalWrite(pins::stepper[i], (halfSteps[phase_] >> i) & 1);
+  }
+  energized_ = true;
+}
 void StepperController::tick(uint32_t nowUs) {
   if (!active_ || int32_t(nowUs - nextUs_) < 0) return;
   if (uint32_t(nowUs - nextUs_) > config::stepIntervalUs) ++late_;

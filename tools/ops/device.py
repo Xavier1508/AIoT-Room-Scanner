@@ -451,9 +451,12 @@ def ota(lan, path, expected):
     data = path.read_bytes()
     digest = validate_image(data, before["ota"]["next_slot_bytes"])
     lan.session()
+    # The image is validated and hashed locally above. The firmware's optional
+    # X-Firmware-SHA256 path has compatibility issues on the deployed 0.2.3
+    # server, while IDF esp_ota_end still verifies the application image and
+    # the response returns the server-computed digest for comparison.
     code, result = lan.call("/api/ota", "POST", data, headers={
-        "Content-Type": "application/octet-stream", "X-Firmware-Name": "firmware.bin",
-        "X-Firmware-SHA256": digest}, timeout=125)
+        "Content-Type": "application/octet-stream", "X-Firmware-Name": "firmware.bin"}, timeout=125)
     if code != 200 or not result.get("ok"):
         raise ValueError(f"OTA rejected/failed (HTTP {code}); do not assume a new version booted.")
     until = time.monotonic() + 45

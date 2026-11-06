@@ -32,6 +32,20 @@ void App::begin() {
   bootReason_ = esp_reset_reason();
   console_.begin(*this);
   settings_.load();
+  PoseSettings pose;
+  const bool poseLoaded = settings_.loadPose(pose);
+  if (poseLoaded && pose.stepperReferenceValid) {
+    stepper_.setRelativeSteps(pose.stepperReferenceHalfSteps);
+    stepperReferencePersisted_ = true;
+    poseReferenceSource_ = "nvs";
+  } else {
+    // The previous firmware reported 1024 while this device was physically
+    // parked. This is only a migration reference, not an absolute position.
+    stepper_.setRelativeSteps(config::initialStepperReferenceHalfSteps);
+    stepperReferencePersisted_ = settings_.saveStepperReference(config::initialStepperReferenceHalfSteps);
+    poseReferenceSource_ = stepperReferencePersisted_ ? "migration_default_saved" : "migration_default_unsaved";
+  }
+  if (poseLoaded && pose.servoParkPulseValid) servoTargetUs_ = pose.servoParkPulseUs;
   network_.begin(*this, settings_);
   event("boot_idle_all_actuators_off");
   publish(millis());
@@ -43,7 +57,28 @@ void App::event(const char* text) {
   events_[eventIndex_++ % 8] = String(millis()) + ":" + text;
 }
 void App::stopAll() {
-  buzzer_.stop(); stepper_.stop(); servo_.stop(); safety_.stop();
+  buzzer_.stop(); stepper_.stop(); servo_.stop();
+  stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
+  safety_.stop();
+}
+bool App::beginPose(uint32_t now) {
+  if (safety_.mode() == Mode::Parked) return true;
+  return safety_.beginPark(now);
+}
+void App::syncPoseMode(uint32_t now) {
+  if (stepperHolding_ || servoHolding_ || stepperMovePending_) {
+    if (safety_.mode() == Mode::Idle) safety_.beginPark(now);
+  } else if (safety_.mode() == Mode::Parked) {
+    safety_.stop();
+  }
+}
+void App::releaseStepper() {
+  stepper_.stop(); stepperHolding_ = false; stepperMovePending_ = false;
+  syncPoseMode(millis());
+}
+void App::releaseServo() {
+  servo_.stop(); servoHolding_ = false;
+  syncPoseMode(millis());
 }
 void App::clearQueue() {
   CommandRequest discarded;
@@ -82,7 +117,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_pose\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"release_stepper\",\"park_servo\",\"servo_up_50\",\"servo_down_50\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -90,6 +125,7 @@ String App::execute(Command command) {
     event("stop_disarmed_outputs_off"); return result(true, "stopped_disarmed");
   }
   if (otaActive()) return result(false, "ota_locked_no_action");
+  if (command == Command::ParkPose) return result(false, "use_separate_axis_commands");
   if (command == Command::WifiScanResults) return network_.scanJson();
   if (command >= Command::WifiScanPage0 && command <= Command::WifiScanPage7) {
     return network_.scanJson(int(command) - int(Command::WifiScanPage0));
@@ -107,6 +143,29 @@ String App::execute(Command command) {
     if (safety_.mode() != Mode::Parked) return result(false, "not_parked_no_action");
     stopAll(); event("park_pose_released_outputs_off");
     return result(true, "pose_released_idle");
+  }
+  if (command == Command::ReleaseStepper) {
+    if (safety_.mode() != Mode::Parked || (!stepperHolding_ && !stepperMovePending_)) return result(false, "stepper_not_held_no_action");
+    releaseStepper(); event("stepper_axis_released"); return result(true, "stepper_released");
+  }
+  if (command == Command::ReleaseServo) {
+    if (safety_.mode() != Mode::Parked || !servoHolding_) return result(false, "servo_not_held_no_action");
+    releaseServo(); event("servo_axis_released"); return result(true, "servo_released");
+  }
+  if (command == Command::ZeroStepperHere) {
+    if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) return result(false, "busy_no_reference_change");
+    if (stepper_.active() || stepperMovePending_) return result(false, "stepper_busy_no_reference_change");
+    stepper_.setRelativeSteps(0);
+    stepperReferencePersisted_ = settings_.saveStepperReference(0);
+    poseReferenceSource_ = stepperReferencePersisted_ ? "nvs" : "nvs_save_failed";
+    event("stepper_relative_reference_zeroed_here"); return result(stepperReferencePersisted_, stepperReferencePersisted_ ? "stepper_reference_zeroed" : "stepper_reference_save_failed");
+  }
+  if (command == Command::SaveServoHere) {
+    if (safety_.mode() != Mode::Parked) return result(false, "pose_not_active_no_reference_change");
+    if (!servoHolding_ || !servo_.attached()) return result(false, "servo_not_held_no_reference_change");
+    const bool saved = settings_.saveServoParkPulse(servoTargetUs_);
+    event(saved ? "servo_park_pulse_saved_nvs" : "servo_park_pulse_save_failed");
+    return result(saved, saved ? "servo_park_pulse_saved" : "servo_park_pulse_save_failed");
   }
   if (command == Command::Selftest) {
     if (!safety_.idle()) return result(false, "busy");
@@ -128,20 +187,48 @@ String App::execute(Command command) {
     }
     event("hlk_passive_uart_started"); return result(true, "hlk_receiving_no_config_writes");
   }
-  if (!safety_.idle()) return result(false, "busy_no_action");
+  const bool poseCommand = command == Command::ParkStepper || command == Command::StepperLeft10 ||
+      command == Command::StepperRight10 || command == Command::ParkServo || command == Command::ServoUp50 ||
+      command == Command::ServoDown50;
+  if ((!poseCommand && !safety_.idle()) || (poseCommand && safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked)) {
+    return result(false, "busy_no_action");
+  }
   if (network_.scanning()) return result(false, "wifi_scan_in_progress_actuators_idle");
   if (settings_.configured() && !network_.connected()) return result(false, "wifi_offline_actuators_remain_idle");
-  if (command == Command::ParkPose) {
-    if (stepper_.relativeSteps() != 0) return result(false, "park_requires_neutral_relative_reference");
-    if (!safety_.beginPark(now)) return result(false, "park_requires_idle_and_no_arms");
-    if (!stepper_.startPark(micros(), config::parkHalfSteps, config::stepperClockwiseSign)) {
-      stopAll(); return result(false, "park_stepper_relative_limit");
+  if (command == Command::ParkStepper) {
+    if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
+    if (stepper_.active()) return result(false, "stepper_busy");
+    stepper_.holdCurrent(); stepperHolding_ = true;
+    event("stepper_axis_parked_current_position_hold"); return result(true, "stepper_parked_current_position");
+  }
+  if (command == Command::StepperLeft10 || command == Command::StepperRight10) {
+    if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
+    if (stepper_.active()) return result(false, "stepper_busy");
+    const int direction = command == Command::StepperRight10 ? config::stepperClockwiseSign : -config::stepperClockwiseSign;
+    if (!stepper_.startPark(micros(), config::stepperNudgeHalfSteps, direction)) {
+      syncPoseMode(now); return result(false, "stepper_pose_limit");
     }
-    if (!servo_.holdAt(now, config::servoParkPulseUs)) {
-      stopAll(); return result(false, "park_servo_pwm_setup_failed");
+    stepperHolding_ = false; stepperMovePending_ = true;
+    event(command == Command::StepperRight10 ? "stepper_nudge_right_10_started" : "stepper_nudge_left_10_started");
+    return result(true, command == Command::StepperRight10 ? "stepper_right_10_started" : "stepper_left_10_started");
+  }
+  if (command == Command::ParkServo || command == Command::ServoUp50 || command == Command::ServoDown50) {
+    if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
+    if (servo_.active()) return result(false, "servo_busy");
+    uint16_t target = servoTargetUs_;
+    if (command == Command::ServoUp50) {
+      if (target > config::servoMaxPulseUs - config::servoNudgeUs) return result(false, "servo_pulse_limit");
+      target += config::servoNudgeUs;
+    } else if (command == Command::ServoDown50) {
+      if (target < config::servoMinPulseUs + config::servoNudgeUs) return result(false, "servo_pulse_limit");
+      target -= config::servoNudgeUs;
     }
-    event("park_pose_started_nominal_servo_90_stepper_45_clockwise_hold");
-    return result(true, "park_pose_started_hold");
+    if (!servo_.holdAt(now, target)) {
+      syncPoseMode(now); return result(false, "servo_pwm_setup_failed");
+    }
+    servoTargetUs_ = target; servoHolding_ = true;
+    event(command == Command::ParkServo ? "servo_axis_parked_target_hold" : "servo_nudge_50us_hold");
+    return result(true, command == Command::ParkServo ? "servo_parked_target_hold" : "servo_nudge_hold");
   }
   if (command == Command::MotorArm) {
     safety_.armMotor(now); event("motor_armed_30s_physical_readiness_is_operator_responsibility");
@@ -218,11 +305,20 @@ void App::publish(uint32_t now) {
        ",\"psram_enabled\":false,\"psram_bytes_initialized\":" + ESP.getPsramSize() +
        ",\"reset_reason_code\":" + bootReason_ + ",\"brownout_reset\":" + (bootReason_ == ESP_RST_BROWNOUT ? "true" : "false") +
        ",\"max_loop_us\":" + maxLoopUs_ + ",\"supply_voltage_measured\":false,\"wire_continuity_verified\":false}";
-  s += String(",\"actuators\":{\"buzzer_commanded_on\":") + (buzzer_.sounding() ? "true" : "false") +
-       ",\"stepper_energized\":" + (stepper_.energized() ? "true" : "false") +
-       ",\"relative_half_steps\":" + stepper_.relativeSteps() + ",\"step_scheduling_late\":" + stepper_.schedulingLate() +
-       ",\"servo_attached\":" + (servo_.attached() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
-       ",\"physical_motion_verified\":false}";
+   s += String(",\"pose\":{\"stepper_reference_source\":") + jsonQuote(poseReferenceSource_) +
+        ",\"stepper_reference_saved\":" + (stepperReferencePersisted_ ? "true" : "false") +
+        ",\"stepper_nudge_half_steps\":" + config::stepperNudgeHalfSteps +
+        ",\"servo_target_us\":" + servoTargetUs_ + ",\"servo_nudge_us\":" + config::servoNudgeUs +
+        ",\"servo_min_us\":" + config::servoMinPulseUs + ",\"servo_max_us\":" + config::servoMaxPulseUs + "},";
+   s += String("\"actuators\":{\"buzzer_commanded_on\":") + (buzzer_.sounding() ? "true" : "false") +
+        ",\"stepper_energized\":" + (stepper_.energized() ? "true" : "false") +
+        ",\"stepper_holding\":" + (stepperHolding_ ? "true" : "false") +
+        ",\"relative_half_steps\":" + stepper_.relativeSteps() +
+        ",\"relative_degrees_nominal\":" + String(stepper_.relativeSteps() * 360.0f / 4096.0f, 1) +
+        ",\"step_scheduling_late\":" + stepper_.schedulingLate() +
+        ",\"servo_attached\":" + (servo_.attached() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
+        ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") + ",\"servo_target_us\":" + servoTargetUs_ +
+        ",\"physical_motion_verified\":false}";
   s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
        ",\"received\":" + (reading.received ? "true" : "false") + ",\"uart_bytes\":" + hlkBytes_ +
@@ -280,7 +376,16 @@ void App::tick() {
   }
   safety_.expire(now);
   if (safety_.overdue(now)) { stopAll(); event("test_timeout_outputs_off"); }
-  buzzer_.tick(now); stepper_.tick(micros()); servo_.tick(now);
+  buzzer_.tick(now);
+  const bool stepperWasActive = stepper_.active();
+  stepper_.tick(micros());
+  if (stepperMovePending_ && stepperWasActive && !stepper_.active()) {
+    stepperMovePending_ = false; stepperHolding_ = true;
+    stepperReferencePersisted_ = settings_.saveStepperReference(stepper_.relativeSteps());
+    poseReferenceSource_ = stepperReferencePersisted_ ? "nvs" : "nvs_save_failed";
+    event("stepper_nudge_complete_hold");
+  }
+  servo_.tick(now);
   if ((safety_.mode() == Mode::Buzzer && !buzzer_.active()) ||
       (safety_.mode() == Mode::Stepper && !stepper_.active()) ||
       (safety_.mode() == Mode::Servo && !servo_.active())) {
