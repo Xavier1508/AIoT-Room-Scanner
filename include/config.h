@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.2.4-pose-axes";
+constexpr char version[] = "0.2.5-servo-small-test";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;

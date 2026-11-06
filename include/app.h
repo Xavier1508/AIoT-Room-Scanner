@@ -53,7 +53,7 @@ class App {
   HardwareSerial hlkSerial_{1};
   HlkParser hlk_;
   bool hlkEnabled_ = false, wifiWasConnected_ = false;
-  bool stepperHolding_ = false, servoHolding_ = false, stepperMovePending_ = false;
+  bool stepperHolding_ = false, servoHolding_ = false, stepperMovePending_ = false, servoTestPending_ = false;
   bool stepperReferencePersisted_ = false;
   String poseReferenceSource_ = "migration_default_1024";
   uint16_t servoTargetUs_ = config::servoParkPulseUs;

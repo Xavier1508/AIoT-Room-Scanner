@@ -58,7 +58,7 @@ void App::event(const char* text) {
 }
 void App::stopAll() {
   buzzer_.stop(); stepper_.stop(); servo_.stop();
-  stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
+  stepperHolding_ = servoHolding_ = stepperMovePending_ = servoTestPending_ = false;
   safety_.stop();
 }
 bool App::beginPose(uint32_t now) {
@@ -77,7 +77,7 @@ void App::releaseStepper() {
   syncPoseMode(millis());
 }
 void App::releaseServo() {
-  servo_.stop(); servoHolding_ = false;
+  servo_.stop(); servoHolding_ = false; servoTestPending_ = false;
   syncPoseMode(millis());
 }
 void App::clearQueue() {
@@ -149,7 +149,7 @@ String App::execute(Command command) {
     releaseStepper(); event("stepper_axis_released"); return result(true, "stepper_released");
   }
   if (command == Command::ReleaseServo) {
-    if (safety_.mode() != Mode::Parked || !servoHolding_) return result(false, "servo_not_held_no_action");
+    if (safety_.mode() != Mode::Parked || (!servoHolding_ && !servoTestPending_)) return result(false, "servo_not_active_no_action");
     releaseServo(); event("servo_axis_released"); return result(true, "servo_released");
   }
   if (command == Command::ZeroStepperHere) {
@@ -215,20 +215,14 @@ String App::execute(Command command) {
   if (command == Command::ParkServo || command == Command::ServoUp50 || command == Command::ServoDown50) {
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (servo_.active()) return result(false, "servo_busy");
-    uint16_t target = servoTargetUs_;
-    if (command == Command::ServoUp50) {
-      if (target > config::servoMaxPulseUs - config::servoNudgeUs) return result(false, "servo_pulse_limit");
-      target += config::servoNudgeUs;
-    } else if (command == Command::ServoDown50) {
-      if (target < config::servoMinPulseUs + config::servoNudgeUs) return result(false, "servo_pulse_limit");
-      target -= config::servoNudgeUs;
-    }
-    if (!servo_.holdAt(now, target)) {
+    const bool nudge = command != Command::ParkServo;
+    const bool started = nudge ? servo_.startNudge(now, command == Command::ServoUp50) : servo_.start(now, false);
+    if (!started) {
       syncPoseMode(now); return result(false, "servo_pwm_setup_failed");
     }
-    servoTargetUs_ = target; servoHolding_ = true;
-    event(command == Command::ParkServo ? "servo_axis_parked_target_hold" : "servo_nudge_50us_hold");
-    return result(true, command == Command::ParkServo ? "servo_parked_target_hold" : "servo_nudge_hold");
+    servoHolding_ = false; servoTestPending_ = true;
+    event(command == Command::ParkServo ? "servo_old_small_test_started" : "servo_old_directional_nudge_started");
+    return result(true, command == Command::ParkServo ? "servo_small_test_started" : "servo_small_nudge_started");
   }
   if (command == Command::MotorArm) {
     safety_.armMotor(now); event("motor_armed_30s_physical_readiness_is_operator_responsibility");
@@ -317,7 +311,8 @@ void App::publish(uint32_t now) {
         ",\"relative_degrees_nominal\":" + String(stepper_.relativeSteps() * 360.0f / 4096.0f, 1) +
         ",\"step_scheduling_late\":" + stepper_.schedulingLate() +
         ",\"servo_attached\":" + (servo_.attached() ? "true" : "false") + ",\"servo_pulse_us\":" + servo_.pulseUs() +
-        ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") + ",\"servo_target_us\":" + servoTargetUs_ +
+        ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") + ",\"servo_test_pending\":" + (servoTestPending_ ? "true" : "false") +
+        ",\"servo_target_us\":" + servoTargetUs_ +
         ",\"physical_motion_verified\":false}";
   s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
@@ -385,7 +380,13 @@ void App::tick() {
     poseReferenceSource_ = stepperReferencePersisted_ ? "nvs" : "nvs_save_failed";
     event("stepper_nudge_complete_hold");
   }
+  const bool servoWasActive = servo_.active();
   servo_.tick(now);
+  if (servoTestPending_ && servoWasActive && !servo_.active()) {
+    servoTestPending_ = false;
+    event("servo_old_small_test_complete_detached");
+    syncPoseMode(now);
+  }
   if ((safety_.mode() == Mode::Buzzer && !buzzer_.active()) ||
       (safety_.mode() == Mode::Stepper && !stepper_.active()) ||
       (safety_.mode() == Mode::Servo && !servo_.active())) {

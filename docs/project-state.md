@@ -9,10 +9,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.4-pose-axes`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T173907305Z/firmware.bin`.
-  Size **797168 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `69edf4a345afe88dd4968f0aa0dccdba0b70bbd231c0c2eb2377a98b4ed22e97`.
+- **Running firmware: `0.2.5-servo-small-test`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261106T181633271Z/firmware.bin`.
+  Size **797424 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `6f6f2ddf536f7b1a253a3d6085299a735a9c97bda1ffaa1d9a6e2ed93f24af6c`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -93,6 +93,10 @@ physical direction/clearance verification.
   (90° nominal). The 114-half-step nudge controls and independent axis controls
   are available; no nudge was triggered automatically. Evidence:
   `analysis/device/ota-pose-axes-20261106T174847Z/`.
+- Real LAN OTA installed `0.2.5-servo-small-test`, returning IDLE with both arms
+  false, stepper off and servo detached. Servo axis buttons now run the legacy
+  small-pulse tests and detach instead of holding. Evidence:
+  `analysis/device/ota-servo-small-test-20261106T181851Z/`.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
@@ -100,12 +104,13 @@ physical direction/clearance verification.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** hard-refresh the dashboard. For the requested correction,
-press `Kiri 10° nominal` once; it should move 114 half-step from the migrated
-1024 reference to 910 (80° nominal) and hold. For servo calibration, use
-`Pulse −50 µs` or `Pulse +50 µs` one click at a time, then `Simpan target servo`.
-Use per-axis release or STOP if clearance/direction is wrong. No motion was
-triggered automatically by the agent and no physical angle claim is made.
+**Current next action:** hard-refresh the dashboard and support the arm. Test the
+servo first without the heavy arm/load using `Uji kecil pola lama` or one
+directional nudge; the sequence is 1500→1450/1550→1500 µs and then detach.
+If it moves unloaded but not loaded, investigate servo rail/current and leverage;
+if it does not move unloaded, inspect signal, horn spline and servo power. No
+physical servo motion was triggered automatically by the agent and no angle claim
+is made. Sensor implementation remains deferred until this servo check passes.
 HLK remains a communication success but its distance needs a later controlled
 observation.
 
@@ -127,7 +132,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **40 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **42 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -137,15 +142,16 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   no-rotation software/safe-state result; 29 = jumper/no-rotation result;
   30–31 = long-test build and OTA; 32–35 = park-pose build, OTA and host-test
   evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
-  post-OTA-helper compatibility test.
+  post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.4-pose-axes`, prior `0.2.3-park-pose`,
-  `0.2.2-long-tests`, `0.2.1-servo`, `0.2.0-scan` and verified `0.1.4-usb`
-  baseline, clearly separated by run folder. Prefer the current pose-axes build.
+- Retained binary deliverables: current `0.2.5-servo-small-test`, prior
+  `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,
+  `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly separated by run
+  folder. Prefer the current servo-small-test build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.
