@@ -20,7 +20,7 @@ String jsonQuote(const String& value) {
 
 void App::begin() {
   // Set safe output latches first, before serial, NVS, Wi-Fi, or any web task.
-  buzzer_.begin(); stepper_.begin(); servo_.begin();
+  buzzer_.begin(); stepper_.begin(); servo_.begin(); sensors_.begin();
   // This SDK has a secondary USB log console. Keep SDK log writers out of the
   // framed diagnostics channel; application events/status remain available.
   esp_log_level_set("*", ESP_LOG_NONE);
@@ -51,7 +51,7 @@ void App::begin() {
     servoBasePersisted_ = true;
     servoBaseSource_ = "nvs";
   } else {
-    // 0.2.8 intentionally migrates the old servo base to the requested 900 us.
+    // 0.3.0 migrates the prior tuning value to the corrected user-confirmed 800 us zero.
     servoBaseUs_ = config::servoParkPulseUs;
     servoTargetUs_ = servoBaseUs_;
     servoBasePersisted_ = settings_.saveServoParkPulse(servoBaseUs_);
@@ -68,7 +68,7 @@ void App::event(const char* text) {
   events_[eventIndex_++ % 8] = String(millis()) + ":" + text;
 }
 void App::stopAll() {
-  buzzer_.stop(); stepper_.stop(); servo_.stop();
+  buzzer_.stop(); stepper_.stop(); servo_.stop(); sensors_.stop();
   stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
   safety_.stop();
 }
@@ -128,7 +128,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"release_stepper\",\"park_servo\",\"servo_up_50\",\"servo_down_50\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"sensors_start\",\"sensors_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"release_stepper\",\"park_servo\",\"servo_up_200\",\"servo_down_200\",\"servo_up_50\",\"servo_down_50\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -149,6 +149,29 @@ String App::execute(Command command) {
     const bool started = network_.startScan();
     if (started) event("passive_wifi_scan_started_disarmed");
     return result(started, started ? "wifi_scan_started" : "wifi_scan_busy_or_failed");
+  }
+  if (command == Command::SensorsStart || command == Command::SensorsStop) {
+    if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
+      return result(false, "sensor_command_requires_idle_or_parked");
+    }
+    if (network_.scanning()) return result(false, "wifi_scan_in_progress_actuators_idle");
+    if (settings_.configured() && !network_.connected()) return result(false, "wifi_offline_sensor_command_rejected");
+    if (command == Command::SensorsStart) {
+      if (!hlkEnabled_) {
+        hlk_.reset(); hlkSerial_.setRxBufferSize(1024);
+        hlkSerial_.begin(config::hlkBaud, SERIAL_8N1, pins::hlkRx, pins::hlkTx);
+        hlkEnabled_ = true;
+      }
+      sensors_.start(now);
+      event("all_sensor_polling_started_no_actuator_motion");
+      return result(true, "sensors_started_check_status_for_validity");
+    }
+    sensors_.stop();
+    if (hlkEnabled_) hlkSerial_.end();
+    hlkEnabled_ = false;
+    pinMode(pins::hlkRx, INPUT); pinMode(pins::hlkTx, INPUT);
+    event("all_sensor_polling_stopped");
+    return result(true, "sensors_stopped");
   }
   if (command == Command::ReleasePose) {
     if (safety_.mode() != Mode::Parked) return result(false, "not_parked_no_action");
@@ -346,7 +369,8 @@ void App::publish(uint32_t now) {
         ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") +
         ",\"servo_target_us\":" + servoTargetUs_ +
         ",\"physical_motion_verified\":false}";
-  s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
+   s += String(",\"sensors\":") + sensors_.statusJson(now);
+   s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
        ",\"received\":" + (reading.received ? "true" : "false") + ",\"uart_bytes\":" + hlkBytes_ +
        ",\"valid_frames\":" + hlk_.validFrames() + ",\"rejected_frames\":" + hlk_.rejectedFrames() +
@@ -423,6 +447,7 @@ void App::tick() {
     while (hlkSerial_.available() && budget--) { hlk_.feed(uint8_t(hlkSerial_.read()), now); ++hlkBytes_; }
     hlk_.expire(now);
   }
+  sensors_.tick(now);
   network_.tick(now);
   if (uint32_t(now - lastPublish_) >= 200) publish(now);
   const uint32_t reboot = rebootAt_.load();

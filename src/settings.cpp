@@ -5,7 +5,7 @@
 
 namespace {
 constexpr uint32_t magic = 0x41494f54;
-constexpr uint8_t poseServoSchema = 2;  // 0.2.8 changes the servo base/range.
+constexpr uint8_t poseServoSchema = 4;  // 0.3.0 records the corrected user-confirmed 800 us zero.
 void wipe(void* pointer, size_t size) {
   volatile uint8_t* p = static_cast<volatile uint8_t*>(pointer);
   while (size--) *p++ = 0;

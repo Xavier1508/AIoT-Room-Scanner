@@ -13,6 +13,7 @@
 #include "network.h"
 #include "safety.h"
 #include "settings.h"
+#include "sensors.h"
 
 String jsonQuote(const String& value);
 
@@ -50,6 +51,7 @@ class App {
   BuzzerController buzzer_;
   StepperController stepper_;
   ServoController servo_;
+  SensorController sensors_;
   HardwareSerial hlkSerial_{1};
   HlkParser hlk_;
   bool hlkEnabled_ = false, wifiWasConnected_ = false;
@@ -57,7 +59,7 @@ class App {
   bool stepperReferencePersisted_ = false;
   bool servoBasePersisted_ = false;
   String poseReferenceSource_ = "migration_default_1024";
-  String servoBaseSource_ = "default_900";
+  String servoBaseSource_ = "default_800";
   uint16_t servoBaseUs_ = config::servoParkPulseUs;
   uint16_t servoTargetUs_ = config::servoParkPulseUs;
   uint32_t hlkBytes_ = 0, lastPublish_ = 0, maxLoopUs_ = 0;

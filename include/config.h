@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.2.8-servo-scan-range";
+constexpr char version[] = "0.3.2-sensor-poll-throttled";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -21,11 +21,23 @@ constexpr int parkHalfSteps = 512;          // Estimated 45 degrees for 4096 hal
 constexpr int stepperClockwiseSign = 1;     // Invert to -1 after a controlled direction check.
 constexpr int initialStepperReferenceHalfSteps = 1024; // Migrated from the observed 0.2.3 live status.
 constexpr int stepperNudgeHalfSteps = 114;             // Nominal 10 degrees at 4096 half-steps/rev.
-constexpr uint16_t servoParkPulseUs = 900;             // Requested base; saved after physical calibration.
+constexpr uint16_t servoParkPulseUs = 800;             // User-confirmed mechanical zero; saved without boot motion.
 constexpr uint16_t servoNudgeUs = 50;
 constexpr uint16_t servoCoarseUs = 200;
 constexpr uint16_t servoMinPulseUs = 500;
 constexpr uint16_t servoMaxPulseUs = 1400;
+constexpr uint32_t sensorHcIntervalMs = 250;
+constexpr uint32_t sensorHcTimeoutUs = 25000;           // Bounded to about 4.2 m acoustic range.
+constexpr uint32_t sensorHcMinPulseUs = 116;            // About 2 cm at 343 m/s.
+constexpr uint32_t sensorHcMaxPulseUs = 23325;          // About 4 m at 343 m/s.
+constexpr uint32_t sensorHcMinRangeMm = 20;
+constexpr uint32_t sensorHcMaxRangeMm = 4000;
+constexpr uint32_t sensorTofIntervalMs = 100;
+constexpr uint32_t sensorTofPollMs = 10;
+constexpr uint32_t sensorTofBootTimeoutMs = 150;
+constexpr uint32_t sensorTofMaxRangeMm = 4000;
+constexpr uint32_t sensorStaleMs = 1500;
+constexpr uint32_t sensorI2cHz = 100000;
 constexpr uint32_t wifiRetryMs = 15000;
 constexpr uint32_t otaReceiveLimitMs = 120000;
 constexpr uint32_t provisioningTimeoutMs = 90000;

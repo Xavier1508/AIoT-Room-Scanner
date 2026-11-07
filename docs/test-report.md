@@ -8,7 +8,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 |---|---|---|
 | T01 | Lulus — identification | esptool identify-20261105T124021Z: ESP32-S3 rev0.2, 16MB flash, native USB Serial/JTAG COM9. Label N16R8 remains historical user report. |
 | T02 | Lulus — user checklist only | User confirmed jack/loads removed and USB-only. No rail-voltage/current/backfeed measurement. |
-| T03 | Lulus — build | Current build-20261106T205207136Z: 0.2.8-servo-scan-range, application 798080 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
+| T03 | Lulus — build | Current 0.3.2-sensor-poll-throttled build, application 820816 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
 | T04 | Lulus — software/USB scope | Upload verified hashes; current version returned IDLE/no arms and passed the seven-case USB check with 48 synthetic assertions. Prior 0.1.4 power-cycle/three paced runs are historical checks. This does not measure pin voltage or prove physical actuators. |
 | T05 | Lulus — physical confirmation | LAN buzzer test entered BUZZER_TEST, returned IDLE/output OFF; user heard three beep pulses. Evidence `analysis/device/buzzer-20261105T170632Z/`. |
 | T06 | Lulus parsial — UART only | 747 valid HLK frames, 0 rejected, 17,181 bytes; decoded target/distance/energy. User observed a table but expected <10 cm while frame said ~30 cm. Distance is uncalibrated; wiring/5V is user-reported, not independently measured. |
@@ -16,15 +16,15 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 | T08 | Tertunda — no movement after jumper | Temporary enable jumper caused indicator LEDs to illuminate, but user still saw no rotation. This is not classified as a GPIO/motor failure because ULN +/- rail, jumper contact, socket and motor cable remain unverified. |
 | T09 | Lulus parsial — user-observed no-load test | User reports servo supplied from shield 5 V header with jack-only/DIP ON; voltage was not independently measured. No-load wiring followed GPIO15 mapping. |
 | T10 | Lulus — physical confirmation | After 14-bit LEDC repair in 0.2.1-servo, test returned IDLE/detached and user saw the horn move. Evidence `analysis/device/servo-fixed-20261105T174510Z/`. |
-| T11 | Tertunda — servo/load physical verification | User reports the legacy small-pulse sequence moves the servo normally. 0.2.8 sets the base to 900 µs, clamp to 500–1400 µs, and adds ±200/±50 hold tuning; 1800 is removed. Loaded movement, actual mechanical range, direction, angle, clearance and holding current remain unobserved. |
-| T12 | Lulus parsial — application OTA | Wi-Fi/LAN contract passed and real OTA changed 0.2.0-scan through 0.2.8-servo-scan-range; each successful new version returned IDLE with no arms. The final image SHA matched the server response; electrical rail/current/rollback were not independently measured/tested. |
-| T13 | Partial handoff ready | Source, reusable tools, contract, documentation, current scan-range firmware and handoff notes exist. Research/audit retained. Real OTA is verified; physical servo base/loaded movement remains user-controlled and unverified; no remote push. |
+| T11 | Tertunda — servo/load physical verification | User reports the legacy small-pulse sequence moves normally and corrected the mechanical zero to 800 µs. 0.3.1 stores base 800 µs, clamp 500–1400 µs, and keeps boot detached; loaded movement, actual mechanical range, direction, angle, clearance and holding current remain unmeasured. |
+| T12 | Lulus parsial — application OTA | Real LAN OTA installed 0.3.2-sensor-poll-throttled; board returned IDLE with stepper reference 0, servo detached, base 800 µs and no arms. Image SHA matched the server response. Electrical rail/current and rollback remain unmeasured/not provided. |
+| T13 | Partial handoff ready | Source, sensor status/API/dashboard, reusable tools, documentation, current sensor firmware and handoff notes exist. Real sensor bring-up is measured below; geometric calibration, mapping and model data collection remain pending. |
 
-Additional actual checks: **72 portable C++ synthetic parser/safety/command/SSID-list**
+Additional actual checks: **74 portable C++ synthetic parser/safety/command/SSID-list**
 assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, and OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing.
-**19 Python tests** passed for image headers, local-address validation,
+**20 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling and OpenAPI contract consistency. Dashboard JavaScript syntax
 passed. These do not validate electrical wiring or physical hardware.
 
@@ -52,11 +52,14 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W10 | Lulus — servo hold-tune deployment | 0.2.6-servo-1800-hold installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, target 1800 µs, and default base source. No servo motion was triggered automatically. |
 | W11 | Lulus — servo base-reset deployment | 0.2.7-servo-base-reset installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, saved base/target 1000 µs, and base source NVS. `servo_1800` then reset to 1800 µs; no motion was triggered automatically. |
 | W12 | Lulus — servo scan-range deployment | 0.2.8-servo-scan-range installed via real LAN OTA and returned IDLE with stepper reference 0, servo detached, migrated base/target 900 µs, clamp 500–1400 µs, and `servo_1800` removed. No motion was triggered automatically. |
+| W13 | Lulus parsial — sensor bring-up and ToF-ready deployment | 0.3.1-sensor-tof-ready installed via real LAN OTA. With servo explicitly parked at 800 µs and stepper de-energized, I2C scan found address 41 (`0x29`); over five status samples HC-SR04 stayed valid with 29 valid samples/0 timeouts, VL53L1X produced 77 valid samples/0 invalid/0 I2C errors (`raw_status=9`, 210–220 mm), and HLK stayed valid. HC samples were 13.7–16.7 cm. These are bring-up observations, not calibrated geometry. |
+| W14 | Lulus parsial — ToF polling throttle, long-run unresolved | 0.3.2-sensor-poll-throttled reset optional XSHUT LOW→HIGH and throttled ToF reads to the 100 ms measurement interval. The first 12 snapshots/~24 s were all valid at `0x29`/raw status 9 with 279 valid samples and 0 I2C errors, but later the same boot became stale; a software stop/start did not recover it. A fresh start later reported raw status 7 (`wrap_target_fail`) with invalid samples and no I2C errors. HC-SR04 and HLK remained valid. Rail/thermal/optical target/sensor-state stability requires physical investigation. |
 
-Hardware result note: T05 is the first physical peripheral result. T06 remains
-pending until HLK supply and crossed wiring are confirmed by the user; a valid
-UART frame will prove communication, not rail voltage, presence identity or
-object approach direction.
+Hardware result note: T05 is the first physical peripheral result. W13 confirms
+live communication/range output for HC-SR04, VL53L1X and HLK under the stated
+wiring, but does not prove rail voltage, absolute distance accuracy, sensor
+alignment, field of view, or object identity/approach direction. Calibration
+requires a measured reference target and fixed sensor geometry.
 
 Evidence directories (gitignored, retain locally):
 
@@ -87,6 +90,13 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/ota-servo-base-reset-20261106T203314Z/`
 - `analysis/platformio/build-20261106T205207136Z/`
 - `analysis/device/ota-servo-scan-range-20261106T205530Z/`
+- `analysis/platformio/build-20261107T073911047Z/`
+- `analysis/device/ota-sensor-bringup-20261107T073637Z/`
+- `analysis/device/sensor-tof-ready-20261107T074113Z/`
+- `analysis/platformio/build-20261107T075620661Z/`
+- `analysis/device/sensor-poll-stable-20261107T075821Z/`
+- `analysis/platformio/build-20261107T080555904Z/`
+- `analysis/device/sensor-poll-throttled-20261107T080748Z/`
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
 - `analysis/gcc/tests-20261105T160536307Z/`

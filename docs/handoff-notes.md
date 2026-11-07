@@ -12,9 +12,11 @@ physical measurements that were not taken.
 - Local LAN dashboard with HTTP Basic + boot-scoped CSRF, authenticated
   application OTA, passive 2.4 GHz Wi-Fi scan/provisioning, HLK-LD2410C UART
   parser, 28BYJ-48/ULN2003 stepper, SG90-class servo.
-- No 3D mapping, TinyML, CSI, ToF ranging, or CDM324 implementation yet.
-- Current verified firmware: `0.2.8-servo-scan-range` (verify again with
-  `device.py status` after any further OTA).
+- No 3D mapping, TinyML, CSI, or calibrated mapping data yet; CDM324 remains
+  disabled. Sensor bring-up is implemented and live-tested in `0.3.1`; `0.3.2`
+  tightens ToF polling and enables an optional connected XSHUT line.
+- Current deployed firmware: `0.3.2-sensor-poll-throttled`; verify again with
+  `device.py status` after any further OTA.
 
 ## Pin map (from the latest workbook)
 
@@ -25,8 +27,8 @@ physical measurements that were not taken.
 | ULN2003 IN1..IN4 | GPIO4..GPIO7 | Half-step table in `src/stepper.cpp` |
 | Servo signal | GPIO15 | 50 Hz LEDC, 14-bit resolution |
 | Buzzer | GPIO21 | Active LOW |
-| HC-SR04 3.3 V TRIG | GPIO10 | Only the 3.3 V variant may connect ECHO directly |
-| HC-SR04 3.3 V ECHO | GPIO11 | 5 V HC-SR04 needs a divider/level shifter |
+| HC-SR04 standard 5 V TRIG | GPIO10 | Output; ECHO is not connected directly |
+| HC-SR04 standard 5 V ECHO | GPIO11 | Installed R1=1 kΩ series and R2+R3=1 kΩ+1 kΩ to GND divider |
 | VL53L1X SDA | GPIO8 | I2C, 3.3 V logic |
 | VL53L1X SCL | GPIO9 | I2C, 3.3 V logic |
 | VL53L1X INT | GPIO14 | Optional interrupt |
@@ -44,7 +46,8 @@ actual breakout labels before powering sensors.
 - Servo: the user reports the legacy small-pulse test moves normally. The older
   hold attempt at 1950/2000 µs did not produce the expected movement under the
   installed arm; the exact cause was not isolated. The current tuning design uses
-  a saved base target. The requested base is **900 µs**; the firmware clamp is
+  a saved base target. The user corrected the mechanical zero to **800 µs**;
+  `0.3.2` retains the corrected saved default at **800 µs**. The firmware clamp is
   **500–1400 µs**. `park_servo` returns to the saved base, `servo_up_200` /
   `servo_down_200` move the target by 200 µs, `servo_up_50` / `servo_down_50`
   move it by 50 µs, and all keep holding. `save_servo_here` overwrites the saved
@@ -81,28 +84,27 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Hard-refresh the dashboard and support the arm.
-2. Press `park_servo` to return to the saved base (900 µs).
-3. Use `servo_up_200` / `servo_down_200` for fast movement and
-   `servo_up_50` / `servo_down_50` for fine adjustment. Record the pulse shown
-   in status.
-4. Test the low end in stages (900 → 700 → 500); release immediately if the
-   servo buzzes or stalls.
-5. Press `save_servo_here` to overwrite the base; reboot/OTA and verify
-   `park_servo` returns to it. Confirm loaded movement and measure the servo
-   supply under load.
-5. Only after the servo/arm is mechanically stable, add sensors:
-   - VL53L1X on I2C GPIO8/9; detect address and range, no fabricated values.
-   - HC-SR04 3.3 V on TRIG10/ECHO11; bounded trigger and timeout handling.
-   - Add status/API/dashboard fields and host tests; keep sensor data marked
-     stale/invalid until a real frame/measurement exists.
+1. Keep the arm supported and use `park_servo` at the saved 800 µs base when a
+   stationary sensor pose is required; boot remains detached by design.
+2. The 0.3.2 stationary retest initially kept ToF valid for 12 snapshots/~24 s
+   with 0 I2C errors, but the same boot later became stale; software restart did
+   not recover it, and a fresh start reported `wrap_target_fail` without I2C
+   errors. The earlier 0.3.1 stale/error result is also retained. Treat ToF as
+   uncalibrated/invalid until target optics, supply and long-run state are fixed.
+3. Repeat measurements against a rigid target at known distances, recording
+   HC-SR04 and VL53L1X together with target distance, target material, sensor
+   height, and servo/stepper pose.
+4. Estimate bias, noise, valid-rate and cross-sensor offset before mapping.
+5. Define the horizontal/tilt coordinate convention and collect synchronized
+   tuples only after repeatability is demonstrated. Do not call bring-up values
+   calibrated geometry or a deep-learning model.
 6. Update `docs/project-state.md`, `docs/test-report.md`, and
    `docs/openapi.json` after each verified OTA/hardware result.
 
 ## Evidence and docs
 
 - `docs/project-state.md` — chronological state and next action.
-- `docs/test-report.md` — workbook T01–T13 and W01–W09 results.
+- `docs/test-report.md` — workbook T01–T13 and W01–W13 results.
 - `docs/known-issues.md` — historical failures and limits.
 - `docs/openapi.json` — local HTTP contract.
 - `analysis/device/` — OTA/status evidence; `analysis/platformio/` — builds.

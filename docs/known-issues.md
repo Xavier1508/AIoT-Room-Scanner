@@ -42,15 +42,23 @@ that the legacy small-pulse sequence (`1500 -> 1450/1550 -> 1500 us`) moved the
 servo normally. The root cause of the hold-specific failure was not isolated;
 possible mechanical limit, supply sag, or load torque remain unproven. `0.2.5`
 restored the legacy sequence, `0.2.6` added a base-hold tuning mode, `0.2.7`
-made the saved-base return explicit, and `0.2.8` sets the base to 900 us with a
-500-1400 us clamp and 200/50 us hold buttons. The 500 us lower bound is a
+made the saved-base return explicit, and `0.2.8` set the base to 900 us.
+`0.3.2` records the user-confirmed 800 us zero with a 500-1400 us clamp and
+200/50 us hold buttons, corrects the VL53L1X active-low data-ready
+polling condition. The 500 us lower bound is a
 firmware choice, not a measured mechanical limit; the servo's actual mechanical
 range is still unknown. Physical loaded movement and rail voltage still require
 operator measurement.
 
-The updated workbook maps HC-SR04 3.3 V to TRIG10/ECHO11 and VL53L1X to
-SDA8/SCL9, with optional INT14/XSHUT13. Sensor firmware is intentionally not
-implemented yet. A 5 V HC-SR04 must not connect ECHO directly to the ESP.
+The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
+installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional
+INT14/XSHUT13. `0.3.2` adds XSHUT reset and interval-limited ToF reads after a
+0.3.1 long-run observation became stale with many I2C errors. A 12-snapshot/~24 s
+retest initially stayed valid with 0 I2C errors, but later became stale; software
+restart did not recover it, and a fresh start reported `wrap_target_fail` without
+I2C errors. Bring-up produced valid HC-SR04, VL53L1X and HLK readings at times,
+but ToF long-run/optical validity and calibrated geometry remain unresolved.
+A 5 V HC-SR04 must not connect ECHO directly to the ESP.
 
 ## USB bring-up history (keep failures distinct from successful builds)
 

@@ -101,8 +101,10 @@ SelftestResult runSelftests() {
   check(parseCommand("zero_stepper_here") == Command::ZeroStepperHere);
   check(parseCommand("save_servo_here") == Command::SaveServoHere);
   check(parseCommand("release_pose") == Command::ReleasePose);
+  check(parseCommand("sensors_start") == Command::SensorsStart);
+  check(parseCommand("sensors_stop") == Command::SensorsStop);
   check(config::stepperNudgeHalfSteps == 114 && config::servoNudgeUs == 50);
-  check(config::servoMinPulseUs == 500 && config::servoParkPulseUs == 900 && config::servoMaxPulseUs == 1400);
+  check(config::servoMinPulseUs == 500 && config::servoParkPulseUs == 800 && config::servoMaxPulseUs == 1400);
   check(config::servoNudgeUs == 50 && config::servoCoarseUs == 200);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);

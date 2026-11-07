@@ -10,10 +10,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.2.8-servo-scan-range`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261106T205207136Z/firmware.bin`.
-  Size **798080 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `f702ec54952d3cd1c5f997c8c7d77a298c6446218e1d5f5b8ed6fee9d3bf22b6`.
+- **Running firmware: `0.3.2-sensor-poll-throttled`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261107T080555904Z/firmware.bin`.
+  Size **820816 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `3664b5ca521ba2f9695ce4499abc9d17bd89440bbf6ec66c500fc923ba80d2bc`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -33,7 +33,7 @@ physical direction/clearance verification.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **72 C++ assertions + 19 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 20 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -122,22 +122,33 @@ physical direction/clearance verification.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
+- User corrected the servo mechanical zero to **800 µs**. `0.3.2` retains the
+  prior 900 µs NVS value to 800 µs without attaching or moving the servo at boot;
+  `park_servo` applies the saved target explicitly.
+- `0.3.2` adds explicit `sensors_start`/`sensors_stop`, HC-SR04 polling on
+  GPIO10/11 with bounded timeout and divider-aware validity, VL53L1X I2C
+  scan/init/range polling on GPIO8/9, and dashboard/OpenAPI status fields.
+- Live stationary sensor test: I2C address 41 (`0x29`) was found. Across five
+  status samples, HC-SR04 had 29 valid samples and 0 timeouts at 13.7–16.7 cm;
+  VL53L1X had 77 valid samples, 0 invalid and 0 I2C errors at 210–220 mm with
+  raw status 9; HLK remained valid. These are bring-up values, not calibrated
+  geometry. Evidence: `analysis/device/sensor-tof-ready-20261107T074113Z/`.
+- The first 0.3.1 long-run observation later became stale with 85,489 I2C errors;
+  this is retained as a failure, not discarded. 0.3.2 adds XSHUT reset and
+  interval-limited ToF reads. A 12-snapshot/~24 s retest initially stayed valid
+  with 279 ToF samples and 0 I2C errors, but later the same boot became stale;
+  a software restart did not recover it. A fresh start then showed raw status 7
+  (`wrap_target_fail`) with invalid samples and no I2C errors. HC-SR04/HLK stayed
+  valid. Evidence: `analysis/device/sensor-poll-throttled-20261107T080748Z/`.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** hard-refresh the dashboard and support the arm. The saved
-base is **900 µs**; `Hold base tersimpan` returns there. Range is **500–1400 µs**.
-Use `Geser ±200 µs · hold` for fast movement and `Geser ±50 µs · hold` for fine
-adjustment; both hold position. Test the lower end in stages (900 → 700 → 500)
-and release immediately if the servo buzzes or stalls. `Simpan base servo`
-overwrites the saved base. If the servo moves unloaded but not loaded, investigate
-servo rail/current and leverage; if it does not move at all, inspect signal, horn
-spline and servo power. No physical servo motion was triggered automatically by
-the agent and no angle claim is made. Sensor implementation remains deferred until
-this servo check passes.
-HLK remains a communication success but its distance needs a later controlled
-observation.
+**Current next action:** keep the arm supported while parked at **800 µs** and
+define a measured reference-target protocol. Calibrate HC-SR04 and VL53L1X
+against the same targets at fixed geometry, quantify bias/noise and sensor-axis
+offset, then collect synchronized stepper/servo/sensor tuples. Only after those
+measurements should mapping or a deep-learning dataset/model be designed.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -157,7 +168,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **48 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **60 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -169,14 +180,18 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   evidence; 36–39 = pose-axes build, OTA and final host-test evidence; 40 =
   post-OTA-helper compatibility test; 41–42 = servo-small-test build and OTA;
   43–44 = servo-hold-tune build and OTA; 45–46 = servo-base-reset build and OTA;
-  47–48 = servo-scan-range build and OTA.
+  47–48 = servo-scan-range build and OTA; 49–52 = latest workbook, sensor-ready
+  build, OTA and live sensor test evidence; 53–60 = poll-throttled build, OTA,
+  long-run failure, short-pass, stale/restart and wrap-target evidence.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.2.8-servo-scan-range`, prior
+- Retained binary deliverables: current `0.3.2-sensor-poll-stable`, prior
+  `0.3.1-sensor-tof-ready`,
+  `0.3.0-sensor-bringup`, `0.2.8-servo-scan-range`, prior
   `0.2.7-servo-base-reset`, `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`,
   `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,
   `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly separated by run

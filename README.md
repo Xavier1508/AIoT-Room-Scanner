@@ -1,11 +1,13 @@
 # AIoT ESP32-S3 — bring-up, diagnostik LAN, dan web OTA
 
-Firmware pengujian **buzzer aktif, HLK-LD2410C, 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi saat ini: **0.2.8-servo-scan-range**, termasuk pemilihan SSID dari
+Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
+28BYJ-48/ULN2003, dan SG90**.
+Firmware berjalan terverifikasi: **0.3.2-sensor-poll-throttled**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
-Belum ada pemetaan 3D, TinyML, CSI, data ToF, atau pembacaan CDM324.
+Belum ada pemetaan 3D, TinyML, CSI, atau kalibrasi sensor fisik; CDM324 tetap ditunda.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
 [docs/test-report.md](docs/test-report.md). Jangan menyamakan build dengan lulus hardware.
+Notices kode register VL53L1X: [docs/third-party-notices.md](docs/third-party-notices.md).
 
 ## Keselamatan dan daya
 
@@ -39,7 +41,8 @@ Semua nomor adalah **GPIO**, bukan nomor urut header.
 | SG90 sinyal | GPIO15, 50 Hz |
 | SG90 merah/cokelat | Suplai sesuai unit / GND bersama; bukan 9 V |
 | Buzzer I/O/VCC/GND | GPIO21 / 3V3 / GND; LOW bunyi, HIGH diam |
-| ToF cadangan | SDA8, SCL9; belum digunakan |
+| HC-SR04 standar 5 V | VCC 5V, GND, TRIG GPIO10, ECHO GPIO11 melalui R1 1 kΩ seri dan R2+R3 1 kΩ+1 kΩ ke GND |
+| VL53L1X | VIN sesuai label breakout/3V3, GND, SDA GPIO8, SCL GPIO9, INT GPIO14 opsional, XSHUT GPIO13 tidak didrive |
 | CDM324 | **Tidak terhubung/tidak diberi daya**; GPIO1 hanya cadangan pengondisi |
 
 Tidak menggunakan GPIO35/36/37, USB19/20, strapping0/3/45/46, atau console43/44.
@@ -175,11 +178,12 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | help / status | Daftar perintah / snapshot diagnostik (console) |
 | buzzer_test | 3 × 150 ms, jeda 350 ms, akhirnya OFF |
 | hlk_start / hlk_stop | Mulai/hentikan UART pasif, tanpa perintah konfigurasi |
+| sensors_start / sensors_stop | Mulai/hentikan HLK + polling HC-SR04 + deteksi/range VL53L1X; tidak menggerakkan axis |
 | motor_arm / step_test | Arm 30 detik, satu uji 64 half-step maju lalu mundur ~100/s |
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
 | step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
 | park_stepper / stepper_left_10 / stepper_right_10 | Hold posisi stepper sekarang atau nudge 114 half-step nominal (±10°) |
-| park_servo / servo_up_200 / servo_down_200 / servo_up_50 / servo_down_50 | `park_servo` hold di base tersimpan (awal 900 µs); ±200 cepat, ±50 halus; semua tetap hold; clamp 500–1400 µs |
+| park_servo / servo_up_200 / servo_down_200 / servo_up_50 / servo_down_50 | `park_servo` hold di base tersimpan (default 800 µs); ±200 cepat, ±50 halus; semua tetap hold; clamp 500–1400 µs; boot tetap detached |
 | release_stepper / release_servo / release_pose | Lepas satu axis atau kedua axis; torsi dapat hilang dan beban dapat turun |
 | zero_stepper_here / save_servo_here | Simpan referensi relatif stepper atau target pulse servo ke NVS lokal |
 | stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm |
@@ -217,18 +221,28 @@ OUT HLK bersifat raw/unverified; presence live hanya boleh ditafsirkan dari fram
 valid dan belum stale. Batas stale 2 detik, timeout frame parsial 100 ms.
 Jarak HLK bukan koordinat manusia atau bukti objek mendekat.
 
+`sensors_start` menyalakan polling sensor tanpa mengarm atau menggerakkan
+stepper/servo. HC-SR04 dipicu setiap 250 ms, memakai timeout bounded dan hanya
+menerima jarak 20–4000 mm; timeout dan pulsa di luar rentang dihitung sebagai
+invalid. ECHO modul HC-SR04 5 V **wajib** melalui divider yang tercatat di
+workbook, bukan langsung ke GPIO11. VL53L1X dipindai pada bus I2C 100 kHz,
+diharapkan berada di alamat `0x29`, lalu dijalankan pada mode long-range dengan
+interval 100 ms. Status `/api/status.sensors` membedakan `received`, `valid`,
+`stale`, `last_sample_valid`, dan penghitung error; nilai `null` bukan jarak
+buatan. `sensors_stop` menghentikan polling dan mengembalikan TRIG LOW.
+
 ## Web dan OTA tanpa USB
 
 Web berada pada IP dari status, atau `http://aiot-room.local` bila mDNS tersedia.
 Wi-Fi station, retry 15 detik tanpa loop tunggu koneksi; tidak membuka AP otomatis.
 Halaman menampilkan versi, uptime, status suplai **tidak diukur**, reset/brownout,
-memori, status perangkat, radar valid/stale, arm/test/stop, dan upload firmware.
+memori, status radar/HC-SR04/VL53L1X valid-stale, arm/test/stop, dan upload firmware.
 HTTP berjalan pada task terpisah dari loop perangkat.
 
 Dashboard menyediakan tes panjang yang tetap bounded dan dua kartu axis terpisah.
 Axis X mengontrol stepper horizontal; Axis Y mengontrol servo elevasi. Gunakan
 `park_stepper`/tombol nudge stepper untuk hold dan mencari titik seimbang. Tombol
-`park_servo` menahan servo pada base tersimpan (awal 900 µs). Tombol ±200 untuk
+`park_servo` menahan servo pada base tersimpan (default 800 µs). Tombol ±200 untuk
 gerak cepat dan ±50 untuk halus; keduanya tetap menahan posisi. Range firmware
 500–1400 µs, dan 500 µs adalah batas software, bukan bukti batas mekanis servo.
 Tidak ada encoder/homing

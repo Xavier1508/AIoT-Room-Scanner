@@ -43,6 +43,15 @@ class LocalContract(unittest.TestCase):
         allowed = self.spec["paths"]["/api/command"]["post"]["requestBody"]["content"]["text/plain"]["schema"]["enum"]
         self.assertTrue(commands.issubset(allowed))
 
+    def test_sensor_commands_and_status_are_in_contract(self):
+        command_schema = self.spec["paths"]["/api/command"]["post"]["requestBody"]["content"]["text/plain"]["schema"]
+        self.assertIn("sensors_start", command_schema["enum"])
+        self.assertIn("sensors_stop", command_schema["enum"])
+        status = self.spec["components"]["schemas"]["Status"]
+        self.assertIn("sensors", status["required"])
+        self.assertIn("hc_sr04", status["properties"]["sensors"]["properties"])
+        self.assertIn("vl53l1x", status["properties"]["sensors"]["properties"])
+
 
 if __name__ == "__main__":
     unittest.main()
