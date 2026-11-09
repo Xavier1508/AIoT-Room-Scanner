@@ -94,6 +94,14 @@ I2C timeout, ToF stall suspension/recovery, and stepper release after the scan.
 Validation 30/30 and coarse 110/110 scans then stayed responsive with no new
 brownout. Keep this as a historical failure; do not run 0.6.0 scans.
 
+**Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
+frames with zero moving-energy positives and 3,342 human frames with 93.9%
+positive. A rule `max(moving_energy)>0` reached 100% on the same validation
+split, while the 1D CNN reached 82.7% (human recall 77.2%). Do not deploy the
+binary DL model as the primary detector; keep the rule for movement/presence.
+A meaningful DL target must be harder: human vs non-human, stationary-human
+presence, or activity classification, evaluated on a true held-out session.
+
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional
 INT14/XSHUT13. `0.3.2` adds XSHUT reset and interval-limited ToF reads after a

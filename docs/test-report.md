@@ -73,6 +73,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W28 | Gagal - board HTTP hang after scan from released stepper | A validation scan from a released-stepper start captured 2/30 points and then `/api/status` timed out; ping was intermittent and the web server stayed unresponsive. No brownout was read before the hang. Power cycle required before 0.6.1 OTA. The earlier 0.6.0 coarse 110/110 scan remains valid; no new scan is claimed from this failed run. |
 | W29 | Lulus - 0.6.1 ToF watchdog OTA | `0.6.1-tof-watchdog` installed over LAN OTA (837856 bytes, SHA-256 `dc9f968e...f285`). Reboot reported `reset_reason=3`, `brownout=false`; sensors then reported HC/ToF/HLK OK, ToF ~75 cm, `tof_recoveries=0`. Evidence: `analysis/device/ota-tof-watchdog-20261109T181258Z/`. |
 | W30 | Lulus - 0.6.1 validation and coarse ToF scans | Validation `20261109T180145Z` completed 30/30 (28 ToF + 2 HC); coarse `20261109T180415Z` completed 110/110 (106 valid, 103 ToF + 3 HC) across yaw ±45°. Watchdog recovered ToF 2 and 10 times; no new brownout, board stayed responsive, stepper released after scan. Evidence: `analysis/mapping/scan-success-061-20261109T181300Z/`, screenshot `analysis/mapping/dashboard-20261109T181300Z/final-tof-map.png`. |
+| W31 | Lulus pipeline - binary empty/human training, rule baseline wins | 2,234 empty frames (0% moving-energy positives) + 3,342 human frames (93.9% positive) produced 1,387 windows. The 1D CNN reached 82.7% validation accuracy (empty recall 91.0%, human recall 77.2%, confusion `[[101,10],[38,129]]`). A rule `max(moving_energy)>0` reached 100% on the same split. The binary task is rule-separable; the DL model is retained as a pipeline baseline, not deployed. Evidence: `analysis/mapping/ml-training-20261109T193000Z/`, `research/mapping/ml/model-empty-human/`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -152,7 +153,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`.
-Research CLI verified 83 stored evidence artifacts with zero integrity failures.
+Research CLI verified 84 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

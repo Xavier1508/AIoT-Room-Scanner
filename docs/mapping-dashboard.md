@@ -177,7 +177,16 @@ It trains a small 1D CNN, evaluates it, and exports `model.tflite`,
 not integrated yet; it will run only when the arm is parked, never during the
 scan. A quantized model under ~50 KB plus an ~80 KB arena fits the current
 ~230 KB free heap without PSRAM. The current scan still produces a geometric
-HC point cloud; TinyML is for HLK presence/activity, not point-cloud geometry.
+HC/ToF point cloud; TinyML is for HLK presence/activity, not point-cloud
+geometry.
+
+**Current ML baseline:** the first binary `empty vs human` dataset (5,576
+frames, 1,387 windows) trained a 1D CNN to 82.7% validation accuracy, while a
+simple `max(moving_energy)>0` rule reached 100% on the same split. The rule is
+kept for movement/presence; the DL model is a pipeline baseline, not the
+primary detector. A meaningful DL target must be harder: human vs non-human,
+stationary-human presence, or activity classification, evaluated on a true
+held-out session.
 
 ## Endpoints
 

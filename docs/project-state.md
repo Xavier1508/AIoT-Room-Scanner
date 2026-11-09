@@ -244,6 +244,18 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
   `moving_energy>0`; it and an 18-frame recorder test were moved to
   `research/mapping/ml_partial/` so the default training root contains only the
   clean empty baseline. A new human session is pending operator readiness.
+- First binary model trained: human session `20261109T190639Z-human` has
+  **3,342 frames**, **93.9%** with `moving_energy>0`; total 5,576 frames and
+  1,387 windows (16 frames, stride 4). The 1D CNN reached **82.7% validation
+  accuracy** (empty recall 91.0%, human recall 77.2%, confusion
+  `[[101,10],[38,129]]`). A simple rule `max(moving_energy)>0` reached **100%**
+  on the same validation split. The binary empty-vs-human task is
+  rule-separable; the DL model is **not deployed** as the primary detector.
+  Artifacts: `research/mapping/ml/model-empty-human/`; evidence:
+  `analysis/mapping/ml-training-20261109T193000Z/`.
+- Next DL target must be harder: human vs non-human, stationary-human presence,
+  or activity classification. Keep the rule-based movement/presence baseline
+  for the demo until a harder model beats it on a held-out session.
 - `0.6.1-tof-watchdog` is **OTA-installed** (837856 bytes, SHA-256
   `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`). It adds
   `Wire.setTimeOut(50)`, suspends ToF polling after 3 s without data-ready,
@@ -267,13 +279,13 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** wait for the operator to start a new **human** session.
-When instructed, record 15 minutes with label `human` while the operator stays
-active in the center of the room. Then analyze `moving_energy`/distance
-coverage, train the binary `empty vs human` 1D CNN (window 16), evaluate on a
-chronological/session holdout, and export the int8 TFLite model. `non-human`
-and activity classes come later. No deep-learning accuracy is claimed until the
-human data is collected and evaluated.
+**Current next action:** keep the rule-based movement/presence baseline for the
+demo. For a meaningful DL model, record a second human session with different
+activities (held-out), a second empty session at a different time, and then
+non-human/activity sessions. Retrain and require the DL model to beat the rule
+on a true held-out session before deploying it. The current 82.7% binary model
+and its TFLite export are retained as a pipeline baseline, not as the primary
+detector.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -293,7 +305,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **83 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **84 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -316,7 +328,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   brownouts with ToF stale during servo movement; 78 = 0.6.0 software-power OTA;
   79 = successful validation/coarse scans with HC fallback; 80 = 0.1 s servo
   delay test; 81 = ToF motion stall with servo detached during sampling;
-  82 = 0.6.1 ToF watchdog OTA; 83 = 0.6.1 validation/coarse ToF scans.
+  82 = 0.6.1 ToF watchdog OTA; 83 = 0.6.1 validation/coarse ToF scans;
+  84 = binary empty/human training and rule-baseline comparison.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
