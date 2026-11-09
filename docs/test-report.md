@@ -25,8 +25,9 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**20 Python tests** passed for image headers, local-address validation,
-serial framing, SSID-byte/display/menu handling and OpenAPI contract consistency.
+**28 Python tests** passed for image headers, local-address validation,
+serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
+generation and OpenAPI contract consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
 These do not validate electrical wiring or physical hardware.
 
@@ -61,6 +62,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W17 | Lulus parsial - 0.5.0 OTA, USB-only power and scan mute | 0.5.0-sequential-scan installed via real LAN OTA and returned IDLE/detached with stepper 0. Status exposed sequential_guard=true and alert min/max 30/75 cm, 150-2000 ms ramp. USB-only power kept web/API online but HC was stale, VL53L1X absent and HLK no data; the 5V sensor rail needs the 9V jack. `scan_mode_start` set alert_muted=true and mute_reason=scan_mode; after stop it returned no_valid_hlk. No servo attach or scan was performed. |
 | W18 | Lulus parsial - jack-powered servo attach, ToF absent, board later offline | With 9V jack and USB removed, `park_servo` attached at 800 µs and held without immediate brownout; HC valid ~288.8 cm, HLK ~267 cm, VL53L1X absent with empty I2C scan. A later `sensors_stop` timed out and the board became unreachable again (ICMP/HTTP false, USB ports empty). Partial attach success does not establish stable power; ToF wiring must be re-seated. |
 | W19 | Lulus parsial - jack-powered servo small movement | After recovery, `park_servo` → `servo_down_25` (800→775) → `servo_up_25` (775→800) → `release_servo` all returned ok with no brownout and reset reason 1. HC ~71.3 cm, HLK ~62 cm, ToF still absent. This establishes small servo movement under jack power; full scan still requires ToF and power stability. |
+| W20 | Gagal parsial - sequential scan brownout 1 | Scan `20261109T132613Z` captured 10/30 points at yaw -10°, servo 500→950 µs. HC was valid; ToF was valid before the scan but stale from the first sample. The board reset with `reset_reason=9`, `brownout=true`. Evidence: `analysis/device/scan-brownout-20261109T132901Z/`. |
+| W21 | Gagal parsial - sequential scan brownout 2 | Scan `20261109T133153Z` captured 19/30 points after parking the servo at 800 µs before detach; the second column reached 900 µs. HC was valid, ToF stale for every point, and the board reset again with `reset_reason=9`, `brownout=true`. Evidence: `analysis/device/scan-brownout-2-20261109T133435Z/`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -116,6 +119,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/ota-sequential-050-20261109T094841Z/`
 - `analysis/device/jack-servo-partial-20261109T124803Z/`
 - `analysis/device/jack-servo-motion-20261109T125129Z/`
+- `analysis/device/scan-brownout-20261109T132901Z/`
+- `analysis/device/scan-brownout-2-20261109T133435Z/`
 - `research/mapping/calibration.json` (PC calibration capture)
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
@@ -123,8 +128,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/gcc/tests-20261105T161636731Z/` (final host regression run)
 
 The current application SHA-256 is
-`f702ec54952d3cd1c5f997c8c7d77a298c6446218e1d5f5b8ed6fee9d3bf22b6`.
-Research CLI verified 48 stored evidence artifacts with zero integrity failures.
+`32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`.
+Research CLI verified 77 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

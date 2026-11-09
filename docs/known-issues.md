@@ -65,13 +65,18 @@ the 5V sensor rail is not adequately powered: HC stale, VL53L1X absent, HLK no
 data. Use the 9V jack for sensor calibration; do not connect USB and jack
 together. The ESP32 web dashboard still auto-starts over Wi-Fi when jack-powered.
 
-**Jack partial attach:** with the 9V jack and USB removed, a `park_servo` attach
-at 800 µs held without immediate brownout; HC and HLK were valid. VL53L1X was
-absent with an empty I2C scan. A later `sensors_stop` timed out and the board
-became unreachable again. After recovery, a controlled 25 µs servo movement
-(800→775→800) and release also completed without brownout. The power path still
-needs stability testing; this is not proof that a full scan is safe. Re-seat
-ToF wiring and verify stable power first.
+**Jack partial attach / scan brownout:** with the 9V jack and USB removed, a
+`park_servo` attach at 800 µs held without immediate brownout; HC and HLK were
+valid. VL53L1X was absent with an empty I2C scan. After recovery, a controlled
+25 µs servo movement (800→775→800) and release also completed without brownout.
+Two later sequential scans then failed on the second column: 10/30 points
+(`20261109T132613Z`) and 19/30 points (`20261109T133153Z`), both ending with
+`reset_reason=9`, `brownout=true`. ToF is valid at rest (I2C `0x29`, ~76 cm) but
+its timestamp stops when the servo moves; after the reset, sensors stay stopped
+and ToF shows ABSENT until `sensors_start`. This is a shared servo/sensor power
+and transient problem, not a permanently dead ToF. A separate 5 V/6 V servo
+supply with common ground, or a measured stronger buck converter plus bulk
+capacitance, is required before a full scan. No full scan is claimed.
 
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional

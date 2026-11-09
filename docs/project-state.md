@@ -2,7 +2,9 @@
 
 Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-Physical servo movement is currently blocked by a measured brownout on attach.
+A full sequential scan is currently blocked by two measured brownouts during
+the second column; small servo movement works, but the shared servo/sensor
+supply cannot sustain a full sweep.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -34,7 +36,7 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 20 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 28 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -178,23 +180,38 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   `release_servo`. All returned ok, no brownout, reset reason stayed 1; HC
   ~71.3 cm and HLK ~62 cm. ToF still absent. Evidence:
   `analysis/device/jack-servo-motion-20261109T125129Z/`.
+- ToF is not permanently absent. After a clean boot and `sensors_start`, I2C
+  `0x29` is present and ToF reads ~76.1 cm while HC reads ~76.0 cm using the
+  firmware offsets. Raw values were HC 760 mm and ToF 711 mm; the PC 56 mm ToF
+  offset gives ~76.7 cm, within ~0.7 cm of HC. After a reset the firmware leaves
+  sensors stopped, so the dashboard shows ToF ABSENT until `sensors_start`.
+- Sequential scan attempt 1 (`20261109T132613Z`): 10/30 points, first column
+  yaw -10°, servo 500→950 µs, HC valid throughout, ToF stale from the first
+  sample. The board then reset with `reset_reason=9`, `brownout=true`. Evidence:
+  `analysis/device/scan-brownout-20261109T132901Z/`.
+- Sequential scan attempt 2 (`20261109T133153Z`): after parking the servo at
+  800 µs before detach, 19/30 points, second column reached 900 µs, HC valid,
+  ToF stale for every point. The board reset again with `reset_reason=9`,
+  `brownout=true`. Evidence:
+  `analysis/device/scan-brownout-2-20261109T133435Z/`.
 - **Brownout blocker:** a small validation (`servo_up_25`) reset the board with
   `reset_reason=9`, `brownout=true`. A later attach-only `park_servo` test made
   the board go completely offline (no HTTP/ping/USB), so the rail collapses even
-  before deliberate movement. Do not run the scan or loaded servo movement until
-  the board is power-cycled and the rail is fixed. This is an electrical finding,
-  not a firmware success claim.
+  before deliberate movement. The two scan attempts above confirm the blocker is
+  the shared servo/sensor power path, not the ToF wiring. This is an electrical
+  finding, not a firmware success claim.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** re-seat the VL53L1X wiring (VIN 3.3V, GND, SDA 8,
-SCL 9, XSHUT 13 HIGH) and re-run `sensors_start`; the I2C scan is empty, so ToF
-is not merely miscalibrated. Jack-powered servo attach and small 25 µs movement
-now work without brownout. After HC/ToF/HLK health is OK, capture calibration at
-30/50/75/100/150/250 cm, then test a small sequential scan. The PC calibration
-and sequential scan pipeline are ready, but no full scan is claimed. Do not
-train a deep-learning model until repeatable calibrated scans exist.
+**Current next action:** stop running scans. Fix the servo power path first:
+use a separate 5 V/6 V supply (≥2 A) for the servo with a common ground, or a
+measured stronger buck converter, and add bulk capacitance; then measure the
+5 V and 3.3 V rails under servo load. ToF is healthy at rest (I2C `0x29`,
+~76 cm) and is not the blocker. After power is stable, capture calibration at
+30/50/75/100/150/250 cm, then run the small ±10° scan and only then the full
+coarse scan. No full scan is claimed; do not train a deep-learning model until
+repeatable calibrated scans exist.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -214,7 +231,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **75 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **77 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -233,7 +250,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   dashboard screenshots; 68–69 = 0.5.0 sequential-scan build and attach-only
   offline observation; 70–73 = 0.5.0 OTA, USB-only sensor power, scan-mode mute
   and PC mapping health; 74 = jack-powered partial servo attach/ToF absent;
-  75 = jack-powered servo small movement success.
+  75 = jack-powered servo small movement success; 76–77 = two sequential scan
+  brownouts with ToF stale during servo movement.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

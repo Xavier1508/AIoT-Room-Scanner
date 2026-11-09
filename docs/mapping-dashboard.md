@@ -77,18 +77,27 @@ The ESP32 must be in `IDLE` or `PARKED` with sensors running. The PC sends
 `scan_mode_start`, then explicit 5-degree/25-microsecond nudges. The scan is
 **sequential** to avoid overlapping actuator current: stepper moves and holds,
 servo attaches only after the stepper settles, the vertical sweep runs, the
-servo detaches, then the next yaw starts. Firmware rejects servo attach while
-the stepper is moving and stepper motion while the servo is attached. The PC
-also requires a power-confirmation checkbox before starting because a servo
-attach brownout was observed on 2026-11-09. Firmware enforces the mapping
-envelope:
+servo returns to its 800-microsecond base, detaches, then the next yaw starts.
+Firmware rejects servo attach while the stepper is moving and stepper motion
+while the servo is attached. The PC also requires a power-confirmation checkbox
+before starting. Firmware enforces the mapping envelope:
 
 - stepper: `-513..+513` half-steps (about +/-45.1 degrees nominal)
 - servo: `500..950` microseconds (500 = up, 950 = down)
 
-The default grid is yaw -45..+45 degrees in 5-degree steps and tilt 500..950
-microseconds in 25-microsecond steps: 19 x 19 = 361 points. A coarse run uses
-10 degrees and 50 microseconds.
+The UI/API exposes a bounded validation mode: yaw step 5/10 degrees, yaw limit
+±5/10/15/20/30/45 degrees, tilt step 25/50 microseconds, and tilt min/max inside
+500..950 microseconds. The default full grid is yaw -45..+45 degrees in
+5-degree steps and tilt 500..950 microseconds in 25-microsecond steps:
+19 x 19 = 361 points. A coarse run uses 10 degrees and 50 microseconds; start
+with ±10 degrees and 50 microseconds before a full sweep.
+
+**Power blocker (2026-11-09):** two sequential validation scans browned out on
+the second column (10/30 and 19/30 points, `reset_reason=9`, `brownout=true`).
+The ToF was valid at rest but went stale as soon as the servo moved; after the
+reset sensors stayed stopped and ToF appeared absent until `sensors_start`.
+Do not run a full scan until the servo has a separate 5 V/6 V supply (or a
+measured stronger buck converter) with common ground and bulk capacitance.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is
@@ -152,6 +161,7 @@ learned model.
 
 - Scan mode does not move axes by itself; the PC sends each nudge.
 - STOP on the ESP32 releases outputs and stops sensors/scan mode.
-- A scan error leaves the arm held; it does not auto-release the servo.
+- A scan error stops scan mode, holds the stepper at its current position, and
+  releases the servo if it is still attached. Cleanup never re-attaches the servo.
 - Verify cable clearance before the first sweep. The yaw limit is a software
   choice, not a mechanical proof.
