@@ -10,9 +10,8 @@ Physical servo movement is currently blocked by a measured brownout on attach.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.4.2-mapping-ready`**; `0.5.0-sequential-scan` is built
-  but not yet OTA-deployed because the board went offline during the servo
-  attach-only test. Current application artifact:
+- **Running firmware: `0.5.0-sequential-scan`**, installed through real LAN OTA
+  after the board was power-cycled. Current application artifact:
   `analysis/platformio/build-20261109T091806602Z/firmware.bin`.
   Size **837088 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
   `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`.
@@ -155,11 +154,19 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   and canvas 3D isometric viewer with an HLK presence overlay. First calibration
   record at 75 cm: HC offset +6/+9 mm, ToF offset +56 mm, both sensors valid
   100% over five samples.
-- `0.5.0-sequential-scan` is built (837088 bytes, SHA-256
+- `0.5.0-sequential-scan` is deployed (837088 bytes, SHA-256
   `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`) with:
   sequential scan guard, servo-detach between columns, HLK parking-sensor ramp
   75→30 cm, scan/motion muting, 2-frame confirmation, and HLK overlay.
-  **Not OTA-deployed yet.**
+  Real OTA returned IDLE, servo detached, stepper reference 0, base 800 µs;
+  status exposes `sequential_guard=true` and alert min/max 30/75 cm.
+- USB-only power check: board web/API stayed online, but HC was stale,
+  VL53L1X absent and HLK no data. USB-only does **not** power the 5V sensor rail;
+  sensors need the 9V jack while the board remains reachable over Wi-Fi.
+- `scan_mode_start` test under USB-only power succeeded with
+  `scan.mode=true`, `sequential_guard=true`, `alert_muted=true` and
+  `hlk_alert.mute_reason=scan_mode`; after stop the mute reason became
+  `no_valid_hlk`. No servo attach or scan was performed.
 - **Brownout blocker:** a small validation (`servo_up_25`) reset the board with
   `reset_reason=9`, `brownout=true`. A later attach-only `park_servo` test made
   the board go completely offline (no HTTP/ping/USB), so the rail collapses even
@@ -170,12 +177,13 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** power-cycle the board (unplug jack, wait, replug) and
-confirm it returns IDLE/detached. Then OTA `0.5.0-sequential-scan` and verify
-the new status fields. Do not run `park_servo` or a scan until the rail is
-measured/fixed; attach-only already took the board offline. The PC calibration
-and sequential scan pipeline are ready, but no full scan is claimed. Do not
-train a deep-learning model until repeatable calibrated scans exist.
+**Current next action:** unplug USB, plug the 9V jack (do not use both), wait
+for Wi-Fi, then start sensors and capture calibration at 30/50/75/100/150/250 cm.
+USB-only does not power the 5V sensor rail. Do not run `park_servo` or a scan
+until the rail is measured/fixed; attach-only already took the board offline.
+The PC calibration and sequential scan pipeline are ready, but no full scan is
+claimed. Do not train a deep-learning model until repeatable calibrated scans
+exist.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -195,7 +203,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **69 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **73 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -212,15 +220,17 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   long-run failure, short-pass, stale/restart and wrap-target evidence;
   61–67 = 0.4.2 build, OTA, post-start health, calibration, brownout and PC
   dashboard screenshots; 68–69 = 0.5.0 sequential-scan build and attach-only
-  offline observation.
+  offline observation; 70–73 = 0.5.0 OTA, USB-only sensor power, scan-mode mute
+  and PC mapping health.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.4.2-mapping-ready`, prior
-  `0.4.1-mapping-ready`, `0.4.0-mapping-ready`, `0.3.2-sensor-poll-throttled`,
+- Retained binary deliverables: current `0.5.0-sequential-scan`, prior
+  `0.4.2-mapping-ready`, `0.4.1-mapping-ready`, `0.4.0-mapping-ready`,
+  `0.3.2-sensor-poll-throttled`,
   `0.3.1-sensor-tof-ready`, `0.3.0-sensor-bringup`, `0.2.8-servo-scan-range`,
   `0.2.7-servo-base-reset`, `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`,
   `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,

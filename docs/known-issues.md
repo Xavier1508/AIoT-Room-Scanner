@@ -60,6 +60,11 @@ under load. `0.5.0-sequential-scan` adds a software guard and servo-detach
 between columns, but software cannot create current; no full scan is claimed.
 This is an electrical finding, not a firmware success claim.
 
+**USB-only sensor power:** with USB-C only, the board web/API stays online but
+the 5V sensor rail is not adequately powered: HC stale, VL53L1X absent, HLK no
+data. Use the 9V jack for sensor calibration; do not connect USB and jack
+together. The ESP32 web dashboard still auto-starts over Wi-Fi when jack-powered.
+
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional
 INT14/XSHUT13. `0.3.2` adds XSHUT reset and interval-limited ToF reads after a

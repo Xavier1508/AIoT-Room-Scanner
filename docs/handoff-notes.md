@@ -14,12 +14,16 @@ were not taken.
 - No trained 3D/TinyML/CSI model yet; CDM324 remains disabled. Sensor health,
   calibration capture, scan orchestration and a canvas 3D point-cloud viewer are
   implemented. Deep-learning training is still a PC-side future step.
-- Deployed firmware: `0.4.2-mapping-ready`.
-- Built but not OTA-deployed: `0.5.0-sequential-scan` (837088 bytes, SHA-256
+- Deployed firmware: `0.5.0-sequential-scan` (837088 bytes, SHA-256
   `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`).
   Adds sequential scan guard, servo detach between columns, HLK parking-sensor
-  ramp 75→30 cm, scan/motion muting and HLK 3D overlay. The board went offline
-  during the attach-only test; power-cycle and verify before OTA.
+  ramp 75→30 cm, scan/motion muting and HLK 3D overlay. Real OTA returned
+  IDLE/detached with stepper 0.
+- USB-only power keeps the board web/API online but does not power the 5V
+  sensor rail: HC stale, VL53L1X absent, HLK no data. Use the 9V jack for sensor
+  calibration; do not connect USB and jack together.
+- Attach-only `park_servo` took the board completely offline on 2026-11-09.
+  Do not attach the servo or run a scan until the rail is fixed/measured.
 - PC mapping dashboard: `tools/mapping/mapping_server.py` on
   `http://127.0.0.1:8000/`; see `docs/mapping-dashboard.md`.
 
