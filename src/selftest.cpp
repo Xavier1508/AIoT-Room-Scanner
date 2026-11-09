@@ -117,7 +117,8 @@ SelftestResult runSelftests() {
   check(config::stepperFineHalfSteps == 57 && config::servoFineUs == 25);
   check(config::scanStepperLimitHalfSteps == 513);
   check(config::scanServoMinPulseUs == 500 && config::scanServoMaxPulseUs == 950);
-  check(config::hlkAlertDistanceCm == 30 && config::hlkAlertCooldownMs == 2000);
+  check(config::hlkAlertMinCm == 30 && config::hlkAlertMaxCm == 75);
+  check(config::hlkAlertMinIntervalMs == 150 && config::hlkAlertMaxIntervalMs == 2000);
   check(parseCommand("step_test 1000") == Command::Invalid);
   check(parseCommand("reboot") == Command::Invalid);
   check(parseCommand("wifi_scan") == Command::WifiScan);

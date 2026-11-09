@@ -60,9 +60,13 @@ class App {
   bool scanMode_ = false, hlkAlertEnabled_ = false;
   bool stepperReferencePersisted_ = false;
   bool servoBasePersisted_ = false;
-  uint32_t hlkAlertLastMs_ = 0, hlkAlertCount_ = 0, lastMotionMs_ = 0;
-  uint16_t hlkAlertLastDistanceCm_ = 0;
+  bool hlkAlertActive_ = false;
+  uint8_t hlkAlertConfirm_ = 0;
+  uint32_t hlkAlertNextMs_ = 0, hlkAlertCount_ = 0, lastMotionMs_ = 0;
+  uint32_t hlkAlertLastFrameMs_ = 0;
+  uint16_t hlkAlertLastDistanceCm_ = 0, hlkAlertIntervalMs_ = 0;
   uint8_t hlkAlertLastEnergy_ = 0;
+  String hlkAlertMuteReason_ = "idle";
   String poseReferenceSource_ = "migration_default_1024";
   String servoBaseSource_ = "default_800";
   uint16_t servoBaseUs_ = config::servoParkPulseUs;

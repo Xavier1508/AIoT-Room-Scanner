@@ -50,7 +50,8 @@ class EspClient:
         raise TimeoutError("Timed out waiting for device state." if last is None else
                            "Timed out waiting for device state: " + str(last.get("mode")))
 
-    def move_stepper_to(self, target_half_steps: int, timeout_s: float = 20.0) -> dict:
+    def move_stepper_to(self, target_half_steps: int, timeout_s: float = 20.0,
+                        settle_s: float = 0.35) -> dict:
         """Move using only 5-degree nudges; target must be reachable in 57-step units."""
         state = self.status()
         current = int(state["actuators"]["relative_half_steps"])
@@ -66,9 +67,13 @@ class EspClient:
                 lambda s: bool(s["actuators"].get("stepper_holding")) and
                 int(s["actuators"]["relative_half_steps"]) == current + (57 if delta > 0 else -57),
                 timeout_s=timeout_s)["actuators"]["relative_half_steps"])
+        if settle_s:
+            time.sleep(settle_s)
         return self.status()
 
-    def servo_to(self, target_us: int, timeout_s: float = 8.0) -> dict:
+    def servo_to(self, target_us: int, timeout_s: float = 8.0,
+                 step_delay_s: float = 0.04) -> dict:
+        """Move in 25 us steps with a delay so the rail is not hit by a fast ramp."""
         state = self.status()
         current = int(state["actuators"]["servo_target_us"])
         while current != target_us:
@@ -82,4 +87,6 @@ class EspClient:
                 lambda s: int(s["actuators"]["servo_target_us"]) ==
                 current + (25 if target_us > current else -25),
                 timeout_s=timeout_s)["actuators"]["servo_target_us"])
+            if step_delay_s:
+                time.sleep(step_delay_s)
         return self.status()

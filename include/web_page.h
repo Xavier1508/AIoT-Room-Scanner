@@ -36,7 +36,7 @@ static const char webPage[] PROGMEM = R"HTML(<!doctype html>
 </section>
 <section class="card"><h2>Buzzer &amp; radar</h2>
 <button data-command="buzzer_test">3 beep test</button><button data-command="hlk_start">Mulai HLK</button><button data-command="hlk_stop">Hentikan HLK</button>
-<p class="note">HLK dipakai presence/proximity; blind zone &lt;30 cm. Alert berbunyi jika target ≤30 cm dan energy cukup.</p>
+<p class="note">HLK dipakai presence/proximity; blind zone &lt;30 cm. Buzzer parkir: diam di &gt;75 cm, lambat di 75 cm, makin cepat sampai 30 cm. Mute saat scan mode/gerakan.</p>
 <pre id="hlk">Belum ada data valid.</pre></section>
 <section class="card"><h2>Axis X · Stepper horizontal</h2>
 <button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button><button data-command="step_test_long">512 maju / 512 mundur</button>
@@ -68,7 +68,7 @@ static const char webPage[] PROGMEM = R"HTML(<!doctype html>
 <p class="note">Gunakan scan mode agar limit ±45° dan 500–950 µs aktif.</p></section>
 <section class="card"><h2>Scan mode</h2>
 <button data-command="scan_mode_start">Aktifkan scan mode</button><button data-command="scan_mode_stop">Matikan scan mode</button>
-<p class="note">Scan mode hanya membatasi jog; tidak menggerakkan axis otomatis. PC mapping yang menjalankan grid.</p><pre id="scan-json">—</pre></section>
+<p class="note">Scan mode membatasi jog dan mengaktifkan sequential power guard: servo tidak boleh attach saat stepper bergerak; stepper tidak boleh bergerak saat servo attached. PC mapping menjalankan grid dan detach servo antar-kolom.</p><pre id="scan-json">—</pre></section>
 <section class="card"><h2>Calibration</h2>
 <p class="note">Gunakan HC sebagai referensi. Offset awal: HC 0 mm, ToF +50 mm (lensa ToF ~5 cm lebih maju). Kalibrasi final dilakukan di PC mapping.</p><pre id="calibration-json">—</pre></section>
 </div>
@@ -152,7 +152,7 @@ function render(s){
   $('scan-json').textContent=JSON.stringify(scan,null,2);
   $('scan-limits').textContent=JSON.stringify(scan,null,2);
   $('calibration-json').textContent=JSON.stringify(sensors.calibration||{},null,2);
-  $('hlk').textContent=(s.hlk.valid?'VALID':s.hlk.stale?'STALE':'BELUM VALID')+' · alert '+(alert.enabled?'ON':'OFF')+' · count '+(alert.count||0)+'\n'+JSON.stringify(s.hlk.last_reading,null,2);
+  $('hlk').textContent=(s.hlk.valid?'VALID':s.hlk.stale?'STALE':'BELUM VALID')+' · alert '+(alert.enabled?'ON':'OFF')+' · '+(alert.min_cm||30)+'–'+(alert.max_cm||75)+' cm · '+(alert.state||'idle')+' · '+(alert.mute_reason||'—')+' · count '+(alert.count||0)+'\n'+JSON.stringify(s.hlk.last_reading,null,2);
   $('status').textContent=JSON.stringify(s,null,2);
   const mappingUrl=localStorage.getItem('mappingUrl')||'http://127.0.0.1:8000/';
   if(document.activeElement!==$('mapping-url'))$('mapping-url').value=mappingUrl;

@@ -2,10 +2,11 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi: **0.4.2-mapping-ready**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi: **0.5.0-sequential-scan**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
 Firmware ini menambahkan sensor health/error-rate, HLK di kartu sensor, fine jog
-5°/25 µs, scan envelope ±45°/500–950 µs, dan buzzer proximity HLK.
+5°/25 µs, scan envelope ±45°/500–950 µs, sequential power guard (servo/stepper
+tidak bergerak bersamaan), dan buzzer parkir 75→30 cm yang mute saat scan.
 Dashboard PC terpisah untuk kalibrasi, scan, dan point cloud 3D isometrik:
 [docs/mapping-dashboard.md](docs/mapping-dashboard.md). Training deep learning
 belum dijalankan; ESP32 hanya collector/control. CDM324 tetap ditunda.
@@ -184,7 +185,7 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | hlk_start / hlk_stop | Mulai/hentikan UART pasif, tanpa perintah konfigurasi |
 | sensors_start / sensors_stop | Mulai/hentikan HLK + polling HC-SR04 + deteksi/range VL53L1X; tidak menggerakkan axis; status health/error-rate ikut diperbarui |
 | scan_mode_start / scan_mode_stop | Aktifkan/matikan envelope scan ±513 half-step (45,1°) dan servo 500–950 µs; tidak menggerakkan axis |
-| hlk_alert_on / hlk_alert_off | Buzzer proximity HLK: target ≤30 cm + energy + cooldown 2 detik; bukan safety-rated |
+| hlk_alert_on / hlk_alert_off | Buzzer parkir HLK: diam >75 cm, lambat di 75 cm, makin cepat sampai 30 cm; mute saat scan/gerakan; bukan safety-rated |
 | motor_arm / step_test | Arm 30 detik, satu uji 64 half-step maju lalu mundur ~100/s |
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
 | step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
@@ -251,8 +252,10 @@ Pop-Location
 ```
 
 Buka `http://127.0.0.1:8000/`. Dashboard menyediakan kalibrasi HC/ToF, scan
-grid 5°/25 µs atau 10°/50 µs, penyimpanan `research/mapping/scans/`, dan viewer
-point cloud 3D isometrik berbasis canvas. Detail dan batas klaim ada di
+grid 5°/25 µs atau 10°/50 µs secara **sequential** (stepper hold → servo attach
+→ sweep vertikal → servo detach → stepper lagi), penyimpanan
+`research/mapping/scans/`, dan viewer point cloud 3D isometrik berbasis canvas
+dengan overlay presence HLK. Detail dan batas klaim ada di
 [docs/mapping-dashboard.md](docs/mapping-dashboard.md). Jangan port-forward
 dashboard ini ke internet.
 

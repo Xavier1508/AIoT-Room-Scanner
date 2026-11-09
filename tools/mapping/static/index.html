@@ -39,7 +39,7 @@
       <label class="note">Samples / point</label><input id="samples" type="number" value="5" min="1" max="10">
       <label class="note"><input id="power-confirm" type="checkbox"> Saya sudah memperbaiki dan mengukur suplai servo/5V di bawah beban.</label>
       <div class="row"><button id="start-scan">Start scan</button><button id="stop-scan" class="danger">Stop scan</button></div>
-      <p class="warn">Scan menggerakkan stepper ±45° dan servo 500–950 µs. Pada 2026-11-09 servo attach menyebabkan brownout; jangan start sebelum rail diperbaiki. Pastikan kabel aman, arm didukung, dan area bebas.</p>
+      <p class="warn">Scan sequential: stepper bergerak → hold → servo attach → sweep vertikal → servo detach → stepper lagi. Servo tidak pernah bergerak bersamaan dengan stepper. Pada 2026-11-09 servo attach saja sudah menyebabkan board offline; jangan start sebelum rail diperbaiki. Pastikan kabel aman, arm didukung, dan area bebas.</p>
     </section>
     <section class="card"><h2>Progress</h2><progress id="scan-progress" max="100" value="0"></progress><pre id="scan-status">Idle.</pre></section>
   </div>
@@ -72,7 +72,7 @@
     </div>
     <canvas id="cloud" width="1000" height="620"></canvas>
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
-    <p class="note">Drag canvas untuk rotasi, wheel untuk zoom. Warna: cyan = ToF, oranye = HC, tinggi z memengaruhi kecerahan. Ini visualisasi data mentah/terkalibrasi, bukan model deep learning.</p>
+    <p class="note">Drag canvas untuk rotasi, wheel untuk zoom. Warna: cyan = ToF, oranye = HC, magenta = presence HLK (blob/arc, bukan titik presisi), tinggi z memengaruhi kecerahan. Ini visualisasi data terkalibrasi, bukan model deep learning.</p>
   </section>
 </section>
 

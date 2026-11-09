@@ -8,7 +8,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 |---|---|---|
 | T01 | Lulus — identification | esptool identify-20261105T124021Z: ESP32-S3 rev0.2, 16MB flash, native USB Serial/JTAG COM9. Label N16R8 remains historical user report. |
 | T02 | Lulus — user checklist only | User confirmed jack/loads removed and USB-only. No rail-voltage/current/backfeed measurement. |
-| T03 | Lulus — build | Current 0.4.2-mapping-ready build, application 835440 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. |
+| T03 | Lulus - build | Current 0.5.0-sequential-scan build, application 837088 bytes / slot 6553600. Pinned toolchain, source/binary hashes in manifest. OTA pending board recovery. |
 | T04 | Lulus — software/USB scope | Upload verified hashes; current version returned IDLE/no arms and passed the seven-case USB check with 48 synthetic assertions. Prior 0.1.4 power-cycle/three paced runs are historical checks. This does not measure pin voltage or prove physical actuators. |
 | T05 | Lulus — physical confirmation | LAN buzzer test entered BUZZER_TEST, returned IDLE/output OFF; user heard three beep pulses. Evidence `analysis/device/buzzer-20261105T170632Z/`. |
 | T06 | Lulus parsial — UART only | 747 valid HLK frames, 0 rejected, 17,181 bytes; decoded target/distance/energy. User observed a table but expected <10 cm while frame said ~30 cm. Distance is uncalibrated; wiring/5V is user-reported, not independently measured. |
@@ -57,6 +57,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W13 | Lulus parsial — sensor bring-up and ToF-ready deployment | 0.3.1-sensor-tof-ready installed via real LAN OTA. With servo explicitly parked at 800 µs and stepper de-energized, I2C scan found address 41 (`0x29`); over five status samples HC-SR04 stayed valid with 29 valid samples/0 timeouts, VL53L1X produced 77 valid samples/0 invalid/0 I2C errors (`raw_status=9`, 210–220 mm), and HLK stayed valid. HC samples were 13.7–16.7 cm. These are bring-up observations, not calibrated geometry. |
 | W14 | Lulus parsial — ToF polling throttle, long-run unresolved | 0.3.2-sensor-poll-throttled reset optional XSHUT LOW→HIGH and throttled ToF reads to the 100 ms measurement interval. The first 12 snapshots/~24 s were all valid at `0x29`/raw status 9 with 279 valid samples and 0 I2C errors, but later the same boot became stale; a software stop/start did not recover it. A fresh start later reported raw status 7 (`wrap_target_fail`) with invalid samples and no I2C errors. HC-SR04 and HLK remained valid. Rail/thermal/optical target/sensor-state stability requires physical investigation. |
 | W15 | Lulus parsial - mapping-ready firmware + PC dashboard, servo brownout | 0.4.2-mapping-ready installed via real LAN OTA. After `sensors_start`, health was OK/OK/OK, HC ~74 cm, ToF raw ~69 cm → calibrated ~74 cm with +50 mm offset, HLK valid, ToF errors 0. PC dashboard served and proxied the ESP32 API; calibration capture at 75 cm gave HC offset +6/+9 mm and ToF offset +56 mm, both 100% valid over five samples. A 5° stepper nudge succeeded and returned to 0; a 25 µs servo attach caused `reset_reason=9`/brownout. Full scan not run; power path must be fixed first. |
+| W16 | Lulus parsial - sequential-scan build, attach-only offline | 0.5.0-sequential-scan built with 837088 bytes and SHA-256 `32968459...e41c5d`. It adds sequential scan guard, servo detach between columns, HLK parking-sensor ramp 75→30 cm, scan/motion muting, 2-frame confirmation and HLK 3D overlay. The attach-only `park_servo` test made the board completely offline (no HTTP/ping/USB), confirming the rail collapses before deliberate movement. OTA and full scan remain pending board recovery/power fix. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -107,6 +108,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/platformio/build-20261109T051721344Z/`
 - `analysis/device/ota-mapping-ready-042-20261109T052016Z/`
 - `analysis/mapping/dashboard-20261109T052101Z/`
+- `analysis/platformio/build-20261109T091806602Z/`
+- `analysis/device/attach-only-offline-20261109T092304Z/`
 - `research/mapping/calibration.json` (PC calibration capture)
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`

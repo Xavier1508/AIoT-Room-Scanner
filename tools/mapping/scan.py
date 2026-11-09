@@ -131,22 +131,44 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
         current_steps = int(current["actuators"]["relative_half_steps"])
         if current_steps % YAW_STEP != 0:
             raise RuntimeError("Stepper reference is not aligned to 5-degree units; zero it before scanning.")
+        if current.get("actuators", {}).get("servo_attached"):
+            result = client.command("release_servo")
+            if not result.get("ok"):
+                raise RuntimeError("Cannot detach servo before scan: " + str(result.get("message")))
+            time.sleep(0.25)
         client.command("scan_mode_start")
-        client.command("park_servo")
-        motion_started = True
         client.command("park_stepper")
-        client.move_stepper_to(yaws[0])
-        client.servo_to(tilts[0])
         with samples_path.open("w", encoding="utf-8") as sample_file:
             for yaw_index, yaw in enumerate(yaws):
-                if yaw_index:
-                    client.move_stepper_to(yaw)
-                    client.servo_to(tilts[0])
+                if stop_event is not None and stop_event.is_set():
+                    raise InterruptedError("scan stopped by operator")
+                state = client.status()
+                if state.get("actuators", {}).get("servo_attached"):
+                    result = client.command("release_servo")
+                    if not result.get("ok"):
+                        raise RuntimeError("Cannot detach servo between columns: " + str(result.get("message")))
+                    time.sleep(0.25)
+                if progress:
+                    progress({"phase": "moving_stepper", "scan_id": scan_id,
+                              "yaw_index": yaw_index, "yaw_count": len(yaws),
+                              "points": len(points), "total": total})
+                client.move_stepper_to(yaw, settle_s=0.35)
+                if progress:
+                    progress({"phase": "servo_attach", "scan_id": scan_id,
+                              "yaw_index": yaw_index, "yaw_count": len(yaws),
+                              "points": len(points), "total": total})
+                result = client.command("park_servo")
+                if not result.get("ok"):
+                    raise RuntimeError("Servo attach rejected: " + str(result.get("message")))
+                motion_started = True
+                time.sleep(0.25)
+                client.servo_to(tilts[0], step_delay_s=0.04)
+                time.sleep(0.15)
                 for tilt_index, tilt in enumerate(tilts):
                     if stop_event is not None and stop_event.is_set():
                         raise InterruptedError("scan stopped by operator")
                     if tilt_index:
-                        client.servo_to(tilt)
+                        client.servo_to(tilt, step_delay_s=0.04)
                     time.sleep(max(0, config.dwell_ms) / 1000.0)
                     rows = []
                     for sample_index in range(max(1, config.samples)):
@@ -175,8 +197,13 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                             "total": total,
                             "last_point": point,
                         })
-        client.move_stepper_to(0)
-        client.servo_to(800)
+                result = client.command("release_servo")
+                if not result.get("ok"):
+                    raise RuntimeError("Servo detach rejected: " + str(result.get("message")))
+                time.sleep(0.25)
+        client.move_stepper_to(0, settle_s=0.35)
+        client.command("park_stepper")
+        client.command("scan_mode_stop")
         fields = list(points[0].keys()) if points else []
         with (out_dir / "points.csv").open("w", encoding="utf-8", newline="") as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=fields)
@@ -188,6 +215,8 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             "started_utc": started,
             "finished_utc": utc_iso(),
             "config": asdict(config),
+            "sequential": True,
+            "servo_detach_between_columns": True,
             "calibration": calibration,
             "yaw_targets": yaws,
             "tilt_targets": tilts,
@@ -217,12 +246,14 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             progress({"phase": "error", "scan_id": scan_id, "error": error, "points": len(points), "total": total})
         raise
     finally:
-        # Leave the arm held if motion began; never attach the servo on a
-        # preflight failure (a servo attach brownout was observed).
+        # Sequential power profile: leave the stepper held, but never re-attach
+        # the servo in cleanup. A servo attach brownout was observed.
         try:
             client.command("scan_mode_stop")
             if motion_started:
-                client.command("park_servo")
+                state = client.status()
+                if state.get("actuators", {}).get("servo_attached"):
+                    client.command("release_servo")
                 client.command("park_stepper")
         except Exception:
             pass

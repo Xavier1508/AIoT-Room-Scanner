@@ -45,8 +45,14 @@ calibrated to match HC/ToF distance.
 ## Scan
 
 The ESP32 must be in `IDLE` or `PARKED` with sensors running. The PC sends
-`scan_mode_start`, then explicit 5-degree/25-microsecond nudges. Firmware
-enforces the mapping envelope:
+`scan_mode_start`, then explicit 5-degree/25-microsecond nudges. The scan is
+**sequential** to avoid overlapping actuator current: stepper moves and holds,
+servo attaches only after the stepper settles, the vertical sweep runs, the
+servo detaches, then the next yaw starts. Firmware rejects servo attach while
+the stepper is moving and stepper motion while the servo is attached. The PC
+also requires a power-confirmation checkbox before starting because a servo
+attach brownout was observed on 2026-11-09. Firmware enforces the mapping
+envelope:
 
 - stepper: `-513..+513` half-steps (about +/-45.1 degrees nominal)
 - servo: `500..950` microseconds (500 = up, 950 = down)
@@ -70,6 +76,21 @@ The point cloud is a geometric back-projection, not a deep-learning result.
 The provisional tilt curve is 10 microseconds/degree around 725 microseconds;
 replace it with a measured `servo_curve` in `calibration.json` before trusting
 absolute geometry.
+
+## HLK presence and buzzer
+
+The LD2410C is a wide-beam presence radar, not a mapping rangefinder. It is
+muted while scan mode or actuator motion is active, and re-armed only when the
+arm is stationary. The buzzer follows a parking-sensor ramp:
+
+- silent above 75 cm
+- slow beep at 75 cm
+- faster as distance approaches the 30 cm blind-zone clamp
+- 2-frame confirmation, energy gate and 10 cm hysteresis
+
+HLK data during the scan is recorded but not used for geometry. After the scan,
+the arm should stay parked so the HLK presence blob/arc can be placed in the 3D
+viewer consistently.
 
 ## 3D viewer
 

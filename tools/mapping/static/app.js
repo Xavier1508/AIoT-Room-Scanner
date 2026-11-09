@@ -92,7 +92,8 @@ function renderHealth() {
   setText('health', `Overall ${health.overall || '—'} · ToF errors ${stats.tof_i2c_errors ?? '—'} · ${stats.tof_error_rate_per_min ?? '—'}/min · responsive ${tof.responsive ? 'yes' : 'no'}`);
   setText('pose', `${actuators.servo_attached ? 'servo attached' : 'servo detached'} · ${actuators.stepper_energized ? 'stepper energized' : 'stepper off'}`);
   setText('pose-detail', `servo ${actuators.servo_target_us ?? '—'} µs · stepper ${actuators.relative_half_steps ?? '—'} hsteps · yaw ${fmt(scan.yaw_deg_nominal, '°')}`);
-  setText('alert', `HLK alert ${alert.enabled ? 'ON' : 'OFF'} · threshold ${alert.threshold_cm ?? '—'} cm · count ${alert.count ?? 0}`);
+  setText('alert', `HLK alert ${alert.enabled ? 'ON' : 'OFF'} · ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm · ${alert.state || 'idle'} · ${alert.mute_reason || '—'} · count ${alert.count ?? 0}`);
+  if (document.getElementById('tab-cloud').classList.contains('active')) drawCloud();
   renderScans();
 }
 
@@ -341,7 +342,9 @@ function drawCloud() {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null);
-  const maxRadius = Math.max(1.0, ...points.map(p => Math.max(
+  const hlk = state.health?.esp?.sensors?.hlk;
+  const hlkRadius = hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0;
+  const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
     Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000));
   drawGrid(ctx, width, height, maxRadius);
   const projected = points.map(point => ({
@@ -357,6 +360,26 @@ function drawCloud() {
     ctx.beginPath();
     ctx.arc(item.screen.x, item.screen.y, source === 'tof' ? 2.6 : 2.2, 0, Math.PI * 2);
     ctx.fill();
+  }
+  if (hlkRadius > 0) {
+    const yawDeg = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0);
+    const yaw = yawDeg * Math.PI / 180;
+    const marker = projectPoint({
+      x_mm: hlkRadius * 1000 * Math.cos(yaw),
+      y_mm: hlkRadius * 1000 * Math.sin(yaw),
+      z_mm: 0,
+    }, width, height, maxRadius);
+    const markerRadius = 8 + Math.min(18, Number(hlk.energy || 0) / 6);
+    ctx.fillStyle = 'rgba(255,80,200,0.22)';
+    ctx.strokeStyle = 'rgba(255,120,220,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, markerRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffb8e8';
+    ctx.font = '12px system-ui';
+    ctx.fillText(`HLK ${hlk.distance_cm} cm`, marker.x + markerRadius + 4, marker.y - 4);
   }
   if (!points.length) {
     ctx.fillStyle = '#9fb1c7';

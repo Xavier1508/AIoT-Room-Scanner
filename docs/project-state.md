@@ -10,10 +10,12 @@ Physical servo movement is currently blocked by a measured brownout on attach.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.4.2-mapping-ready`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261109T051721344Z/firmware.bin`.
-  Size **835440 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `dd622aeb86a431b24848fdd4628f9582794876df5df93bba7d9634ae3e36c52a`.
+- **Running firmware: `0.4.2-mapping-ready`**; `0.5.0-sequential-scan` is built
+  but not yet OTA-deployed because the board went offline during the servo
+  attach-only test. Current application artifact:
+  `analysis/platformio/build-20261109T091806602Z/firmware.bin`.
+  Size **837088 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -149,24 +151,31 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   HLK valid, ToF I2C errors 0 and responsive true. Evidence:
   `analysis/device/ota-mapping-ready-042-20261109T052016Z/`.
 - PC mapping dashboard is implemented under `tools/mapping/` with a
-  dependency-free HTTP server, calibration capture, scan orchestrator and
-  canvas 3D isometric viewer. First calibration record at 75 cm: HC offset
-  +6 mm, ToF offset +56 mm, both sensors valid 100% over five samples.
-- **Brownout blocker:** a small validation (`servo_up_25`) attached the servo
-  and reset the board with `reset_reason=9`, `brownout=true`. Boot returned
-  IDLE/detached; the stepper was returned from 57 to 0 and released. Do not run
-  the scan or loaded servo movement until the servo/5V rail is fixed. This is
-  an electrical finding, not a firmware success claim.
+  dependency-free HTTP server, calibration capture, sequential scan orchestrator
+  and canvas 3D isometric viewer with an HLK presence overlay. First calibration
+  record at 75 cm: HC offset +6/+9 mm, ToF offset +56 mm, both sensors valid
+  100% over five samples.
+- `0.5.0-sequential-scan` is built (837088 bytes, SHA-256
+  `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`) with:
+  sequential scan guard, servo-detach between columns, HLK parking-sensor ramp
+  75→30 cm, scan/motion muting, 2-frame confirmation, and HLK overlay.
+  **Not OTA-deployed yet.**
+- **Brownout blocker:** a small validation (`servo_up_25`) reset the board with
+  `reset_reason=9`, `brownout=true`. A later attach-only `park_servo` test made
+  the board go completely offline (no HTTP/ping/USB), so the rail collapses even
+  before deliberate movement. Do not run the scan or loaded servo movement until
+  the board is power-cycled and the rail is fixed. This is an electrical finding,
+  not a firmware success claim.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** fix the servo/5V power path (separate supply, common
-ground, measured rail under load) before any loaded servo or full scan. The
-sensor and PC calibration path is ready: capture 30/50/75/100/150/250 cm,
-verify offsets, then run a coarse scan 10°/50 µs only after the brownout is
-resolved. Do not train a deep-learning model until repeatable calibrated scans
-exist.
+**Current next action:** power-cycle the board (unplug jack, wait, replug) and
+confirm it returns IDLE/detached. Then OTA `0.5.0-sequential-scan` and verify
+the new status fields. Do not run `park_servo` or a scan until the rail is
+measured/fixed; attach-only already took the board offline. The PC calibration
+and sequential scan pipeline are ready, but no full scan is claimed. Do not
+train a deep-learning model until repeatable calibrated scans exist.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -186,7 +195,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **67 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **69 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -202,7 +211,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   build, OTA and live sensor test evidence; 53–60 = poll-throttled build, OTA,
   long-run failure, short-pass, stale/restart and wrap-target evidence;
   61–67 = 0.4.2 build, OTA, post-start health, calibration, brownout and PC
-  dashboard screenshots.
+  dashboard screenshots; 68–69 = 0.5.0 sequential-scan build and attach-only
+  offline observation.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.4.2-mapping-ready";
+constexpr char version[] = "0.5.0-sequential-scan";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -33,10 +33,14 @@ constexpr uint16_t servoMaxPulseUs = 1400;
 constexpr int scanStepperLimitHalfSteps = 513;          // 9 x 57 = 45.1 deg nominal, within the cable-safe envelope.
 constexpr uint16_t scanServoMinPulseUs = 500;           // Up.
 constexpr uint16_t scanServoMaxPulseUs = 950;           // Down.
-constexpr uint16_t hlkAlertDistanceCm = 30;             // LD2410C blind/clamp zone.
+constexpr uint16_t hlkAlertMinCm = 30;                  // LD2410C blind/clamp zone.
+constexpr uint16_t hlkAlertMaxCm = 75;                  // Parking-sensor ramp starts here.
+constexpr uint16_t hlkAlertHysteresisCm = 10;           // Stop above max + hysteresis.
 constexpr uint8_t hlkAlertEnergy = 30;
-constexpr uint32_t hlkAlertCooldownMs = 2000;
-constexpr uint16_t hlkAlertBeepMs = 140;
+constexpr uint32_t hlkAlertMinIntervalMs = 150;         // Fast beep near 30 cm.
+constexpr uint32_t hlkAlertMaxIntervalMs = 2000;        // Slow beep at 75 cm.
+constexpr uint16_t hlkAlertBeepMs = 70;
+constexpr uint8_t hlkAlertConfirmFrames = 2;
 constexpr int16_t hcOffsetMm = 0;                       // Provisional; refine in PC calibration.
 constexpr int16_t tofOffsetMm = 50;                     // ToF lens is ~5 cm ahead of HC reference.
 constexpr uint16_t hlkMinRangeCm = 30;

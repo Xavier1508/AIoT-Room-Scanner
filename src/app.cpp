@@ -95,25 +95,66 @@ void App::releaseServo() {
 }
 
 void App::maybeHlkAlert(uint32_t now) {
-  if (!hlkAlertEnabled_ || !hlkEnabled_ || !sensors_.running()) return;
-  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) return;
-  if (stepper_.active() || stepperMovePending_ || servo_.active()) return;
-  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < 500) return;
+  auto mute = [this](const char* reason) {
+    hlkAlertActive_ = false;
+    hlkAlertConfirm_ = 0;
+    hlkAlertNextMs_ = 0;
+    hlkAlertIntervalMs_ = 0;
+    hlkAlertMuteReason_ = reason;
+  };
+  if (!hlkAlertEnabled_ || !hlkEnabled_ || !sensors_.running()) { mute("disabled"); return; }
+  if (scanMode_) { mute("scan_mode"); return; }
+  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) { mute("actuator_test"); return; }
+  if (stepper_.active() || stepperMovePending_ || servo_.active()) { mute("actuator_motion"); return; }
+  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < 500) { mute("settle"); return; }
   const auto& reading = hlk_.reading();
-  if (!reading.received || uint32_t(now - reading.timestampMs) > config::hlkStaleMs) return;
+  if (!reading.received || uint32_t(now - reading.timestampMs) > config::hlkStaleMs) {
+    mute("no_valid_hlk");
+    return;
+  }
   const uint16_t moving = reading.movingCm;
   const uint16_t stationary = reading.stationaryCm;
   const uint16_t distance = moving && (!stationary || moving < stationary) ? moving : stationary;
   const uint8_t energy = reading.movingEnergy > reading.stationaryEnergy ?
       reading.movingEnergy : reading.stationaryEnergy;
-  if (!distance || distance > config::hlkAlertDistanceCm || energy < config::hlkAlertEnergy) return;
-  if (hlkAlertLastMs_ && uint32_t(now - hlkAlertLastMs_) < config::hlkAlertCooldownMs) return;
-  hlkAlertLastMs_ = now;
+  if (!distance || energy < config::hlkAlertEnergy) { mute("no_target"); return; }
+  const uint16_t stopCm = config::hlkAlertMaxCm + config::hlkAlertHysteresisCm;
+  if (distance > stopCm) {
+    if (hlkAlertActive_) event("hlk_proximity_alert_ramp_stopped");
+    mute("out_of_range");
+    return;
+  }
+  if (distance > config::hlkAlertMaxCm) {
+    if (!hlkAlertActive_) { hlkAlertMuteReason_ = "hysteresis"; return; }
+  } else if (!hlkAlertActive_) {
+    if (reading.timestampMs != hlkAlertLastFrameMs_) {
+      hlkAlertLastFrameMs_ = reading.timestampMs;
+      if (hlkAlertConfirm_ < 255) ++hlkAlertConfirm_;
+    }
+    if (hlkAlertConfirm_ < config::hlkAlertConfirmFrames) {
+      hlkAlertMuteReason_ = "confirming";
+      return;
+    }
+    hlkAlertActive_ = true;
+    hlkAlertNextMs_ = now;
+    event("hlk_proximity_alert_ramp_started");
+  }
+  const uint16_t d = distance < config::hlkAlertMinCm ? config::hlkAlertMinCm :
+      (distance > config::hlkAlertMaxCm ? config::hlkAlertMaxCm : distance);
+  const uint32_t span = config::hlkAlertMaxCm - config::hlkAlertMinCm;
+  const uint32_t interval = span ?
+      config::hlkAlertMaxIntervalMs -
+      ((config::hlkAlertMaxIntervalMs - config::hlkAlertMinIntervalMs) * (config::hlkAlertMaxCm - d) / span) :
+      config::hlkAlertMinIntervalMs;
+  hlkAlertIntervalMs_ = static_cast<uint16_t>(interval);
   hlkAlertLastDistanceCm_ = distance;
   hlkAlertLastEnergy_ = energy;
-  ++hlkAlertCount_;
+  hlkAlertMuteReason_ = "active";
+  if (buzzer_.active()) return;
+  if (hlkAlertNextMs_ && int32_t(now - hlkAlertNextMs_) < 0) return;
   buzzer_.alert(now, config::hlkAlertBeepMs);
-  event("hlk_proximity_alert_buzzer");
+  hlkAlertNextMs_ = now + interval;
+  ++hlkAlertCount_;
 }
 void App::clearQueue() {
   CommandRequest discarded;
@@ -207,8 +248,10 @@ String App::execute(Command command) {
     if (settings_.configured() && !network_.connected()) return result(false, "wifi_offline_scan_mode_rejected");
     if (command == Command::ScanModeStart) {
       if (!sensors_.running()) return result(false, "sensors_not_running");
+      if (servo_.attached()) return result(false, "release_servo_before_scan_mode");
+      if (stepper_.active() || stepperMovePending_) return result(false, "wait_stepper_before_scan_mode");
       scanMode_ = true;
-      event("mapping_scan_mode_enabled_limits_45deg_500_950us");
+      event("mapping_scan_mode_enabled_sequential_power_guard");
       return result(true, "scan_mode_enabled");
     }
     scanMode_ = false;
@@ -291,6 +334,7 @@ String App::execute(Command command) {
   }
   if (command == Command::StepperLeft10 || command == Command::StepperRight10 ||
       command == Command::StepperLeft5 || command == Command::StepperRight5) {
+    if (scanMode_ && servo_.attached()) return result(false, "scan_detach_servo_first");
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (stepper_.active()) return result(false, "stepper_busy");
     const bool right = command == Command::StepperRight10 || command == Command::StepperRight5;
@@ -316,6 +360,9 @@ String App::execute(Command command) {
       command == Command::ServoDown200 || command == Command::ServoUp50 ||
       command == Command::ServoDown50 || command == Command::ServoUp25 ||
       command == Command::ServoDown25) {
+    if (scanMode_ && (stepper_.active() || stepperMovePending_)) {
+      return result(false, "scan_wait_stepper_settle");
+    }
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (servo_.active()) return result(false, "servo_busy");
     int next = servoTargetUs_;
@@ -455,13 +502,22 @@ void App::publish(uint32_t now) {
         ",\"servo_us\":" + servoTargetUs_ +
         ",\"stepper_limit_half_steps\":" + config::scanStepperLimitHalfSteps +
         ",\"servo_min_us\":" + config::scanServoMinPulseUs +
-        ",\"servo_max_us\":" + config::scanServoMaxPulseUs + "}";
+        ",\"servo_max_us\":" + config::scanServoMaxPulseUs +
+        ",\"sequential_guard\":true,\"servo_attached\":" +
+        (servo_.attached() ? "true" : "false") + ",\"stepper_moving\":" +
+        (stepper_.active() || stepperMovePending_ ? "true" : "false") +
+        ",\"alert_muted\":" + (scanMode_ ? "true" : "false") + "}";
    s += String(",\"hlk_alert\":{\"enabled\":") + (hlkAlertEnabled_ ? "true" : "false") +
-        ",\"threshold_cm\":" + config::hlkAlertDistanceCm +
-        ",\"cooldown_ms\":" + config::hlkAlertCooldownMs +
+        ",\"state\":" + jsonQuote(hlkAlertActive_ ? "active" : "idle") +
+        ",\"mute_reason\":" + jsonQuote(hlkAlertMuteReason_) +
+        ",\"min_cm\":" + config::hlkAlertMinCm +
+        ",\"max_cm\":" + config::hlkAlertMaxCm +
+        ",\"hysteresis_cm\":" + config::hlkAlertHysteresisCm +
+        ",\"min_interval_ms\":" + config::hlkAlertMinIntervalMs +
+        ",\"max_interval_ms\":" + config::hlkAlertMaxIntervalMs +
         ",\"beep_ms\":" + config::hlkAlertBeepMs +
+        ",\"interval_ms\":" + hlkAlertIntervalMs_ +
         ",\"count\":" + hlkAlertCount_ +
-        ",\"last_ms\":" + hlkAlertLastMs_ +
         ",\"last_distance_cm\":" + hlkAlertLastDistanceCm_ +
         ",\"last_energy\":" + hlkAlertLastEnergy_ + "}";
    s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +

@@ -14,8 +14,12 @@ were not taken.
 - No trained 3D/TinyML/CSI model yet; CDM324 remains disabled. Sensor health,
   calibration capture, scan orchestration and a canvas 3D point-cloud viewer are
   implemented. Deep-learning training is still a PC-side future step.
-- Current deployed firmware: `0.4.2-mapping-ready`; verify again with
-  `device.py status` after any further OTA.
+- Deployed firmware: `0.4.2-mapping-ready`.
+- Built but not OTA-deployed: `0.5.0-sequential-scan` (837088 bytes, SHA-256
+  `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`).
+  Adds sequential scan guard, servo detach between columns, HLK parking-sensor
+  ramp 75→30 cm, scan/motion muting and HLK 3D overlay. The board went offline
+  during the attach-only test; power-cycle and verify before OTA.
 - PC mapping dashboard: `tools/mapping/mapping_server.py` on
   `http://127.0.0.1:8000/`; see `docs/mapping-dashboard.md`.
 
