@@ -71,18 +71,24 @@
 </section>
 
 <section id="tab-cloud" class="tab">
-  <section class="card"><h2>Point cloud 3D isometrik</h2>
+  <section class="card"><h2>Peta 3D ruangan</h2>
     <div class="row">
       <label class="note">Scan</label><select id="scan-select"></select>
       <button id="reload-points">Muat ulang</button>
+      <button id="view-both" class="alt">Points + Blocks</button>
+      <button id="view-blocks" class="alt">Blocks</button>
+      <button id="view-points" class="alt">Points</button>
       <button id="rotate-left" class="alt">⟲</button><button id="rotate-right" class="alt">⟳</button>
       <button id="pitch-up" class="alt">↑</button><button id="pitch-down" class="alt">↓</button>
       <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
       <button id="reset-view" class="alt">Reset</button>
     </div>
-    <canvas id="cloud" width="1000" height="620"></canvas>
+    <div class="map-grid">
+      <div><h3>3D isometrik</h3><canvas id="cloud" width="1000" height="620"></canvas></div>
+      <div><h3>Top-down 2D</h3><canvas id="topdown" width="1000" height="620"></canvas></div>
+    </div>
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
-    <p class="note">Drag canvas untuk rotasi, wheel untuk zoom. Warna: cyan = ToF, oranye = HC, magenta = presence HLK (blob/arc, bukan titik presisi), tinggi z memengaruhi kecerahan. Ini visualisasi data terkalibrasi, bukan model deep learning.</p>
+    <p id="cloud-legend" class="note">Cyan = ToF, oranye = HC, blok biru = dinding estimasi, blok hijau = objek estimasi, magenta = presence HLK. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
   </section>
 </section>
 

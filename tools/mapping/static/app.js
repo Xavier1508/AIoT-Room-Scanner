@@ -8,6 +8,8 @@ const state = {
   points: [],
   scanJob: null,
   loadedScan: null,
+  reconstruction: null,
+  viewMode: 'both',
   viewYaw: -0.65,
   viewPitch: 0.48,
   zoom: 1.0,
@@ -44,7 +46,7 @@ function switchTab(name) {
   for (const section of document.querySelectorAll('.tab')) {
     section.classList.toggle('active', section.id === `tab-${name}`);
   }
-  if (name === 'cloud') drawCloud();
+  if (name === 'cloud') { drawCloud(); drawTopDown(); }
 }
 
 async function refreshScans() {
@@ -104,7 +106,7 @@ function renderHealth() {
   setText('pose', `${actuators.servo_attached ? 'servo attached' : 'servo detached'} · ${actuators.stepper_energized ? 'stepper energized' : 'stepper off'}`);
   setText('pose-detail', `servo ${actuators.servo_target_us ?? '—'} µs · stepper ${actuators.relative_half_steps ?? '—'} hsteps · yaw ${fmt(scan.yaw_deg_nominal, '°')}`);
   setText('alert', `HLK alert ${alert.enabled ? 'ON' : 'OFF'} · ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm · ${alert.state || 'idle'} · ${alert.mute_reason || '—'} · count ${alert.count ?? 0}`);
-  if (document.getElementById('tab-cloud').classList.contains('active')) drawCloud();
+  if (document.getElementById('tab-cloud').classList.contains('active')) { drawCloud(); drawTopDown(); }
   renderScans();
 }
 
@@ -343,8 +345,18 @@ async function loadPoints(scanId) {
     state.points = data.points || [];
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
-    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range`);
+    let reconstruction = null;
+    try {
+      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct`);
+      reconstruction = rec.reconstruction;
+    } catch (error) {
+      reconstruction = null;
+    }
+    state.reconstruction = reconstruction;
+    const blocks = reconstruction?.boxes?.length ?? 0;
+    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · ${blocks} estimated blocks`);
     drawCloud();
+    drawTopDown();
   } catch (error) {
     setText('cloud-stats', `Gagal memuat point cloud: ${error.message}`);
   }
@@ -399,6 +411,137 @@ function drawGrid(ctx, width, height, radius) {
   }
 }
 
+function boxCorners(box) {
+  const angle = Number(box.angle_deg || 0) * Math.PI / 180;
+  const ca = Math.cos(angle), sa = Math.sin(angle);
+  const hl = Number(box.length_m || 0) / 2;
+  const hw = Number(box.width_m || 0) / 2;
+  const cx = Number(box.cx_m || 0), cy = Number(box.cy_m || 0);
+  const z0 = Number(box.z_bottom_m || 0), z1 = Number(box.z_top_m || 0.1);
+  const corners = [];
+  for (const z of [z0, z1]) {
+    for (const [u, v] of [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]]) {
+      corners.push({ x_mm: (cx + u * ca - v * sa) * 1000, y_mm: (cy + u * sa + v * ca) * 1000, z_mm: z * 1000 });
+    }
+  }
+  return corners;
+}
+
+function drawBoxes3D(ctx, width, height, radius) {
+  const boxes = state.reconstruction?.boxes || [];
+  const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+  for (const box of boxes) {
+    const projected = boxCorners(box).map(point => projectPoint(point, width, height, radius));
+    const color = box.label === 'wall' ? [80, 150, 230] : [70, 210, 150];
+    const ordered = faces.map(indices => ({
+      indices,
+      depth: indices.reduce((sum, index) => sum + projected[index].depth, 0) / indices.length,
+    })).sort((a, b) => a.depth - b.depth);
+    for (const face of ordered) {
+      const [a, b, c, d] = face.indices.map(index => projected[index]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath();
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.18)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.9)`;
+      ctx.lineWidth = box.label === 'wall' ? 1.6 : 1.2;
+      ctx.stroke();
+    }
+    const top = projectPoint({
+      x_mm: Number(box.cx_m) * 1000, y_mm: Number(box.cy_m) * 1000,
+      z_mm: (Number(box.z_top_m) + 0.08) * 1000,
+    }, width, height, radius);
+    ctx.font = '12px system-ui';
+    ctx.fillStyle = box.label === 'wall' ? '#9cc8ff' : '#9cf0c1';
+    ctx.fillText(`${box.label} ${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} m`, top.x + 4, top.y - 4);
+  }
+}
+
+function drawTopDown() {
+  const canvas = $('topdown');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width, height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null);
+  const boxes = state.reconstruction?.boxes || [];
+  const hlk = state.health?.esp?.sensors?.hlk;
+  const hlkRadius = hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0;
+  let extent = 1.0;
+  for (const point of points) extent = Math.max(extent, Math.abs(Number(point.x_mm)) / 1000, Math.abs(Number(point.y_mm)) / 1000);
+  for (const box of boxes) {
+    for (const point of boxCorners(box)) extent = Math.max(extent, Math.abs(point.x_mm) / 1000, Math.abs(point.y_mm) / 1000);
+  }
+  extent = Math.max(extent, hlkRadius) * 1.15;
+  const scale = Math.min(width, height) * 0.42 / extent;
+  const toScreen = (x, y) => ({ x: width / 2 + x * scale, y: height / 2 - y * scale });
+  ctx.lineWidth = 1;
+  const start = -Math.ceil(extent * 2) / 2;
+  for (let value = start; value <= extent; value += 0.5) {
+    const p1 = toScreen(value, -extent), p2 = toScreen(value, extent);
+    const p3 = toScreen(-extent, value), p4 = toScreen(extent, value);
+    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#2c4562' : '#1a2a3d';
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+  }
+  const origin = toScreen(0, 0);
+  const fov = 60 * Math.PI / 180;
+  ctx.strokeStyle = 'rgba(120,180,255,0.45)';
+  ctx.setLineDash([5, 5]);
+  for (const angle of [-fov, fov]) {
+    const end = toScreen(Math.cos(angle) * extent, Math.sin(angle) * extent);
+    ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  if (state.viewMode !== 'blocks') {
+    for (const point of points) {
+      const screen = toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
+      ctx.fillStyle = point.range_source === 'tof' ? 'rgba(80,220,255,0.85)' : 'rgba(255,170,60,0.85)';
+      ctx.beginPath(); ctx.arc(screen.x, screen.y, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (state.viewMode !== 'points') {
+    for (const box of boxes) {
+      const corners = boxCorners(box).slice(0, 4).map(point => toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000));
+      const color = box.label === 'wall' ? [80, 150, 230] : [70, 210, 150];
+      ctx.beginPath(); ctx.moveTo(corners[0].x, corners[0].y);
+      for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.22)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+      ctx.lineWidth = box.label === 'wall' ? 2.2 : 1.6;
+      ctx.stroke();
+      const label = toScreen(Number(box.cx_m), Number(box.cy_m));
+      ctx.font = '12px system-ui';
+      ctx.fillStyle = box.label === 'wall' ? '#9cc8ff' : '#9cf0c1';
+      ctx.fillText(box.label, label.x + 4, label.y - 4);
+    }
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(origin.x, origin.y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '12px system-ui';
+  ctx.strokeStyle = '#ff6b6b'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x + 0.5 * scale, origin.y); ctx.stroke();
+  ctx.fillStyle = '#ff6b6b'; ctx.fillText('X', origin.x + 0.5 * scale + 4, origin.y - 4);
+  ctx.strokeStyle = '#6bff9c'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x, origin.y - 0.5 * scale); ctx.stroke();
+  ctx.fillStyle = '#6bff9c'; ctx.fillText('Y', origin.x + 4, origin.y - 0.5 * scale - 4);
+  const barStart = { x: 24, y: height - 24 };
+  ctx.strokeStyle = '#e6edf6'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y); ctx.lineTo(barStart.x + scale, barStart.y); ctx.stroke();
+  ctx.fillStyle = '#e6edf6'; ctx.font = '12px system-ui'; ctx.fillText('1 m', barStart.x + scale / 2 - 12, barStart.y - 6);
+  if (hlkRadius > 0) {
+    const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
+    const screen = toScreen(hlkRadius * Math.cos(yaw), hlkRadius * Math.sin(yaw));
+    ctx.strokeStyle = 'rgba(255,80,200,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(screen.x, screen.y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,80,200,0.25)';
+    ctx.strokeStyle = 'rgba(255,120,220,0.95)';
+    ctx.beginPath(); ctx.arc(screen.x, screen.y, 8 + Math.min(18, Number(hlk.energy || 0) / 6), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff9be0'; ctx.font = '12px system-ui';
+    ctx.fillText(`HLK ${hlkRadius.toFixed(2)} m`, screen.x + 6, screen.y - 6);
+  }
+}
+
 function drawCloud() {
   const canvas = $('cloud');
   const ctx = canvas.getContext('2d');
@@ -406,25 +549,31 @@ function drawCloud() {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null);
+  const boxes = state.reconstruction?.boxes || [];
   const hlk = state.health?.esp?.sensors?.hlk;
   const hlkRadius = hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0;
-  const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
+  const boxExtents = boxes.flatMap(box => boxCorners(box).map(p => Math.max(
     Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000));
+  const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
+    Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000), ...boxExtents);
   drawGrid(ctx, width, height, maxRadius);
-  const projected = points.map(point => ({
-    point,
-    screen: projectPoint(point, width, height, maxRadius),
-  })).sort((a, b) => a.screen.depth - b.screen.depth);
-  for (const item of projected) {
-    const source = item.point.range_source;
-    const base = source === 'tof' ? [80, 220, 255] : [255, 170, 60];
-    const z = Number(item.point.z_mm) || 0;
-    const alpha = Math.max(0.35, Math.min(1, 0.55 + z / (maxRadius * 2000)));
-    ctx.fillStyle = `rgba(${base[0]},${base[1]},${base[2]},${alpha})`;
-    ctx.beginPath();
-    ctx.arc(item.screen.x, item.screen.y, source === 'tof' ? 2.6 : 2.2, 0, Math.PI * 2);
-    ctx.fill();
+  if (state.viewMode !== 'blocks') {
+    const projected = points.map(point => ({
+      point,
+      screen: projectPoint(point, width, height, maxRadius),
+    })).sort((a, b) => a.screen.depth - b.screen.depth);
+    for (const item of projected) {
+      const source = item.point.range_source;
+      const base = source === 'tof' ? [80, 220, 255] : [255, 170, 60];
+      const z = Number(item.point.z_mm) || 0;
+      const alpha = Math.max(0.35, Math.min(1, 0.55 + z / (maxRadius * 2000)));
+      ctx.fillStyle = `rgba(${base[0]},${base[1]},${base[2]},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(item.screen.x, item.screen.y, source === 'tof' ? 2.6 : 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
+  if (state.viewMode !== 'points') drawBoxes3D(ctx, width, height, maxRadius);
   if (hlkRadius > 0) {
     const yawDeg = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0);
     const yaw = yawDeg * Math.PI / 180;
@@ -445,7 +594,7 @@ function drawCloud() {
     ctx.font = '12px system-ui';
     ctx.fillText(`HLK ${hlk.distance_cm} cm`, marker.x + markerRadius + 4, marker.y - 4);
   }
-  if (!points.length) {
+  if (!points.length && !boxes.length) {
     ctx.fillStyle = '#9fb1c7';
     ctx.font = '16px system-ui';
     ctx.fillText('Belum ada point cloud. Jalankan scan atau pilih scan.', 24, 36);
@@ -506,6 +655,9 @@ $('ml-start').addEventListener('click', startMl);
 $('ml-stop').addEventListener('click', stopMl);
 $('capture-cal').addEventListener('click', captureCalibration);
 $('reload-points').addEventListener('click', () => loadPoints($('scan-select').value));
+$('view-both').addEventListener('click', () => { state.viewMode = 'both'; drawCloud(); drawTopDown(); });
+$('view-blocks').addEventListener('click', () => { state.viewMode = 'blocks'; drawCloud(); drawTopDown(); });
+$('view-points').addEventListener('click', () => { state.viewMode = 'points'; drawCloud(); drawTopDown(); });
 $('scan-select').addEventListener('change', () => loadPoints($('scan-select').value));
 $('rotate-left').addEventListener('click', () => { state.viewYaw -= 0.2; drawCloud(); });
 $('rotate-right').addEventListener('click', () => { state.viewYaw += 0.2; drawCloud(); });

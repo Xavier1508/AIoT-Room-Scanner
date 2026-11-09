@@ -11,6 +11,8 @@ h2 { font-size: 1.05rem; margin: 0 0 10px; }
 .muted, .note { color: #9fb1c7; }
 .note { font-size: .86rem; line-height: 1.45; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+.map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.map-grid h3 { font-size: .9rem; margin: 4px 0 6px; color: #9fb1c7; }
 .card { background: #172335; border: 1px solid #2d425c; border-radius: 12px; padding: 16px; margin: 14px 0; }
 button {
   font: inherit; background: #285f94; color: white; border: 0; border-radius: 7px;

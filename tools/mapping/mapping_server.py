@@ -24,6 +24,7 @@ from urllib.parse import unquote, urlparse
 from calibrate import capture
 from common import CALIBRATION, RESEARCH, SCANS, read_json, utc_iso, utc_stamp, write_json
 from esp_client import EspClient
+from reconstruct import reconstruct_points
 from scan import ScanConfig, run_scan
 
 STATIC = Path(__file__).with_name("static")
@@ -311,6 +312,10 @@ class Handler(BaseHTTPRequestHandler):
                 scan_id = path[len("/api/mapping/scans/"):-len("/points")].strip("/")
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "points": _points(scan_id)})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/reconstruct"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/reconstruct")].strip("/")
+                return self._send(200, {"ok": True, "scan_id": scan_id,
+                                        "reconstruction": reconstruct_points(_points(scan_id))})
             if path == "/api/mapping/scan/status":
                 return self._send(200, {"ok": True, "job": _public_job()})
             if path == "/api/mapping/ml/status":

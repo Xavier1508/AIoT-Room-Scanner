@@ -112,7 +112,16 @@ class EspClient:
                 current = int(state["actuators"]["servo_target_us"])
                 continue
             if not result.get("ok"):
-                raise RuntimeError("Servo nudge rejected: " + str(result.get("message")))
+                if result.get("message") == "expired_no_action":
+                    state = self.status()
+                    observed = int(state["actuators"]["servo_target_us"])
+                    if observed == expected:
+                        current = expected
+                        continue
+                    if observed == current:
+                        result = self.command(name)
+                if not result.get("ok"):
+                    raise RuntimeError("Servo nudge rejected: " + str(result.get("message")))
             current = int(self.wait_for(
                 lambda s, expected=expected: int(s["actuators"]["servo_target_us"]) == expected,
                 timeout_s=timeout_s)["actuators"]["servo_target_us"])
