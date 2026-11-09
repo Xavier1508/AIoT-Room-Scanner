@@ -10,3 +10,4 @@ secrets.*
 .vscode/
 *.elf
 *.map
+tools/mapping/ml/.venv/

@@ -233,6 +233,17 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
   18 frames. `tools/mapping/ml/train.py` trains a small 1D CNN and exports
   `model.tflite`/`model_data.h`; training itself is pending real labeled data.
   On-device inference is **not** integrated yet and must run only when parked.
+- TensorFlow **2.21.0** is installed in `tools/mapping/ml/.venv` (Python 3.12,
+  CPU-only). A synthetic two-class smoke test trained a 1D CNN and exported an
+  8,040-byte int8 TFLite model plus `model_data.h`; the training/export pipeline
+  is proven. `train.py` now splits by session and normalizes using training data
+  only, with a chronological per-session fallback.
+- Clean **empty baseline** recorded: `20261109T183825Z-empty`, **2,234 frames**,
+  `moving_energy=0` for every frame; HLK target state 0/2 (stationary
+  background). A 623-frame partial human session had only 12 frames with
+  `moving_energy>0`; it and an 18-frame recorder test were moved to
+  `research/mapping/ml_partial/` so the default training root contains only the
+  clean empty baseline. A new human session is pending operator readiness.
 - `0.6.1-tof-watchdog` is **OTA-installed** (837856 bytes, SHA-256
   `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`). It adds
   `Wire.setTimeOut(50)`, suspends ToF polling after 3 s without data-ready,
@@ -256,13 +267,13 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** collect the labeled HLK dataset and train the TinyML
-model. The scan and 3D map are now complete enough for the demo: 0.6.1,
-validation 30/30 and coarse 110/110 with 103 ToF points, all sensors OK, no
-brownout. Next: (1) record empty/human/non-human sessions in the Dataset tab,
-(2) train the 1D CNN on the PC, (3) export/quantize and integrate on-device
-inference after the model is validated, and (4) verify the 30–75 cm buzzer ramp
-with a real approach. No deep-learning accuracy is claimed yet.
+**Current next action:** wait for the operator to start a new **human** session.
+When instructed, record 15 minutes with label `human` while the operator stays
+active in the center of the room. Then analyze `moving_energy`/distance
+coverage, train the binary `empty vs human` 1D CNN (window 16), evaluate on a
+chronological/session holdout, and export the int8 TFLite model. `non-human`
+and activity classes come later. No deep-learning accuracy is claimed until the
+human data is collected and evaluated.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.

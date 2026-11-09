@@ -31,6 +31,7 @@ def read_frames(root: Path):
             frame = json.loads(line)
             last = frame.get("hlk_last_reading") or {}
             rows.append({
+                "session": path.parent.name,
                 "label": frame.get("label") or path.parent.name,
                 "distance": frame.get("hlk_distance_cm"),
                 "energy": frame.get("hlk_energy"),
@@ -42,10 +43,10 @@ def read_frames(root: Path):
 
 
 def build_windows(rows, window: int, stride: int):
-    windows, labels = [], []
+    windows, labels, sessions = [], [], []
     for start in range(0, max(0, len(rows) - window + 1), stride):
         chunk = rows[start:start + window]
-        if any(row["label"] != chunk[0]["label"] for row in chunk):
+        if any(row["label"] != chunk[0]["label"] or row["session"] != chunk[0]["session"] for row in chunk):
             continue
         previous = None
         sample = []
@@ -62,7 +63,8 @@ def build_windows(rows, window: int, stride: int):
             previous = distance
         windows.append(sample)
         labels.append(chunk[0]["label"])
-    return windows, labels
+        sessions.append(chunk[0]["session"])
+    return windows, labels, sessions
 
 
 def main() -> int:
@@ -90,7 +92,7 @@ def main() -> int:
     if len(rows) < args.window:
         print(f"data terlalu sedikit: {len(rows)} frame, butuh minimal {args.window}")
         return 2
-    windows, labels = build_windows(rows, args.window, args.stride)
+    windows, labels, sessions = build_windows(rows, args.window, args.stride)
     if not windows:
         print("tidak ada window valid; pastikan label konsisten per sesi")
         return 2
@@ -98,8 +100,33 @@ def main() -> int:
     classes = sorted(set(labels))
     index = {label: i for i, label in enumerate(classes)}
     y = np.asarray([index[label] for label in labels], dtype=np.int32)
-    mean = x.mean(axis=(0, 1), keepdims=True)
-    std = x.std(axis=(0, 1), keepdims=True)
+    # Split by session, not by adjacent frames, to avoid leakage.
+    holdout = set()
+    for label in classes:
+        label_sessions = sorted({s for s, l in zip(sessions, labels) if l == label})
+        if len(label_sessions) > 1:
+            holdout.add(label_sessions[-1])
+    train_idx = [i for i, s in enumerate(sessions) if s not in holdout]
+    val_idx = [i for i, s in enumerate(sessions) if s in holdout]
+    if not train_idx or not val_idx:
+        # No complete session can be held out yet: use the tail of each
+        # session for validation instead of a random adjacent-window split.
+        train_idx, val_idx = [], []
+        by_session = {}
+        for i, session in enumerate(sessions):
+            by_session.setdefault(session, []).append(i)
+        for indices in by_session.values():
+            if len(indices) < 2:
+                train_idx.extend(indices)
+                continue
+            cut = max(1, int(len(indices) * 0.8))
+            if cut >= len(indices):
+                cut = len(indices) - 1
+            train_idx.extend(indices[:cut])
+            val_idx.extend(indices[cut:])
+    x_train = x[train_idx]
+    mean = x_train.mean(axis=(0, 1), keepdims=True)
+    std = x_train.std(axis=(0, 1), keepdims=True)
     std[std == 0] = 1.0
     x = (x - mean) / std
 
@@ -113,8 +140,8 @@ def main() -> int:
         tf.keras.layers.Dense(len(classes), activation="softmax"),
     ])
     model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
-    split = max(1, int(len(x) * 0.8))
-    history = model.fit(x[:split], y[:split], validation_data=(x[split:], y[split:]) if split < len(x) else None,
+    history = model.fit(x[train_idx], y[train_idx],
+                        validation_data=(x[val_idx], y[val_idx]) if val_idx else None,
                         epochs=args.epochs, batch_size=args.batch, verbose=2)
 
     out = Path(args.output)
@@ -127,7 +154,7 @@ def main() -> int:
     converter.inference_output_type = tf.int8
 
     def representative():
-        for sample in x[:min(200, len(x))]:
+        for sample in x[train_idx][:min(200, len(train_idx))]:
             yield [sample[None, ...].astype(np.float32)]
 
     converter.representative_dataset = representative
@@ -143,6 +170,9 @@ def main() -> int:
     metrics = {
         "frames": len(rows),
         "windows": len(windows),
+        "train_windows": len(train_idx),
+        "val_windows": len(val_idx),
+        "holdout_sessions": sorted(holdout),
         "classes": classes,
         "final_accuracy": float(history.history.get("accuracy", [0])[-1]),
         "final_val_accuracy": float(history.history.get("val_accuracy", [0])[-1]) if history.history.get("val_accuracy") else None,

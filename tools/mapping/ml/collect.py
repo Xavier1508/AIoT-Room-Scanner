@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "mapping"))
 from common import RESEARCH, utc_iso, utc_stamp  # noqa: E402
 from esp_client import EspClient  # noqa: E402
