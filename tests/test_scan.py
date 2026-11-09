@@ -46,6 +46,23 @@ class ScanTargets(unittest.TestCase):
         with self.assertRaises(ValueError):
             scan._tilt_targets(25, 950, 500)
 
+    def test_default_config_validates(self):
+        scan.ScanConfig().validate()
+
+    def test_yaw_and_stepper_step_must_match(self):
+        with self.assertRaises(ValueError):
+            scan.ScanConfig(yaw_step_deg=10, stepper_step_deg=5).validate()
+
+    def test_servo_delay_bounds(self):
+        with self.assertRaises(ValueError):
+            scan.ScanConfig(servo_step_delay_s=0.01).validate()
+        with self.assertRaises(ValueError):
+            scan.ScanConfig(servo_step_delay_s=0.6).validate()
+
+    def test_sample_interval_bounds(self):
+        with self.assertRaises(ValueError):
+            scan.ScanConfig(sample_interval_ms=10).validate()
+
 
 if __name__ == "__main__":
     unittest.main()

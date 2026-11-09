@@ -64,6 +64,11 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W19 | Lulus parsial - jack-powered servo small movement | After recovery, `park_servo` → `servo_down_25` (800→775) → `servo_up_25` (775→800) → `release_servo` all returned ok with no brownout and reset reason 1. HC ~71.3 cm, HLK ~62 cm, ToF still absent. This establishes small servo movement under jack power; full scan still requires ToF and power stability. |
 | W20 | Gagal parsial - sequential scan brownout 1 | Scan `20261109T132613Z` captured 10/30 points at yaw -10°, servo 500→950 µs. HC was valid; ToF was valid before the scan but stale from the first sample. The board reset with `reset_reason=9`, `brownout=true`. Evidence: `analysis/device/scan-brownout-20261109T132901Z/`. |
 | W21 | Gagal parsial - sequential scan brownout 2 | Scan `20261109T133153Z` captured 19/30 points after parking the servo at 800 µs before detach; the second column reached 900 µs. HC was valid, ToF stale for every point, and the board reset again with `reset_reason=9`, `brownout=true`. Evidence: `analysis/device/scan-brownout-2-20261109T133435Z/`. |
+| W22 | Lulus - attach-only and 0.1 s servo timing | `park_servo` at 800 µs held for 10 s with no new reset. A controlled 500→800→500→800 µs test in 25 µs steps with 0.1 s delay completed without a new reset. The earlier 0.04 s timing browned out. Evidence: `analysis/mapping/servo-delay-0.10-20261109T140434Z/`. |
+| W23 | Lulus - validation sequential scan | Scan `20261109T141449Z` completed 30/30 points (29 valid) at yaw ±10°, tilt 500–950 µs, with stepper released during the sweep, 0.1 s servo delay and 0.5 s cooldown. No new brownout; HC fallback because ToF was stale. Evidence: `research/mapping/scans/20261109T141449Z/`. |
+| W24 | Lulus - coarse full sequential scan | Scan `20261109T141830Z` completed 110/110 points (99 valid) across yaw ±45° (10° step), tilt 500–950 µs (50 µs step). No new brownout. This is the first full coarse scan; points are HC-based. Evidence: `research/mapping/scans/20261109T141830Z/`. |
+| W25 | Lulus parsial - 0.6.0 OTA and ToF motion limitation | `0.6.0-software-power` installed over LAN OTA with Wi-Fi TX 8.5 dBm, HLK confirm 3 frames, energy 40, parked stable 1000 ms. ToF at rest was valid ~72.9–74.6 cm and agreed with HC within ~0.1 cm, but became stale at the first servo movement; detaching the servo during sampling did not recover it. Scans correctly use HC fallback. Evidence: `analysis/device/ota-software-power-20261109T144126Z/`, `analysis/mapping/detach-sampling-20261109T143324Z/`. |
+| W26 | Lulus - PC 3D dashboard render | Browser test loaded `http://127.0.0.1:8000/`, showed `0.6.0-software-power`, scan selector, HC points and HLK presence arc. Screenshot: `analysis/mapping/dashboard-20261109T143500Z/pointcloud.png`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -121,6 +126,16 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/jack-servo-motion-20261109T125129Z/`
 - `analysis/device/scan-brownout-20261109T132901Z/`
 - `analysis/device/scan-brownout-2-20261109T133435Z/`
+- `analysis/platformio/build-20261109T142743Z/`
+- `analysis/device/ota-software-power-20261109T144126Z/`
+- `analysis/mapping/servo-delay-0.10-20261109T140434Z/`
+- `analysis/mapping/single-column-20261109T140521Z/`
+- `analysis/mapping/single-column-release-stepper-20261109T141243Z/`
+- `analysis/mapping/detach-sampling-20261109T143324Z/`
+- `analysis/mapping/scan-success-20261109T144200Z/`
+- `analysis/mapping/dashboard-20261109T143500Z/`
+- `research/mapping/scans/20261109T141830Z/`
+- `research/mapping/scans/20261109T142924Z/`
 - `research/mapping/calibration.json` (PC calibration capture)
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`
@@ -128,8 +143,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/gcc/tests-20261105T161636731Z/` (final host regression run)
 
 The current application SHA-256 is
-`32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`.
-Research CLI verified 77 stored evidence artifacts with zero integrity failures.
+`1d5e8a223adb7547c3459d648791fe082f075af9a044dd886a1bee91c98755ad`.
+Research CLI verified 81 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

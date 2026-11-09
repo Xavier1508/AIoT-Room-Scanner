@@ -36,7 +36,7 @@ static const char webPage[] PROGMEM = R"HTML(<!doctype html>
 </section>
 <section class="card"><h2>Buzzer &amp; radar</h2>
 <button data-command="buzzer_test">3 beep test</button><button data-command="hlk_start">Mulai HLK</button><button data-command="hlk_stop">Hentikan HLK</button>
-<p class="note">HLK dipakai presence/proximity; blind zone &lt;30 cm. Buzzer parkir: diam di &gt;75 cm, lambat di 75 cm, makin cepat sampai 30 cm. Mute saat scan mode/gerakan.</p>
+<p class="note">HLK dipakai presence/proximity; blind zone &lt;30 cm. Buzzer parkir: diam di &gt;75 cm, lambat di 75 cm, makin cepat sampai 30 cm. Mute saat scan mode/gerakan; aktif setelah arm diam &gt;1 detik. Konfirmasi 3 frame + energy threshold.</p>
 <pre id="hlk">Belum ada data valid.</pre></section>
 <section class="card"><h2>Axis X · Stepper horizontal</h2>
 <button data-command="motor_arm">Arm motor · 30 dtk</button><button data-command="step_test">64 maju / 64 mundur</button><button data-command="step_test_long">512 maju / 512 mundur</button>

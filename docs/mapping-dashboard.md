@@ -75,29 +75,39 @@ calibrated to match HC/ToF distance.
 
 The ESP32 must be in `IDLE` or `PARKED` with sensors running. The PC sends
 `scan_mode_start`, then explicit 5-degree/25-microsecond nudges. The scan is
-**sequential** to avoid overlapping actuator current: stepper moves and holds,
-servo attaches only after the stepper settles, the vertical sweep runs, the
-servo returns to its 800-microsecond base, detaches, then the next yaw starts.
-Firmware rejects servo attach while the stepper is moving and stepper motion
-while the servo is attached. The PC also requires a power-confirmation checkbox
-before starting. Firmware enforces the mapping envelope:
+**sequential** to avoid overlapping actuator current: stepper moves to the yaw,
+is **released during the vertical servo sweep** to save holding current, then
+re-held before the next yaw. The servo attaches only after the stepper settles,
+moves in 25 µs steps with a 0.1 s delay, returns to its 800 µs base, detaches,
+and the next column waits for a 0.5 s cooldown. Firmware rejects servo attach
+while the stepper is moving and stepper motion while the servo is attached. The
+PC also requires a power-confirmation checkbox before starting. Firmware
+enforces the mapping envelope:
 
 - stepper: `-513..+513` half-steps (about +/-45.1 degrees nominal)
 - servo: `500..950` microseconds (500 = up, 950 = down)
 
 The UI/API exposes a bounded validation mode: yaw step 5/10 degrees, yaw limit
-±5/10/15/20/30/45 degrees, tilt step 25/50 microseconds, and tilt min/max inside
-500..950 microseconds. The default full grid is yaw -45..+45 degrees in
-5-degree steps and tilt 500..950 microseconds in 25-microsecond steps:
-19 x 19 = 361 points. A coarse run uses 10 degrees and 50 microseconds; start
-with ±10 degrees and 50 microseconds before a full sweep.
+±5/10/15/20/30/45 degrees, tilt step 25/50 microseconds, tilt min/max inside
+500..950 microseconds, servo step delay 0.05–0.5 s, column cooldown 0–5 s, and
+sample interval 50–1000 ms. Presets: Validation ±10°, Coarse ±45°, Fine ±45°.
+The default full grid is yaw -45..+45 degrees in 5-degree steps and tilt
+500..950 microseconds in 25-microsecond steps: 19 x 19 = 361 points. A coarse
+run uses 10 degrees and 50 microseconds.
 
-**Power blocker (2026-11-09):** two sequential validation scans browned out on
-the second column (10/30 and 19/30 points, `reset_reason=9`, `brownout=true`).
-The ToF was valid at rest but went stale as soon as the servo moved; after the
-reset sensors stayed stopped and ToF appeared absent until `sensors_start`.
-Do not run a full scan until the servo has a separate 5 V/6 V supply (or a
-measured stronger buck converter) with common ground and bulk capacitance.
+**Measured power strategy (2026-11-09):** two early scans browned out when the
+servo moved quickly with the stepper held. With the 0.1 s servo step delay,
+stepper released during the sweep, 0.5 s cooldown and park-before-detach, the
+validation scan completed 30/30 points and the coarse full scan completed
+110/110 points (99 valid) with no new brownout. Faster timing or holding the
+stepper during the sweep can brown out again; this is a software timing
+mitigation on the existing 9 V/3 A supply, not a hardware power fix.
+
+**ToF motion limitation:** ToF is valid at rest (~72.9–74.6 cm, HC agreement
+within ~0.1 cm) but becomes stale at the first servo movement. Detaching the
+servo during sampling did not recover it. The scan pipeline falls back to HC
+points, so the current 3D map is HC-based; no ToF point cloud is claimed during
+motion.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is

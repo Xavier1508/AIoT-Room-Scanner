@@ -37,11 +37,25 @@ class ScanConfig:
     yaw_limit_deg: int = 45
     tilt_min_us: int = 500
     tilt_max_us: int = 950
+    stepper_step_deg: int = 5
+    servo_step_delay_s: float = 0.1
+    column_cooldown_s: float = 0.5
+    release_stepper_during_sweep: bool = True
     label: str = ""
 
     def validate(self):
         _yaw_targets(self.yaw_step_deg, self.yaw_limit_deg)
         _tilt_targets(self.tilt_step_us, self.tilt_min_us, self.tilt_max_us)
+        if self.stepper_step_deg not in (5, 10):
+            raise ValueError("stepper step must be 5 or 10 degrees")
+        if self.yaw_step_deg != self.stepper_step_deg:
+            raise ValueError("yaw step and stepper step must match")
+        if not 0.05 <= self.servo_step_delay_s <= 0.5:
+            raise ValueError("servo step delay must be 0.05..0.5 seconds")
+        if not 0 <= self.column_cooldown_s <= 5:
+            raise ValueError("column cooldown must be 0..5 seconds")
+        if not 50 <= self.sample_interval_ms <= 1000:
+            raise ValueError("sample interval must be 50..1000 ms")
 
 
 def _yaw_targets(step_deg: int, limit_deg: int = 45):
@@ -155,7 +169,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
         if current_steps % YAW_STEP != 0:
             raise RuntimeError("Stepper reference is not aligned to 5-degree units; zero it before scanning.")
         if current.get("actuators", {}).get("servo_attached"):
-            client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+            client.servo_to(SERVO_PARK_US, step_delay_s=config.servo_step_delay_s)
             time.sleep(0.2)
             result = client.command("release_servo")
             if not result.get("ok"):
@@ -169,7 +183,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                     raise InterruptedError("scan stopped by operator")
                 state = client.status()
                 if state.get("actuators", {}).get("servo_attached"):
-                    client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+                    client.servo_to(SERVO_PARK_US, step_delay_s=config.servo_step_delay_s)
                     time.sleep(0.2)
                     result = client.command("release_servo")
                     if not result.get("ok"):
@@ -179,7 +193,12 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                     progress({"phase": "moving_stepper", "scan_id": scan_id,
                               "yaw_index": yaw_index, "yaw_count": len(yaws),
                               "points": len(points), "total": total})
-                client.move_stepper_to(yaw, settle_s=0.35)
+                client.move_stepper_to(yaw, settle_s=0.35, step_deg=config.stepper_step_deg)
+                if config.release_stepper_during_sweep:
+                    result = client.command("release_stepper")
+                    if not result.get("ok"):
+                        raise RuntimeError("Stepper release rejected: " + str(result.get("message")))
+                    time.sleep(0.2)
                 if progress:
                     progress({"phase": "servo_attach", "scan_id": scan_id,
                               "yaw_index": yaw_index, "yaw_count": len(yaws),
@@ -189,13 +208,13 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                     raise RuntimeError("Servo attach rejected: " + str(result.get("message")))
                 motion_started = True
                 time.sleep(0.5)
-                client.servo_to(tilts[0], step_delay_s=0.04)
+                client.servo_to(tilts[0], step_delay_s=config.servo_step_delay_s)
                 time.sleep(0.2)
                 for tilt_index, tilt in enumerate(tilts):
                     if stop_event is not None and stop_event.is_set():
                         raise InterruptedError("scan stopped by operator")
                     if tilt_index:
-                        client.servo_to(tilt, step_delay_s=0.04)
+                        client.servo_to(tilt, step_delay_s=config.servo_step_delay_s)
                     time.sleep(max(0, config.dwell_ms) / 1000.0)
                     rows = []
                     for sample_index in range(max(1, config.samples)):
@@ -227,13 +246,20 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                 # Return to the base pulse before detaching. Re-attaching at
                 # 800 us after a column ended at 950 us caused a large jump and
                 # a measured brownout on the second column.
-                client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+                client.servo_to(SERVO_PARK_US, step_delay_s=config.servo_step_delay_s)
                 time.sleep(0.2)
                 result = client.command("release_servo")
                 if not result.get("ok"):
                     raise RuntimeError("Servo detach rejected: " + str(result.get("message")))
                 time.sleep(0.35)
-        client.move_stepper_to(0, settle_s=0.35)
+                if config.release_stepper_during_sweep:
+                    result = client.command("park_stepper")
+                    if not result.get("ok"):
+                        raise RuntimeError("Stepper re-hold rejected: " + str(result.get("message")))
+                    time.sleep(0.2)
+                if config.column_cooldown_s:
+                    time.sleep(config.column_cooldown_s)
+        client.move_stepper_to(0, settle_s=0.35, step_deg=config.stepper_step_deg)
         client.command("park_stepper")
         client.command("scan_mode_stop")
         fields = list(points[0].keys()) if points else []
@@ -249,6 +275,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             "config": asdict(config),
             "sequential": True,
             "servo_detach_between_columns": True,
+            "stepper_released_during_sweep": config.release_stepper_during_sweep,
             "calibration": calibration,
             "yaw_targets": yaws,
             "tilt_targets": tilts,
@@ -298,6 +325,12 @@ def main() -> int:
     parser.add_argument("--tilt-step-us", type=int, default=25, choices=(25, 50))
     parser.add_argument("--tilt-min-us", type=int, default=500)
     parser.add_argument("--tilt-max-us", type=int, default=950)
+    parser.add_argument("--stepper-step-deg", type=int, default=5, choices=(5, 10))
+    parser.add_argument("--servo-step-delay-s", type=float, default=0.1)
+    parser.add_argument("--column-cooldown-s", type=float, default=0.5)
+    parser.add_argument("--hold-stepper-during-sweep", action="store_true",
+                        help="Keep stepper energized during the servo sweep (higher current).")
+    parser.add_argument("--sample-interval-ms", type=int, default=250)
     parser.add_argument("--dwell-ms", type=int, default=400)
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--label", default="")
@@ -307,9 +340,14 @@ def main() -> int:
         tilt_step_us=args.tilt_step_us,
         dwell_ms=args.dwell_ms,
         samples=args.samples,
+        sample_interval_ms=args.sample_interval_ms,
         yaw_limit_deg=args.yaw_limit_deg,
         tilt_min_us=args.tilt_min_us,
         tilt_max_us=args.tilt_max_us,
+        stepper_step_deg=args.stepper_step_deg,
+        servo_step_delay_s=args.servo_step_delay_s,
+        column_cooldown_s=args.column_cooldown_s,
+        release_stepper_during_sweep=not args.hold_stepper_during_sweep,
         label=args.label,
     )
     stop_event = threading.Event()

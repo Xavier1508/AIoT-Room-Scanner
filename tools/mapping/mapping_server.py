@@ -104,9 +104,14 @@ def _start_scan(config: dict):
         tilt_step_us=int(config.get("tilt_step_us", 25)),
         dwell_ms=max(100, min(2000, int(config.get("dwell_ms", 400)))),
         samples=max(1, min(10, int(config.get("samples", 5)))),
+        sample_interval_ms=max(50, min(1000, int(config.get("sample_interval_ms", 250)))),
         yaw_limit_deg=int(config.get("yaw_limit_deg", 45)),
         tilt_min_us=int(config.get("tilt_min_us", 500)),
         tilt_max_us=int(config.get("tilt_max_us", 950)),
+        stepper_step_deg=int(config.get("stepper_step_deg", config.get("yaw_step_deg", 5))),
+        servo_step_delay_s=max(0.05, min(0.5, float(config.get("servo_step_delay_s", 0.1)))),
+        column_cooldown_s=max(0.0, min(5.0, float(config.get("column_cooldown_s", 0.5)))),
+        release_stepper_during_sweep=bool(config.get("release_stepper_during_sweep", True)),
         label=str(config.get("label", ""))[:80],
     )
     scan_config.validate()

@@ -54,14 +54,26 @@ class EspClient:
                            "Timed out waiting for device state: " + str(last.get("mode")))
 
     def move_stepper_to(self, target_half_steps: int, timeout_s: float = 20.0,
-                        settle_s: float = 0.35) -> dict:
-        """Move using only 5-degree nudges; target must be reachable in 57-step units."""
+                        settle_s: float = 0.35, step_deg: int = 5) -> dict:
+        """Move to a 57-half-step boundary, using 10-degree nudges when aligned."""
+        if step_deg not in (5, 10):
+            raise ValueError("stepper step must be 5 or 10 degrees")
+        if target_half_steps % 57 != 0:
+            raise ValueError(f"target {target_half_steps} is not aligned to 5-degree steps")
         state = self.status()
         current = int(state["actuators"]["relative_half_steps"])
+        if current % 57 != 0:
+            raise ValueError(f"current position {current} is not aligned to 5-degree steps")
+        # Use 10-degree nudges only when both ends align; otherwise use 5-degree
+        # nudges so the +/-45 degree endpoint (513 half-steps) is reachable.
+        if step_deg == 10 and current % 114 == 0 and target_half_steps % 114 == 0:
+            step_half, command_step = 114, 10
+        else:
+            step_half, command_step = 57, 5
         while current != target_half_steps:
             delta = target_half_steps - current
-            expected = current + (57 if delta > 0 else -57)
-            name = "stepper_right_5" if delta > 0 else "stepper_left_5"
+            expected = current + (step_half if delta > 0 else -step_half)
+            name = (f"stepper_right_{command_step}" if delta > 0 else f"stepper_left_{command_step}")
             try:
                 result = self.command(name)
             except TimeoutError:

@@ -65,6 +65,7 @@ void Network::reconfigure() {
   memset(authorization_, 0, sizeof(authorization_));
   if (!settings_->configured()) { WiFi.mode(WIFI_OFF); return; }
   WiFi.mode(WIFI_STA); WiFi.setHostname(config::hostname); WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
   char raw[80];
   snprintf(raw, sizeof(raw), "%s:%s", config::webUser, settings_->value().webPassword);
   unsigned char encoded[128]; size_t length = 0;

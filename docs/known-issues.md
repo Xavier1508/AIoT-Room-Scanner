@@ -65,18 +65,25 @@ the 5V sensor rail is not adequately powered: HC stale, VL53L1X absent, HLK no
 data. Use the 9V jack for sensor calibration; do not connect USB and jack
 together. The ESP32 web dashboard still auto-starts over Wi-Fi when jack-powered.
 
-**Jack partial attach / scan brownout:** with the 9V jack and USB removed, a
-`park_servo` attach at 800 µs held without immediate brownout; HC and HLK were
-valid. VL53L1X was absent with an empty I2C scan. After recovery, a controlled
-25 µs servo movement (800→775→800) and release also completed without brownout.
-Two later sequential scans then failed on the second column: 10/30 points
-(`20261109T132613Z`) and 19/30 points (`20261109T133153Z`), both ending with
-`reset_reason=9`, `brownout=true`. ToF is valid at rest (I2C `0x29`, ~76 cm) but
-its timestamp stops when the servo moves; after the reset, sensors stay stopped
-and ToF shows ABSENT until `sensors_start`. This is a shared servo/sensor power
-and transient problem, not a permanently dead ToF. A separate 5 V/6 V servo
-supply with common ground, or a measured stronger buck converter plus bulk
-capacitance, is required before a full scan. No full scan is claimed.
+**Jack partial attach / scan power:** with the 9V jack and USB removed, a
+`park_servo` attach at 800 µs held for 10 s without a new brownout. Two early
+sequential scans browned out on the second column (10/30 and 19/30 points) when
+the servo moved quickly and the stepper was held energized. The working software
+mitigation is: 0.1 s between 25 µs servo steps, release the stepper during the
+vertical sweep, re-hold before the next yaw, park the servo at 800 µs before
+detach, and 0.5 s column cooldown. With that strategy the validation scan
+completed 30/30 points and the coarse full scan completed 110/110 points
+(99 valid) with no new brownout. This is a software timing mitigation on the
+existing 9 V/3 A supply, not a hardware power fix; faster timing or holding the
+stepper during the sweep can brown out again.
+
+**ToF motion limitation:** ToF is valid at rest after `sensors_start` (~72.9–
+74.6 cm, HC agreement within ~0.1 cm), but it becomes stale at the first servo
+movement. Detaching the servo during dwell/sampling did not recover it. The
+stall is caused by the servo motor transient/EMI on the shared rail, not by the
+servo holding PWM. The scan pipeline falls back to HC points, so the current 3D
+map is HC-based; no ToF point cloud is claimed. A separate servo supply or
+shielding would be required for ToF during motion.
 
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional

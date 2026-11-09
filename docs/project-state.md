@@ -2,9 +2,9 @@
 
 Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-A full sequential scan is currently blocked by two measured brownouts during
-the second column; small servo movement works, but the shared servo/sensor
-supply cannot sustain a full sweep.
+A full coarse sequential scan now completes without brownout using software
+power timing. ToF is valid at rest but stalls during servo motion, so scans use
+HC fallback points; the 3D map is therefore HC-based, not ToF-based.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -200,18 +200,45 @@ supply cannot sustain a full sweep.
   before deliberate movement. The two scan attempts above confirm the blocker is
   the shared servo/sensor power path, not the ToF wiring. This is an electrical
   finding, not a firmware success claim.
+- **Software power strategy works:** with 0.1 s between 25 µs servo steps,
+  stepper released during the vertical sweep, 0.5 s column cooldown, and servo
+  parked at 800 µs before detach, attach-only held 10 s and a 500→800→500→800 µs
+  servo test completed without a new reset. Evidence:
+  `analysis/mapping/servo-delay-0.10-20261109T140434Z/`.
+- `0.6.0-software-power` is deployed (837424 bytes, SHA-256
+  `1d5e8a223adb7547c3459d648791fe082f075af9a044dd886a1bee91c98755ad`).
+  It reduces Wi-Fi TX power to 8.5 dBm and exposes HLK alert
+  `confirm_frames=3`, `energy_threshold=40`, `parked_stable_ms=1000` with the
+  30–75 cm buzzer ramp. OTA reboot reported `reset_reason=3`, `brownout=false`,
+  free heap ~236 KB. Evidence:
+  `analysis/device/ota-software-power-20261109T144126Z/`.
+- **Sequential scans now complete:** validation `20261109T141449Z` reached
+  30/30 points (29 valid); coarse full `20261109T141830Z` reached 110/110 points
+  (99 valid) across yaw ±45° with no new brownout. Both used HC points because
+  the ToF was stale during servo motion. Evidence:
+  `analysis/mapping/scan-success-20261109T144200Z/` and
+  `research/mapping/scans/20261109T141830Z/`.
+- **ToF motion limitation:** after a clean reboot and `sensors_start`, ToF was
+  present/initialized/valid at ~72.9–74.6 cm and agreed with HC within ~0.1 cm.
+  It became stale at the first servo movement; detaching the servo during
+  sampling did not recover it. This is a servo transient/EMI issue on the shared
+  rail, not a dead ToF. The scan pipeline correctly falls back to HC. Evidence:
+  `analysis/mapping/detach-sampling-20261109T143324Z/`.
+- PC 3D dashboard verified in a browser: scan selector, HC points, and HLK
+  presence arc render correctly. Screenshot:
+  `analysis/mapping/dashboard-20261109T143500Z/pointcloud.png`.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** stop running scans. Fix the servo power path first:
-use a separate 5 V/6 V supply (≥2 A) for the servo with a common ground, or a
-measured stronger buck converter, and add bulk capacitance; then measure the
-5 V and 3.3 V rails under servo load. ToF is healthy at rest (I2C `0x29`,
-~76 cm) and is not the blocker. After power is stable, capture calibration at
-30/50/75/100/150/250 cm, then run the small ±10° scan and only then the full
-coarse scan. No full scan is claimed; do not train a deep-learning model until
-repeatable calibrated scans exist.
+**Current next action:** collect the HLK dataset and train the TinyML model.
+The scan power path is now workable with software timing; ToF is at-rest only,
+so the HC map is the current geometry. Next: (1) collect labeled HLK windows
+(empty/human/non-human; later walking/sitting/standing/lying), (2) train a small
+1D CNN/MLP on the PC, (3) quantize/export and integrate it on the ESP32-S3,
+(4) run a fine 5°/25 µs scan if time allows, and (5) verify the 30–75 cm buzzer
+ramp and scan/motion mute. No ToF point cloud or deep-learning result is claimed
+yet.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -231,7 +258,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **77 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **81 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -250,8 +277,10 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   dashboard screenshots; 68–69 = 0.5.0 sequential-scan build and attach-only
   offline observation; 70–73 = 0.5.0 OTA, USB-only sensor power, scan-mode mute
   and PC mapping health; 74 = jack-powered partial servo attach/ToF absent;
-  75 = jack-powered servo small movement success; 76–77 = two sequential scan
-  brownouts with ToF stale during servo movement.
+  75 = jack-powered servo small movement success; 76-77 = two sequential scan
+  brownouts with ToF stale during servo movement; 78 = 0.6.0 software-power OTA;
+  79 = successful validation/coarse scans with HC fallback; 80 = 0.1 s servo
+  delay test; 81 = ToF motion stall with servo detached during sampling.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

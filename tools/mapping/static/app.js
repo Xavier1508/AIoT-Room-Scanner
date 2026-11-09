@@ -225,6 +225,11 @@ async function startScan() {
       tilt_step_us: Number($('tilt-step').value),
       tilt_min_us: Number($('tilt-min').value),
       tilt_max_us: Number($('tilt-max').value),
+      stepper_step_deg: Number($('yaw-step').value),
+      servo_step_delay_s: Number($('servo-delay').value),
+      column_cooldown_s: Number($('cooldown').value),
+      release_stepper_during_sweep: $('release-stepper').checked,
+      sample_interval_ms: Number($('sample-interval').value),
       dwell_ms: Number($('dwell').value),
       samples: Number($('samples').value),
       confirm_power: true,
@@ -422,6 +427,26 @@ function bindCanvas() {
 for (const button of document.querySelectorAll('[data-tab]')) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
+function applyScanPreset(name) {
+  const presets = {
+    validation: { yawStep: 10, yawLimit: 10, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
+    coarse: { yawStep: 10, yawLimit: 45, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
+    fine: { yawStep: 5, yawLimit: 45, tiltStep: 25, dwell: 400, samples: 5, interval: 250 },
+  };
+  const preset = presets[name];
+  if (!preset) return;
+  $('yaw-step').value = String(preset.yawStep);
+  $('yaw-limit').value = String(preset.yawLimit);
+  $('tilt-step').value = String(preset.tiltStep);
+  $('dwell').value = String(preset.dwell);
+  $('samples').value = String(preset.samples);
+  $('sample-interval').value = String(preset.interval);
+  $('servo-delay').value = '0.1';
+  $('cooldown').value = '0.5';
+}
+$('preset-validation').addEventListener('click', () => applyScanPreset('validation'));
+$('preset-coarse').addEventListener('click', () => applyScanPreset('coarse'));
+$('preset-fine').addEventListener('click', () => applyScanPreset('fine'));
 $('start-scan').addEventListener('click', startScan);
 $('stop-scan').addEventListener('click', stopScan);
 $('capture-cal').addEventListener('click', captureCalibration);

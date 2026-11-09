@@ -106,7 +106,7 @@ void App::maybeHlkAlert(uint32_t now) {
   if (scanMode_) { mute("scan_mode"); return; }
   if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) { mute("actuator_test"); return; }
   if (stepper_.active() || stepperMovePending_ || servo_.active()) { mute("actuator_motion"); return; }
-  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < 500) { mute("settle"); return; }
+  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < config::hlkAlertParkedStableMs) { mute("settle"); return; }
   const auto& reading = hlk_.reading();
   if (!reading.received || uint32_t(now - reading.timestampMs) > config::hlkStaleMs) {
     mute("no_valid_hlk");
@@ -516,6 +516,9 @@ void App::publish(uint32_t now) {
         ",\"min_interval_ms\":" + config::hlkAlertMinIntervalMs +
         ",\"max_interval_ms\":" + config::hlkAlertMaxIntervalMs +
         ",\"beep_ms\":" + config::hlkAlertBeepMs +
+        ",\"confirm_frames\":" + config::hlkAlertConfirmFrames +
+        ",\"energy_threshold\":" + config::hlkAlertEnergy +
+        ",\"parked_stable_ms\":" + config::hlkAlertParkedStableMs +
         ",\"interval_ms\":" + hlkAlertIntervalMs_ +
         ",\"count\":" + hlkAlertCount_ +
         ",\"last_distance_cm\":" + hlkAlertLastDistanceCm_ +
