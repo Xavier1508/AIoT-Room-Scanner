@@ -1,9 +1,8 @@
 # Handoff notes — AIoT ESP32-S3 room scanner
 
-Updated: 2026-11-07. This note is for the next model/session continuing the
-project after the Solana/OpenAI handoff. It records the current design,
-measured/user-reported state, and the next safe steps. It is not a claim of
-physical measurements that were not taken.
+Updated: 2026-11-09. This note records the current design, measured/user-reported
+state, and the next safe steps. It is not a claim of physical measurements that
+were not taken.
 
 ## Project shape
 
@@ -12,11 +11,13 @@ physical measurements that were not taken.
 - Local LAN dashboard with HTTP Basic + boot-scoped CSRF, authenticated
   application OTA, passive 2.4 GHz Wi-Fi scan/provisioning, HLK-LD2410C UART
   parser, 28BYJ-48/ULN2003 stepper, SG90-class servo.
-- No 3D mapping, TinyML, CSI, or calibrated mapping data yet; CDM324 remains
-  disabled. Sensor bring-up is implemented and live-tested in `0.3.1`; `0.3.2`
-  tightens ToF polling and enables an optional connected XSHUT line.
-- Current deployed firmware: `0.3.2-sensor-poll-throttled`; verify again with
+- No trained 3D/TinyML/CSI model yet; CDM324 remains disabled. Sensor health,
+  calibration capture, scan orchestration and a canvas 3D point-cloud viewer are
+  implemented. Deep-learning training is still a PC-side future step.
+- Current deployed firmware: `0.4.2-mapping-ready`; verify again with
   `device.py status` after any further OTA.
+- PC mapping dashboard: `tools/mapping/mapping_server.py` on
+  `http://127.0.0.1:8000/`; see `docs/mapping-dashboard.md`.
 
 ## Pin map (from the latest workbook)
 
@@ -47,17 +48,15 @@ actual breakout labels before powering sensors.
   hold attempt at 1950/2000 µs did not produce the expected movement under the
   installed arm; the exact cause was not isolated. The current tuning design uses
   a saved base target. The user corrected the mechanical zero to **800 µs**;
-  `0.3.2` retains the corrected saved default at **800 µs**. The firmware clamp is
-  **500–1400 µs**. `park_servo` returns to the saved base, `servo_up_200` /
-  `servo_down_200` move the target by 200 µs, `servo_up_50` / `servo_down_50`
-  move it by 50 µs, and all keep holding. `save_servo_here` overwrites the saved
-  base in NVS. Status exposes `pose.servo_base_source`, `pose.servo_base_saved`,
-  `pose.servo_base_us`, `pose.servo_min_us`, `pose.servo_max_us`, and
-  `actuators.servo_target_us`. The 500 µs lower bound is a firmware choice, not
-  a measured mechanical limit; test the low end in stages.
-- Servo supply/current and the 5 V rail capacity are still unmeasured. Do not
-  claim the SG90 can lift the arm until loaded movement is observed. Do not use
-  9 V on the servo; common ground is required.
+  `0.4.0` retains the corrected saved default at **800 µs**. Manual clamp is
+  **500–1400 µs**; scan mode clamps to **500–950 µs**. `park_servo` returns to
+  the saved base, ±200/±50/±25 µs nudges keep holding. `save_servo_here`
+  overwrites the saved base in NVS.
+- **Brownout finding:** a 25 µs servo attach produced `reset_reason=9`,
+  `brownout=true`. Boot returned IDLE/detached. Do not run loaded servo or a
+  full scan until the servo/5 V rail is fixed (separate supply, common ground,
+  measured under load). The 500 µs lower bound is a firmware choice, not a
+  measured mechanical limit.
 - The servo is an elevation/tilt axis; the stepper is the horizontal axis. The
   target mechanical zero is the sensor arm facing forward, not a blind angle.
 - OTA and STOP release holds. Support the arm before OTA, release, or power loss.
@@ -84,27 +83,26 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Keep the arm supported and use `park_servo` at the saved 800 µs base when a
-   stationary sensor pose is required; boot remains detached by design.
-2. The 0.3.2 stationary retest initially kept ToF valid for 12 snapshots/~24 s
-   with 0 I2C errors, but the same boot later became stale; software restart did
-   not recover it, and a fresh start reported `wrap_target_fail` without I2C
-   errors. The earlier 0.3.1 stale/error result is also retained. Treat ToF as
-   uncalibrated/invalid until target optics, supply and long-run state are fixed.
-3. Repeat measurements against a rigid target at known distances, recording
-   HC-SR04 and VL53L1X together with target distance, target material, sensor
-   height, and servo/stepper pose.
-4. Estimate bias, noise, valid-rate and cross-sensor offset before mapping.
-5. Define the horizontal/tilt coordinate convention and collect synchronized
-   tuples only after repeatability is demonstrated. Do not call bring-up values
-   calibrated geometry or a deep-learning model.
-6. Update `docs/project-state.md`, `docs/test-report.md`, and
+1. Fix the servo/5 V power path first. The 0.4.0 small-motion test caused a
+   brownout when the servo attached; do not run loaded movement or a full scan
+   until the rail is measured under load and common ground is verified.
+2. Keep the arm supported. `park_servo` at 800 µs is explicit; boot is detached.
+3. Use the PC dashboard to capture calibration at 30/50/75/100/150/250 cm.
+   First record at 75 cm: HC offset +6 mm, ToF offset +56 mm, 100% valid.
+4. Only after power is fixed, run a coarse scan 10°/50 µs and inspect the point
+   cloud. Then run fine 5°/25 µs and collect repeat scans.
+5. Treat ToF long-run state as unresolved until a 10+ minute stationary run
+   with zero stale periods is observed. HLK is presence/proximity only; blind
+   below 30 cm.
+6. Do not train a deep-learning model until calibrated, repeatable scans exist.
+   The PC pipeline is ready; ESP32 is collector/control, not a trainer.
+7. Update `docs/project-state.md`, `docs/test-report.md`, and
    `docs/openapi.json` after each verified OTA/hardware result.
 
 ## Evidence and docs
 
 - `docs/project-state.md` — chronological state and next action.
-- `docs/test-report.md` — workbook T01–T13 and W01–W13 results.
+- `docs/test-report.md` — workbook T01–T13 and W01–W15 results.
 - `docs/known-issues.md` — historical failures and limits.
 - `docs/openapi.json` — local HTTP contract.
 - `analysis/device/` — OTA/status evidence; `analysis/platformio/` — builds.

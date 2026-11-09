@@ -1,8 +1,8 @@
 # Project state
 
-Updated: 2026-11-07. USB bring-up, SSID discovery, LAN dashboard access and real
-application OTA are verified; the new park pose still requires user-controlled
-physical direction/clearance verification.
+Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
+application OTA, sensor health and the PC mapping dashboard are verified.
+Physical servo movement is currently blocked by a measured brownout on attach.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -10,10 +10,10 @@ physical direction/clearance verification.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.3.2-sensor-poll-throttled`**, built and installed through real LAN OTA.
-  Current application artifact: `analysis/platformio/build-20261107T080555904Z/firmware.bin`.
-  Size **820816 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `3664b5ca521ba2f9695ce4499abc9d17bd89440bbf6ec66c500fc923ba80d2bc`.
+- **Running firmware: `0.4.2-mapping-ready`**, built and installed through real LAN OTA.
+  Current application artifact: `analysis/platformio/build-20261109T051721344Z/firmware.bin`.
+  Size **835440 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `dd622aeb86a431b24848fdd4628f9582794876df5df93bba7d9634ae3e36c52a`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -122,8 +122,8 @@ physical direction/clearance verification.
 - User now reports that the existing actuator tests/signals work and that the
   servo bracket and arm have been installed. This is a user report, not an
   independent electrical or motion measurement.
-- User corrected the servo mechanical zero to **800 µs**. `0.3.2` retains the
-  prior 900 µs NVS value to 800 µs without attaching or moving the servo at boot;
+- User corrected the servo mechanical zero to **800 µs**. `0.4.2` retains the
+  saved 800 µs NVS value without attaching or moving the servo at boot;
   `park_servo` applies the saved target explicitly.
 - `0.3.2` adds explicit `sensors_start`/`sensors_stop`, HC-SR04 polling on
   GPIO10/11 with bounded timeout and divider-aware validity, VL53L1X I2C
@@ -140,15 +140,33 @@ physical direction/clearance verification.
   a software restart did not recover it. A fresh start then showed raw status 7
   (`wrap_target_fail`) with invalid samples and no I2C errors. HC-SR04/HLK stayed
   valid. Evidence: `analysis/device/sensor-poll-throttled-20261107T080748Z/`.
+- `0.4.2-mapping-ready` adds sensor health/error-rate, HLK inside `sensors`,
+  fine jog 5°/25 µs, scan mode ±513 half-step / 500–950 µs, HLK proximity
+  buzzer, a motion-settle guard, and calibrated HC/ToF values in both dashboards.
+  Real OTA returned IDLE with servo detached and base 800 µs.
+- Live 0.4.2 sensor health after start: **OK / OK / OK**; HC ~74 cm,
+  ToF raw ~69 cm → calibrated ~74 cm with the provisional +50 mm offset,
+  HLK valid, ToF I2C errors 0 and responsive true. Evidence:
+  `analysis/device/ota-mapping-ready-042-20261109T052016Z/`.
+- PC mapping dashboard is implemented under `tools/mapping/` with a
+  dependency-free HTTP server, calibration capture, scan orchestrator and
+  canvas 3D isometric viewer. First calibration record at 75 cm: HC offset
+  +6 mm, ToF offset +56 mm, both sensors valid 100% over five samples.
+- **Brownout blocker:** a small validation (`servo_up_25`) attached the servo
+  and reset the board with `reset_reason=9`, `brownout=true`. Boot returned
+  IDLE/detached; the stepper was returned from 57 to 0 and released. Do not run
+  the scan or loaded servo movement until the servo/5V rail is fixed. This is
+  an electrical finding, not a firmware success claim.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** keep the arm supported while parked at **800 µs** and
-define a measured reference-target protocol. Calibrate HC-SR04 and VL53L1X
-against the same targets at fixed geometry, quantify bias/noise and sensor-axis
-offset, then collect synchronized stepper/servo/sensor tuples. Only after those
-measurements should mapping or a deep-learning dataset/model be designed.
+**Current next action:** fix the servo/5V power path (separate supply, common
+ground, measured rail under load) before any loaded servo or full scan. The
+sensor and PC calibration path is ready: capture 30/50/75/100/150/250 cm,
+verify offsets, then run a coarse scan 10°/50 µs only after the brownout is
+resolved. Do not train a deep-learning model until repeatable calibrated scans
+exist.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -168,7 +186,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **60 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **67 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -182,19 +200,21 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   43–44 = servo-hold-tune build and OTA; 45–46 = servo-base-reset build and OTA;
   47–48 = servo-scan-range build and OTA; 49–52 = latest workbook, sensor-ready
   build, OTA and live sensor test evidence; 53–60 = poll-throttled build, OTA,
-  long-run failure, short-pass, stale/restart and wrap-target evidence.
+  long-run failure, short-pass, stale/restart and wrap-target evidence;
+  61–67 = 0.4.2 build, OTA, post-start health, calibration, brownout and PC
+  dashboard screenshots.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
   Their logs/manifests remain; immutable research evidence/audit was not deleted.
   The cleanup summary's initial PowerShell formatting error was repaired from
   retained manifests and verified absence, explicitly noted in its report.
-- Retained binary deliverables: current `0.3.2-sensor-poll-stable`, prior
-  `0.3.1-sensor-tof-ready`,
-  `0.3.0-sensor-bringup`, `0.2.8-servo-scan-range`, prior
+- Retained binary deliverables: current `0.4.2-mapping-ready`, prior
+  `0.4.1-mapping-ready`, `0.4.0-mapping-ready`, `0.3.2-sensor-poll-throttled`,
+  `0.3.1-sensor-tof-ready`, `0.3.0-sensor-bringup`, `0.2.8-servo-scan-range`,
   `0.2.7-servo-base-reset`, `0.2.6-servo-1800-hold`, `0.2.5-servo-small-test`,
   `0.2.4-pose-axes`, `0.2.3-park-pose`, `0.2.2-long-tests`, `0.2.1-servo`,
   `0.2.0-scan` and verified `0.1.4-usb` baseline, clearly separated by run
-  folder. Prefer the current scan-range build.
+  folder. Prefer the current mapping-ready build.
   Other intentionally retained files are source, documentation, tests,
   reusable tools, build/upload/test logs, hashes, and permanent research audit.

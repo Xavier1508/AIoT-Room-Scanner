@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIoT Room Mapping · PC Dashboard</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+<h1>AIoT Room Mapping <span class="muted">/ PC dashboard</span></h1>
+<p id="summary" class="muted">Menghubungkan ke ESP32…</p>
+<div class="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="scan">Scan</button>
+  <button data-tab="calibration">Calibration</button>
+  <button data-tab="cloud">Point Cloud 3D</button>
+</div>
+
+<section id="tab-overview" class="tab active">
+  <div class="grid">
+    <section class="card"><h2>ESP32</h2><div id="esp-summary" class="big">—</div><p id="esp-detail" class="note">—</p><p><a id="manual-link" href="#" target="_blank" rel="noopener">Buka kontrol manual ESP32</a></p></section>
+    <section class="card"><h2>Sensor suite</h2>
+      <div class="sensor"><div><div class="muted">HC-SR04</div><div id="hc" class="big">—</div></div><span id="hc-health" class="badge">—</span></div>
+      <div class="sensor"><div><div class="muted">VL53L1X</div><div id="tof" class="big">—</div></div><span id="tof-health" class="badge">—</span></div>
+      <div class="sensor"><div><div class="muted">HLK-LD2410C</div><div id="hlk" class="big">—</div></div><span id="hlk-health" class="badge">—</span></div>
+      <p id="health" class="note">—</p>
+    </section>
+    <section class="card"><h2>Pose</h2><div id="pose" class="big">—</div><p id="pose-detail" class="note">—</p><p id="alert" class="note">—</p></section>
+  </div>
+  <section class="card"><h2>Scan terakhir</h2><div id="last-scan" class="note">Belum ada scan.</div></section>
+</section>
+
+<section id="tab-scan" class="tab">
+  <div class="grid">
+    <section class="card"><h2>Mulai scan</h2>
+      <label class="note">Yaw step</label>
+      <select id="yaw-step"><option value="10">10° (coarse)</option><option value="5" selected>5° (fine)</option></select>
+      <label class="note">Tilt step</label>
+      <select id="tilt-step"><option value="50">50 µs (coarse)</option><option value="25" selected>25 µs (fine)</option></select>
+      <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="400" min="100" max="2000">
+      <label class="note">Samples / point</label><input id="samples" type="number" value="5" min="1" max="10">
+      <label class="note"><input id="power-confirm" type="checkbox"> Saya sudah memperbaiki dan mengukur suplai servo/5V di bawah beban.</label>
+      <div class="row"><button id="start-scan">Start scan</button><button id="stop-scan" class="danger">Stop scan</button></div>
+      <p class="warn">Scan menggerakkan stepper ±45° dan servo 500–950 µs. Pada 2026-11-09 servo attach menyebabkan brownout; jangan start sebelum rail diperbaiki. Pastikan kabel aman, arm didukung, dan area bebas.</p>
+    </section>
+    <section class="card"><h2>Progress</h2><progress id="scan-progress" max="100" value="0"></progress><pre id="scan-status">Idle.</pre></section>
+  </div>
+  <section class="card"><h2>Daftar scan</h2><div id="scan-list" class="note">Belum ada scan.</div></section>
+</section>
+
+<section id="tab-calibration" class="tab">
+  <div class="grid">
+    <section class="card"><h2>Capture kalibrasi</h2>
+      <label class="note">Jarak aktual dari bidang HC (cm)</label><input id="actual-cm" type="number" value="75" min="2" max="400">
+      <label class="note">Samples</label><input id="cal-samples" type="number" value="10" min="1" max="30">
+      <label class="note">Label (opsional)</label><input id="cal-label" type="text" placeholder="dinding 75 cm">
+      <button id="capture-cal">Capture 10 sampel</button>
+      <p class="note">HC dipakai sebagai referensi. Offset ToF dihitung terhadap jarak aktual; HLK hanya presence.</p>
+    </section>
+    <section class="card"><h2>Offset terbaru</h2><pre id="cal-latest">—</pre></section>
+  </div>
+  <section class="card"><h2>Riwayat kalibrasi</h2><div id="cal-table" class="note">Belum ada record.</div></section>
+</section>
+
+<section id="tab-cloud" class="tab">
+  <section class="card"><h2>Point cloud 3D isometrik</h2>
+    <div class="row">
+      <label class="note">Scan</label><select id="scan-select"></select>
+      <button id="reload-points">Muat ulang</button>
+      <button id="rotate-left" class="alt">⟲</button><button id="rotate-right" class="alt">⟳</button>
+      <button id="pitch-up" class="alt">↑</button><button id="pitch-down" class="alt">↓</button>
+      <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
+      <button id="reset-view" class="alt">Reset</button>
+    </div>
+    <canvas id="cloud" width="1000" height="620"></canvas>
+    <p id="cloud-stats" class="note">Belum ada point cloud.</p>
+    <p class="note">Drag canvas untuk rotasi, wheel untuk zoom. Warna: cyan = ToF, oranye = HC, tinggi z memengaruhi kecerahan. Ini visualisasi data mentah/terkalibrasi, bukan model deep learning.</p>
+  </section>
+</section>
+
+<footer class="note">Dashboard PC ini berjalan terpisah dari web diagnostik ESP32. Default bind 127.0.0.1; jangan port-forward ke internet.</footer>
+<script src="/static/app.js"></script>
+</html>

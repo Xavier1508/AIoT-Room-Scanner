@@ -6,14 +6,18 @@ class BuzzerController {
  public:
   void begin();
   void start(uint32_t now);
+  void alert(uint32_t now, uint16_t durationMs);
   void tick(uint32_t now);
   void stop();
   bool active() const { return active_; }
   bool sounding() const { return sounding_; }
+  bool alerting() const { return alertActive_; }
  private:
   bool active_ = false, sounding_ = false;
+  bool alertActive_ = false;
   uint8_t pulses_ = 0;
   uint32_t at_ = 0;
+  uint16_t alertDurationMs_ = 0;
 };
 
 class StepperController {

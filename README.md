@@ -2,9 +2,13 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi: **0.3.2-sensor-poll-throttled**, termasuk pemilihan SSID dari
+Firmware berjalan terverifikasi: **0.4.2-mapping-ready**, termasuk pemilihan SSID dari
 pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
-Belum ada pemetaan 3D, TinyML, CSI, atau kalibrasi sensor fisik; CDM324 tetap ditunda.
+Firmware ini menambahkan sensor health/error-rate, HLK di kartu sensor, fine jog
+5°/25 µs, scan envelope ±45°/500–950 µs, dan buzzer proximity HLK.
+Dashboard PC terpisah untuk kalibrasi, scan, dan point cloud 3D isometrik:
+[docs/mapping-dashboard.md](docs/mapping-dashboard.md). Training deep learning
+belum dijalankan; ESP32 hanya collector/control. CDM324 tetap ditunda.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
 [docs/test-report.md](docs/test-report.md). Jangan menyamakan build dengan lulus hardware.
 Notices kode register VL53L1X: [docs/third-party-notices.md](docs/third-party-notices.md).
@@ -42,7 +46,7 @@ Semua nomor adalah **GPIO**, bukan nomor urut header.
 | SG90 merah/cokelat | Suplai sesuai unit / GND bersama; bukan 9 V |
 | Buzzer I/O/VCC/GND | GPIO21 / 3V3 / GND; LOW bunyi, HIGH diam |
 | HC-SR04 standar 5 V | VCC 5V, GND, TRIG GPIO10, ECHO GPIO11 melalui R1 1 kΩ seri dan R2+R3 1 kΩ+1 kΩ ke GND |
-| VL53L1X | VIN sesuai label breakout/3V3, GND, SDA GPIO8, SCL GPIO9, INT GPIO14 opsional, XSHUT GPIO13 tidak didrive |
+| VL53L1X | VIN sesuai label breakout/3V3, GND, SDA GPIO8, SCL GPIO9, INT GPIO14 opsional, XSHUT GPIO13 di-drive HIGH saat sensors_start (reset LOW→HIGH) |
 | CDM324 | **Tidak terhubung/tidak diberi daya**; GPIO1 hanya cadangan pengondisi |
 
 Tidak menggunakan GPIO35/36/37, USB19/20, strapping0/3/45/46, atau console43/44.
@@ -178,15 +182,17 @@ Perintah yang sama tersedia di web dan `device.py command <perintah>`:
 | help / status | Daftar perintah / snapshot diagnostik (console) |
 | buzzer_test | 3 × 150 ms, jeda 350 ms, akhirnya OFF |
 | hlk_start / hlk_stop | Mulai/hentikan UART pasif, tanpa perintah konfigurasi |
-| sensors_start / sensors_stop | Mulai/hentikan HLK + polling HC-SR04 + deteksi/range VL53L1X; tidak menggerakkan axis |
+| sensors_start / sensors_stop | Mulai/hentikan HLK + polling HC-SR04 + deteksi/range VL53L1X; tidak menggerakkan axis; status health/error-rate ikut diperbarui |
+| scan_mode_start / scan_mode_stop | Aktifkan/matikan envelope scan ±513 half-step (45,1°) dan servo 500–950 µs; tidak menggerakkan axis |
+| hlk_alert_on / hlk_alert_off | Buzzer proximity HLK: target ≤30 cm + energy + cooldown 2 detik; bukan safety-rated |
 | motor_arm / step_test | Arm 30 detik, satu uji 64 half-step maju lalu mundur ~100/s |
 | servo_arm / servo_test | Arm 30 detik, satu uji 1500/1450/1500/1550/1500 µs |
 | step_test_long / servo_test_long | Uji bounded: 512 half-step maju/mundur atau pulsa kecil berulang; bukan putaran/sweep kontinu |
-| park_stepper / stepper_left_10 / stepper_right_10 | Hold posisi stepper sekarang atau nudge 114 half-step nominal (±10°) |
-| park_servo / servo_up_200 / servo_down_200 / servo_up_50 / servo_down_50 | `park_servo` hold di base tersimpan (default 800 µs); ±200 cepat, ±50 halus; semua tetap hold; clamp 500–1400 µs; boot tetap detached |
+| park_stepper / stepper_left_10 / stepper_right_10 / stepper_left_5 / stepper_right_5 | Hold posisi stepper sekarang atau nudge 114 half-step (±10°) / 57 half-step (±5°) |
+| park_servo / servo_up_200 / servo_down_200 / servo_up_50 / servo_down_50 / servo_up_25 / servo_down_25 | `park_servo` hold di base tersimpan (default 800 µs); ±200/±50/±25 µs; semua tetap hold; manual clamp 500–1400 µs; scan mode 500–950 µs; boot tetap detached |
 | release_stepper / release_servo / release_pose | Lepas satu axis atau kedua axis; torsi dapat hilang dan beban dapat turun |
 | zero_stepper_here / save_servo_here | Simpan referensi relatif stepper atau target pulse servo ke NVS lokal |
-| stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm |
+| stop | Batalkan jadwal/antrean, buzzer OFF, kumparan LOW, detach, disarm, sensor/scan mode OFF |
 | selftest | Fixture parser/safety terisolasi; tidak menguji sensor fisik |
 | wifi_scan | Hentikan/disarm aktuator; mulai scan SSID pasif asynchronous |
 | wifi_scan_results | Metadata scan, jumlah, dan halaman; tanpa mencoba koneksi |
@@ -230,6 +236,25 @@ diharapkan berada di alamat `0x29`, lalu dijalankan pada mode long-range dengan
 interval 100 ms. Status `/api/status.sensors` membedakan `received`, `valid`,
 `stale`, `last_sample_valid`, dan penghitung error; nilai `null` bukan jarak
 buatan. `sensors_stop` menghentikan polling dan mengembalikan TRIG LOW.
+
+## Dashboard mapping PC (terpisah dari ESP32)
+
+Web diagnostik/manual tetap di ESP32. Dashboard mapping berjalan di PC dan
+mengambil API ESP32 secara server-side, sehingga kredensial ESP32 tidak masuk
+ke browser. Jalankan:
+
+```powershell
+$py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
+Push-Location .\tools\mapping
+& $py -B .\mapping_server.py --host 127.0.0.1 --port 8000
+Pop-Location
+```
+
+Buka `http://127.0.0.1:8000/`. Dashboard menyediakan kalibrasi HC/ToF, scan
+grid 5°/25 µs atau 10°/50 µs, penyimpanan `research/mapping/scans/`, dan viewer
+point cloud 3D isometrik berbasis canvas. Detail dan batas klaim ada di
+[docs/mapping-dashboard.md](docs/mapping-dashboard.md). Jangan port-forward
+dashboard ini ke internet.
 
 ## Web dan OTA tanpa USB
 

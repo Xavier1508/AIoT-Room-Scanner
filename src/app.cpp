@@ -70,6 +70,8 @@ void App::event(const char* text) {
 void App::stopAll() {
   buzzer_.stop(); stepper_.stop(); servo_.stop(); sensors_.stop();
   stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
+  scanMode_ = false;
+  hlkAlertEnabled_ = false;
   safety_.stop();
 }
 bool App::beginPose(uint32_t now) {
@@ -90,6 +92,28 @@ void App::releaseStepper() {
 void App::releaseServo() {
   servo_.stop(); servoHolding_ = false;
   syncPoseMode(millis());
+}
+
+void App::maybeHlkAlert(uint32_t now) {
+  if (!hlkAlertEnabled_ || !hlkEnabled_ || !sensors_.running()) return;
+  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) return;
+  if (stepper_.active() || stepperMovePending_ || servo_.active()) return;
+  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < 500) return;
+  const auto& reading = hlk_.reading();
+  if (!reading.received || uint32_t(now - reading.timestampMs) > config::hlkStaleMs) return;
+  const uint16_t moving = reading.movingCm;
+  const uint16_t stationary = reading.stationaryCm;
+  const uint16_t distance = moving && (!stationary || moving < stationary) ? moving : stationary;
+  const uint8_t energy = reading.movingEnergy > reading.stationaryEnergy ?
+      reading.movingEnergy : reading.stationaryEnergy;
+  if (!distance || distance > config::hlkAlertDistanceCm || energy < config::hlkAlertEnergy) return;
+  if (hlkAlertLastMs_ && uint32_t(now - hlkAlertLastMs_) < config::hlkAlertCooldownMs) return;
+  hlkAlertLastMs_ = now;
+  hlkAlertLastDistanceCm_ = distance;
+  hlkAlertLastEnergy_ = energy;
+  ++hlkAlertCount_;
+  buzzer_.alert(now, config::hlkAlertBeepMs);
+  event("hlk_proximity_alert_buzzer");
 }
 void App::clearQueue() {
   CommandRequest discarded;
@@ -128,7 +152,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"sensors_start\",\"sensors_stop\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"release_stepper\",\"park_servo\",\"servo_up_200\",\"servo_down_200\",\"servo_up_50\",\"servo_down_50\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"sensors_start\",\"sensors_stop\",\"scan_mode_start\",\"scan_mode_stop\",\"hlk_alert_on\",\"hlk_alert_off\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"stepper_left_5\",\"stepper_right_5\",\"release_stepper\",\"park_servo\",\"servo_up_200\",\"servo_down_200\",\"servo_up_50\",\"servo_down_50\",\"servo_up_25\",\"servo_down_25\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -163,15 +187,39 @@ String App::execute(Command command) {
         hlkEnabled_ = true;
       }
       sensors_.start(now);
+      hlkAlertEnabled_ = true;
       event("all_sensor_polling_started_no_actuator_motion");
       return result(true, "sensors_started_check_status_for_validity");
     }
     sensors_.stop();
+    hlkAlertEnabled_ = false;
     if (hlkEnabled_) hlkSerial_.end();
     hlkEnabled_ = false;
     pinMode(pins::hlkRx, INPUT); pinMode(pins::hlkTx, INPUT);
     event("all_sensor_polling_stopped");
     return result(true, "sensors_stopped");
+  }
+  if (command == Command::ScanModeStart || command == Command::ScanModeStop) {
+    if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
+      return result(false, "scan_mode_requires_idle_or_parked");
+    }
+    if (network_.scanning()) return result(false, "wifi_scan_in_progress_actuators_idle");
+    if (settings_.configured() && !network_.connected()) return result(false, "wifi_offline_scan_mode_rejected");
+    if (command == Command::ScanModeStart) {
+      if (!sensors_.running()) return result(false, "sensors_not_running");
+      scanMode_ = true;
+      event("mapping_scan_mode_enabled_limits_45deg_500_950us");
+      return result(true, "scan_mode_enabled");
+    }
+    scanMode_ = false;
+    event("mapping_scan_mode_disabled");
+    return result(true, "scan_mode_disabled");
+  }
+  if (command == Command::HlkAlertOn || command == Command::HlkAlertOff) {
+    if (command == Command::HlkAlertOn && !hlkEnabled_) return result(false, "hlk_not_enabled");
+    hlkAlertEnabled_ = command == Command::HlkAlertOn;
+    event(hlkAlertEnabled_ ? "hlk_proximity_alert_enabled" : "hlk_proximity_alert_disabled");
+    return result(true, hlkAlertEnabled_ ? "hlk_alert_enabled" : "hlk_alert_disabled");
   }
   if (command == Command::ReleasePose) {
     if (safety_.mode() != Mode::Parked) return result(false, "not_parked_no_action");
@@ -225,8 +273,11 @@ String App::execute(Command command) {
     event("hlk_passive_uart_started"); return result(true, "hlk_receiving_no_config_writes");
   }
   const bool poseCommand = command == Command::ParkStepper || command == Command::StepperLeft10 ||
-      command == Command::StepperRight10 || command == Command::ParkServo || command == Command::ServoUp200 ||
-      command == Command::ServoDown200 || command == Command::ServoUp50 || command == Command::ServoDown50;
+      command == Command::StepperRight10 || command == Command::StepperLeft5 ||
+      command == Command::StepperRight5 || command == Command::ParkServo ||
+      command == Command::ServoUp200 || command == Command::ServoDown200 ||
+      command == Command::ServoUp50 || command == Command::ServoDown50 ||
+      command == Command::ServoUp25 || command == Command::ServoDown25;
   if ((!poseCommand && !safety_.idle()) || (poseCommand && safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked)) {
     return result(false, "busy_no_action");
   }
@@ -238,20 +289,33 @@ String App::execute(Command command) {
     stepper_.holdCurrent(); stepperHolding_ = true;
     event("stepper_axis_parked_current_position_hold"); return result(true, "stepper_parked_current_position");
   }
-  if (command == Command::StepperLeft10 || command == Command::StepperRight10) {
+  if (command == Command::StepperLeft10 || command == Command::StepperRight10 ||
+      command == Command::StepperLeft5 || command == Command::StepperRight5) {
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (stepper_.active()) return result(false, "stepper_busy");
-    const int direction = command == Command::StepperRight10 ? config::stepperClockwiseSign : -config::stepperClockwiseSign;
-    if (!stepper_.startPark(micros(), config::stepperNudgeHalfSteps, direction)) {
-      syncPoseMode(now); return result(false, "stepper_pose_limit");
+    const bool right = command == Command::StepperRight10 || command == Command::StepperRight5;
+    const bool fine = command == Command::StepperLeft5 || command == Command::StepperRight5;
+    const int steps = fine ? config::stepperFineHalfSteps : config::stepperNudgeHalfSteps;
+    const int direction = right ? config::stepperClockwiseSign : -config::stepperClockwiseSign;
+    const int next = stepper_.relativeSteps() + direction * steps;
+    const int limit = scanMode_ ? config::scanStepperLimitHalfSteps : config::longRelativeStepLimit;
+    if (next > limit || next < -limit) {
+      return result(false, scanMode_ ? "scan_stepper_limit" : "stepper_pose_limit");
+    }
+    if (!stepper_.startPark(micros(), steps, direction)) {
+      syncPoseMode(now); return result(false, scanMode_ ? "scan_stepper_limit" : "stepper_pose_limit");
     }
     stepperHolding_ = false; stepperMovePending_ = true;
-    event(command == Command::StepperRight10 ? "stepper_nudge_right_10_started" : "stepper_nudge_left_10_started");
-    return result(true, command == Command::StepperRight10 ? "stepper_right_10_started" : "stepper_left_10_started");
+    lastMotionMs_ = now;
+    event(fine ? (right ? "stepper_nudge_right_5_started" : "stepper_nudge_left_5_started") :
+                 (right ? "stepper_nudge_right_10_started" : "stepper_nudge_left_10_started"));
+    return result(true, fine ? (right ? "stepper_right_5_started" : "stepper_left_5_started") :
+                               (right ? "stepper_right_10_started" : "stepper_left_10_started"));
   }
   if (command == Command::ParkServo || command == Command::ServoUp200 ||
       command == Command::ServoDown200 || command == Command::ServoUp50 ||
-      command == Command::ServoDown50) {
+      command == Command::ServoDown50 || command == Command::ServoUp25 ||
+      command == Command::ServoDown25) {
     if (!beginPose(now)) return result(false, "pose_requires_idle_and_no_arms");
     if (servo_.active()) return result(false, "servo_busy");
     int next = servoTargetUs_;
@@ -262,17 +326,22 @@ String App::execute(Command command) {
       if (command == Command::ServoUp200) delta = config::servoCoarseUs;
       else if (command == Command::ServoDown200) delta = -int(config::servoCoarseUs);
       else if (command == Command::ServoUp50) delta = config::servoNudgeUs;
-      else delta = -int(config::servoNudgeUs);
+      else if (command == Command::ServoDown50) delta = -int(config::servoNudgeUs);
+      else if (command == Command::ServoUp25) delta = config::servoFineUs;
+      else delta = -int(config::servoFineUs);
       next += delta;
     }
-    if (next < int(config::servoMinPulseUs) || next > int(config::servoMaxPulseUs)) {
-      return result(false, "servo_pulse_limit");
+    const int minUs = scanMode_ ? config::scanServoMinPulseUs : config::servoMinPulseUs;
+    const int maxUs = scanMode_ ? config::scanServoMaxPulseUs : config::servoMaxPulseUs;
+    if (next < minUs || next > maxUs) {
+      return result(false, scanMode_ ? "scan_servo_limit" : "servo_pulse_limit");
     }
     servoTargetUs_ = uint16_t(next);
     if (!servo_.holdAt(now, servoTargetUs_)) {
       syncPoseMode(now); return result(false, "servo_pwm_setup_failed");
     }
     servoHolding_ = true;
+    lastMotionMs_ = now;
     event(command == Command::ParkServo ? "servo_axis_hold_base" : "servo_axis_nudge_hold");
     return result(true, command == Command::ParkServo ? "servo_hold_base" : "servo_nudge_hold");
   }
@@ -331,7 +400,7 @@ void App::publish(uint32_t now) {
   const bool valid = hlkEnabled_ && reading.received && uint32_t(now - reading.timestampMs) <= config::hlkStaleMs;
   const esp_partition_t* running = esp_ota_get_running_partition();
   const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
-  String s; s.reserve(5000);
+  String s; s.reserve(7000);
   s = String("{\"version\":") + jsonQuote(config::version) + ",\"build\":" + jsonQuote(String(__DATE__) + " " + __TIME__) +
       ",\"uptime_ms\":" + now + ",\"mode\":" + jsonQuote(modeName(safety_.mode())) +
       ",\"motor_armed\":" + (safety_.motorArmed() ? "true" : "false") +
@@ -369,7 +438,32 @@ void App::publish(uint32_t now) {
         ",\"servo_holding\":" + (servoHolding_ ? "true" : "false") +
         ",\"servo_target_us\":" + servoTargetUs_ +
         ",\"physical_motion_verified\":false}";
-   s += String(",\"sensors\":") + sensors_.statusJson(now);
+   SensorExternalState external;
+   external.hlkEnabled = hlkEnabled_;
+   external.hlkValid = valid;
+   external.hlkStale = reading.received && !valid;
+   external.hlkFrames = hlk_.validFrames();
+   external.hlkAgeMs = reading.received ? uint32_t(now - reading.timestampMs) : 0;
+   external.hlkDistanceCm = reading.stationaryCm ? reading.stationaryCm : reading.movingCm;
+   external.hlkEnergy = reading.movingEnergy > reading.stationaryEnergy ?
+       reading.movingEnergy : reading.stationaryEnergy;
+   external.hlkTargetState = reading.target;
+   s += String(",\"sensors\":") + sensors_.statusJson(now, external);
+   s += String(",\"scan\":{\"mode\":") + (scanMode_ ? "true" : "false") +
+        ",\"yaw_half_steps\":" + stepper_.relativeSteps() +
+        ",\"yaw_deg_nominal\":" + String(stepper_.relativeSteps() * 360.0f / 4096.0f, 1) +
+        ",\"servo_us\":" + servoTargetUs_ +
+        ",\"stepper_limit_half_steps\":" + config::scanStepperLimitHalfSteps +
+        ",\"servo_min_us\":" + config::scanServoMinPulseUs +
+        ",\"servo_max_us\":" + config::scanServoMaxPulseUs + "}";
+   s += String(",\"hlk_alert\":{\"enabled\":") + (hlkAlertEnabled_ ? "true" : "false") +
+        ",\"threshold_cm\":" + config::hlkAlertDistanceCm +
+        ",\"cooldown_ms\":" + config::hlkAlertCooldownMs +
+        ",\"beep_ms\":" + config::hlkAlertBeepMs +
+        ",\"count\":" + hlkAlertCount_ +
+        ",\"last_ms\":" + hlkAlertLastMs_ +
+        ",\"last_distance_cm\":" + hlkAlertLastDistanceCm_ +
+        ",\"last_energy\":" + hlkAlertLastEnergy_ + "}";
    s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
        ",\"received\":" + (reading.received ? "true" : "false") + ",\"uart_bytes\":" + hlkBytes_ +
@@ -448,6 +542,7 @@ void App::tick() {
     hlk_.expire(now);
   }
   sensors_.tick(now);
+  maybeHlkAlert(now);
   network_.tick(now);
   if (uint32_t(now - lastPublish_) >= 200) publish(now);
   const uint32_t reboot = rebootAt_.load();

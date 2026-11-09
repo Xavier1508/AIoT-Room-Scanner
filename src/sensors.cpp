@@ -1,6 +1,7 @@
 #include "sensors.h"
 
 #include <Wire.h>
+#include <string.h>
 #include "config.h"
 #include "pins.h"
 
@@ -97,6 +98,19 @@ bool SensorController::start(uint32_t now) {
   if (running_) return true;
   lastError_ = "";
   running_ = true;
+  startedMs_ = now;
+  tofI2cErrors_ = 0;
+  tofValidSamples_ = 0;
+  tofInvalidSamples_ = 0;
+  tofReadyTimeouts_ = 0;
+  tofConsecutiveErrors_ = 0;
+  tofLastSuccessMs_ = 0;
+  tofResponsive_ = false;
+  tofReceived_ = false;
+  hcValidSamples_ = 0;
+  hcTimeouts_ = 0;
+  hcInvalidSamples_ = 0;
+  hcReceived_ = false;
   lastHcSampleMs_ = now - config::sensorHcIntervalMs;
   lastTofPollMs_ = now - config::sensorTofPollMs;
   lastTofMeasurementMs_ = now - config::sensorTofIntervalMs;
@@ -121,7 +135,12 @@ bool SensorController::start(uint32_t now) {
     tofInitialized_ = initTof();
     if (tofInitialized_) {
       tofContinuous_ = startTofContinuous();
-      if (!tofContinuous_) lastError_ = "vl53l1x_start_failed";
+      if (tofContinuous_) {
+        tofResponsive_ = true;
+        tofLastSuccessMs_ = now;
+      } else {
+        lastError_ = "vl53l1x_start_failed";
+      }
     } else {
       lastError_ = "vl53l1x_init_failed";
     }
@@ -137,14 +156,31 @@ void SensorController::stop() {
   digitalWrite(pins::hcTrig, LOW);
 }
 
+void SensorController::tofNoteError() {
+  ++tofI2cErrors_;
+  ++tofConsecutiveErrors_;
+  if (tofConsecutiveErrors_ >= 3) tofResponsive_ = false;
+}
+
+void SensorController::tofNoteSuccess() {
+  tofConsecutiveErrors_ = 0;
+  tofResponsive_ = true;
+  tofLastSuccessMs_ = millis();
+}
+
+uint32_t SensorController::tofErrorRatePerMin(uint32_t now) const {
+  const uint32_t elapsed = now - startedMs_;
+  if (elapsed < 1000) return 0;
+  return static_cast<uint32_t>((static_cast<uint64_t>(tofI2cErrors_) * 60000ULL) / elapsed);
+}
+
 void SensorController::tick(uint32_t now) {
   if (!running_) return;
   if (elapsed(now, lastHcSampleMs_, config::sensorHcIntervalMs)) sampleUltrasonic(now);
   if (tofContinuous_ && elapsed(now, lastTofPollMs_, config::sensorTofPollMs)) {
     lastTofPollMs_ = now;
     if (elapsed(now, lastTofMeasurementMs_, config::sensorTofIntervalMs) && tofDataReady()) {
-      if (!readTofMeasurement(now)) ++tofI2cErrors_;
-      else lastTofMeasurementMs_ = now;
+      if (readTofMeasurement(now)) lastTofMeasurementMs_ = now;
     }
   }
 }
@@ -337,7 +373,11 @@ void SensorController::stopTofContinuous() {
 
 bool SensorController::tofDataReady() {
   uint8_t status = 0;
-  if (!tofRead8(regGpioStatus, status)) { ++tofI2cErrors_; return false; }
+  if (!tofRead8(regGpioStatus, status)) {
+    tofNoteError();
+    return false;
+  }
+  tofNoteSuccess();
   // VL53L1X GPIO__TIO_HV_STATUS reports data-ready active LOW.
   return (status & 0x01) == 0;
 }
@@ -370,7 +410,11 @@ void SensorController::tofUpdateDss(uint16_t spads, uint16_t peakRate, uint16_t 
 
 bool SensorController::readTofMeasurement(uint32_t now) {
   uint8_t data[17] = {};
-  if (!tofReadBlock(regRangeStatus, data, sizeof(data))) return false;
+  if (!tofReadBlock(regRangeStatus, data, sizeof(data))) {
+    tofNoteError();
+    return false;
+  }
+  tofNoteSuccess();
   tofRawStatus_ = data[0];
   const uint16_t spads = (static_cast<uint16_t>(data[3]) << 8) | data[4];
   const uint16_t ambient = (static_cast<uint16_t>(data[7]) << 8) | data[8];
@@ -443,30 +487,55 @@ const char* SensorController::tofStatusName(uint8_t status) {
   }
 }
 
-String SensorController::statusJson(uint32_t now) const {
+String SensorController::statusJson(uint32_t now, const SensorExternalState& external) const {
   const bool hcValid = hcLastValid_ && static_cast<uint32_t>(now - hcLastValidMs_) <= config::sensorStaleMs;
   const bool hcStale = hcLastValidMs_ != 0 && !hcValid;
   const bool tofValid = tofLastValid_ && static_cast<uint32_t>(now - tofLastValidMs_) <= config::sensorStaleMs;
   const bool tofStale = tofLastValidMs_ != 0 && !tofValid;
+  const char* hcHealth = hcValid ? "OK" : (hcReceived_ ? "STALE" : "NO_DATA");
+  const char* tofHealth = !tofPresent_ ? "ABSENT" : !tofInitialized_ ? "INIT_FAILED" :
+      !tofResponsive_ ? "FAULT" : (tofValid ? "OK" : "STALE");
+  const char* hlkHealth = !external.hlkEnabled ? "OFF" :
+      external.hlkValid ? "OK" : (external.hlkStale ? "STALE" : "NO_DATA");
+  const bool fault = strcmp(tofHealth, "ABSENT") == 0 || strcmp(tofHealth, "INIT_FAILED") == 0 ||
+      strcmp(tofHealth, "FAULT") == 0 || strcmp(hcHealth, "NO_DATA") == 0;
+  const bool degraded = fault || strcmp(hcHealth, "OK") != 0 || strcmp(tofHealth, "OK") != 0 ||
+      strcmp(hlkHealth, "OK") != 0;
+  const char* overall = fault ? "FAULT" : (degraded ? "DEGRADED" : "OK");
+  const int hcCalMm = static_cast<int>(hcDistanceMm_) + config::hcOffsetMm;
+  const int tofCalMm = static_cast<int>(tofRangeMm_) + config::tofOffsetMm;
   String s;
-  s.reserve(2600);
+  s.reserve(3600);
   s = String("{\"enabled\":") + (running_ ? "true" : "false") +
       ",\"state\":" + quote(running_ ? "running" : "stopped") +
+      ",\"health\":{\"overall\":" + quote(overall) +
+      ",\"hc_sr04\":" + quote(hcHealth) +
+      ",\"vl53l1x\":" + quote(tofHealth) +
+      ",\"hlk\":" + quote(hlkHealth) + "}" +
       ",\"last_error\":" + quote(lastError_) +
       ",\"configured\":{\"hc_trig_gpio\":" + pins::hcTrig +
       ",\"hc_echo_gpio\":" + pins::hcEcho +
       ",\"hc_echo_divider_required\":true,\"tof_sda_gpio\":" + pins::tofSda +
       ",\"tof_scl_gpio\":" + pins::tofScl + ",\"tof_int_gpio\":" + pins::tofInt +
-      ",\"tof_xshut_gpio\":" + pins::tofXshut + "},\"i2c\":{\"initialized\":" +
-      (i2cInitialized_ ? "true" : "false") + ",\"scan_complete\":" +
-      (i2cScanComplete_ ? "true" : "false") + ",\"scan_truncated\":" +
-      (i2cScanTruncated_ ? "true" : "false") + ",\"addresses\":[";
+      ",\"tof_xshut_gpio\":" + pins::tofXshut + "}" +
+      ",\"calibration\":{\"hc_offset_mm\":" + config::hcOffsetMm +
+      ",\"tof_offset_mm\":" + config::tofOffsetMm +
+      ",\"hlk_min_range_cm\":" + config::hlkMinRangeCm + "}" +
+      ",\"i2c\":{\"initialized\":" + (i2cInitialized_ ? "true" : "false") +
+      ",\"scan_complete\":" + (i2cScanComplete_ ? "true" : "false") +
+      ",\"scan_truncated\":" + (i2cScanTruncated_ ? "true" : "false") + ",\"addresses\":[";
   for (uint8_t i = 0; i < i2cAddressCount_; ++i) {
     if (i) s += ',';
     s += i2cAddresses_[i];
   }
-  s += String("]},\"hc_sr04\":{\"configured\":true,\"received\":") +
-      (hcReceived_ ? "true" : "false") + ",\"valid\":" + (hcValid ? "true" : "false") +
+  s += String("]},\"stats\":{\"started_ms\":") + startedMs_ +
+      ",\"tof_i2c_errors\":" + tofI2cErrors_ +
+      ",\"tof_error_rate_per_min\":" + tofErrorRatePerMin(now) +
+      ",\"tof_consecutive_errors\":" + tofConsecutiveErrors_ +
+      ",\"tof_last_success_ms\":" + tofLastSuccessMs_ +
+      ",\"tof_responsive\":" + (tofResponsive_ ? "true" : "false") + "}" +
+      ",\"hc_sr04\":{\"configured\":true,\"received\":" + (hcReceived_ ? "true" : "false") +
+      ",\"valid\":" + (hcValid ? "true" : "false") +
       ",\"stale\":" + (hcStale ? "true" : "false") + ",\"last_sample_valid\":" +
       (hcLastValid_ ? "true" : "false") + ",\"timestamp_ms\":" +
       (hcReceived_ ? String(hcTimestampMs_) : String("null")) + ",\"age_ms\":" +
@@ -474,20 +543,36 @@ String SensorController::statusJson(uint32_t now) const {
       ",\"pulse_us\":" + hcPulseUs_ + ",\"distance_mm\":" +
       (hcValid ? String(hcDistanceMm_) : String("null")) + ",\"distance_cm\":" +
       (hcValid ? String(hcDistanceMm_ / 10.0f, 1) : String("null")) +
+      ",\"distance_cal_mm\":" + (hcValid ? String(hcCalMm) : String("null")) +
+      ",\"distance_cal_cm\":" + (hcValid ? String(hcCalMm / 10.0f, 1) : String("null")) +
       ",\"valid_samples\":" + hcValidSamples_ + ",\"timeouts\":" + hcTimeouts_ +
       ",\"invalid_samples\":" + hcInvalidSamples_ +
       ",\"range_min_mm\":" + config::sensorHcMinRangeMm +
-      ",\"range_max_mm\":" + config::sensorHcMaxRangeMm + "},\"vl53l1x\":{\"address\":41,\"present\":" +
-      (tofPresent_ ? "true" : "false") + ",\"initialized\":" + (tofInitialized_ ? "true" : "false") +
+      ",\"range_max_mm\":" + config::sensorHcMaxRangeMm + "}" +
+      ",\"vl53l1x\":{\"address\":41,\"present\":" + (tofPresent_ ? "true" : "false") +
+      ",\"initialized\":" + (tofInitialized_ ? "true" : "false") +
       ",\"continuous\":" + (tofContinuous_ ? "true" : "false") + ",\"received\":" +
       (tofReceived_ ? "true" : "false") + ",\"valid\":" + (tofValid ? "true" : "false") +
-      ",\"stale\":" + (tofStale ? "true" : "false") + ",\"last_sample_valid\":" +
+      ",\"stale\":" + (tofStale ? "true" : "false") + ",\"responsive\":" +
+      (tofResponsive_ ? "true" : "false") + ",\"last_sample_valid\":" +
       (tofLastValid_ ? "true" : "false") + ",\"timestamp_ms\":" +
       (tofReceived_ ? String(tofTimestampMs_) : String("null")) + ",\"age_ms\":" +
       (tofLastValidMs_ ? String(static_cast<uint32_t>(now - tofLastValidMs_)) : String("null")) +
       ",\"distance_mm\":" + (tofValid ? String(tofRangeMm_) : String("null")) +
+      ",\"distance_cm\":" + (tofValid ? String(tofRangeMm_ / 10.0f, 1) : String("null")) +
+      ",\"distance_cal_mm\":" + (tofValid ? String(tofCalMm) : String("null")) +
+      ",\"distance_cal_cm\":" + (tofValid ? String(tofCalMm / 10.0f, 1) : String("null")) +
       ",\"raw_status\":" + tofRawStatus_ + ",\"status\":" + quote(tofStatusName(tofRawStatus_)) +
       ",\"valid_samples\":" + tofValidSamples_ + ",\"invalid_samples\":" + tofInvalidSamples_ +
-      ",\"i2c_errors\":" + tofI2cErrors_ + ",\"ready_timeouts\":" + tofReadyTimeouts_ + "}}";
+      ",\"i2c_errors\":" + tofI2cErrors_ + ",\"ready_timeouts\":" + tofReadyTimeouts_ + "}" +
+      ",\"hlk\":{\"enabled\":" + (external.hlkEnabled ? "true" : "false") +
+      ",\"valid\":" + (external.hlkValid ? "true" : "false") +
+      ",\"stale\":" + (external.hlkStale ? "true" : "false") +
+      ",\"frames\":" + external.hlkFrames +
+      ",\"age_ms\":" + external.hlkAgeMs +
+      ",\"distance_cm\":" + external.hlkDistanceCm +
+      ",\"energy\":" + external.hlkEnergy +
+      ",\"target_state\":" + external.hlkTargetState +
+      ",\"min_range_cm\":" + config::hlkMinRangeCm + "}}";
   return s;
 }

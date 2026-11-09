@@ -3,6 +3,20 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+// HLK is owned by App because it is a passive UART parser. These fields are
+// copied into the sensor status object so one API/UI card can show all three
+// sensors without duplicating the parser.
+struct SensorExternalState {
+  bool hlkEnabled = false;
+  bool hlkValid = false;
+  bool hlkStale = false;
+  uint32_t hlkFrames = 0;
+  uint32_t hlkAgeMs = 0;
+  uint16_t hlkDistanceCm = 0;
+  uint8_t hlkEnergy = 0;
+  uint8_t hlkTargetState = 0;
+};
+
 // Sensor bring-up is deliberately explicit. begin() only makes the HC-SR04
 // trigger safe and configures optional input pins; start() performs I2C scan,
 // VL53L1X initialization and periodic measurements.
@@ -13,9 +27,12 @@ class SensorController {
   void stop();
   void tick(uint32_t now);
   bool running() const { return running_; }
-  String statusJson(uint32_t now) const;
+  String statusJson(uint32_t now, const SensorExternalState& external) const;
 
  private:
+  void tofNoteError();
+  void tofNoteSuccess();
+  uint32_t tofErrorRatePerMin(uint32_t now) const;
   bool scanI2c();
   bool initTof();
   bool startTofContinuous();
@@ -58,12 +75,16 @@ class SensorController {
   uint8_t tofSavedVhvTimeout_ = 0;
   bool tofReceived_ = false;
   bool tofLastValid_ = false;
+  bool tofResponsive_ = false;
   uint32_t tofTimestampMs_ = 0;
   uint32_t tofLastValidMs_ = 0;
   uint32_t tofValidSamples_ = 0;
   uint32_t tofInvalidSamples_ = 0;
   uint32_t tofI2cErrors_ = 0;
   uint32_t tofReadyTimeouts_ = 0;
+  uint32_t tofConsecutiveErrors_ = 0;
+  uint32_t tofLastSuccessMs_ = 0;
+  uint32_t startedMs_ = 0;
 
   bool hcReceived_ = false;
   bool hcLastValid_ = false;

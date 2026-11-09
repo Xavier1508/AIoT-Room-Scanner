@@ -10,7 +10,8 @@ No multimeter result exists. GPIO state is not continuity/voltage evidence.
 Real HLK UART frames, buzzer sound, and no-load servo movement have been observed
 by the user; those observations are not electrical measurements. Stepper rotation
 under load, loaded servo movement, and combined load stability remain unresolved.
-No ToF/3D/AI/CSI/CDM324 result exists.
+ToF ranging and PC point-cloud tooling now exist, but no calibrated 3D map,
+trained AI, CSI, or CDM324 result exists. A servo attach brownout is unresolved.
 
 ## Network boundary
 
@@ -43,12 +44,19 @@ servo normally. The root cause of the hold-specific failure was not isolated;
 possible mechanical limit, supply sag, or load torque remain unproven. `0.2.5`
 restored the legacy sequence, `0.2.6` added a base-hold tuning mode, `0.2.7`
 made the saved-base return explicit, and `0.2.8` set the base to 900 us.
-`0.3.2` records the user-confirmed 800 us zero with a 500-1400 us clamp and
-200/50 us hold buttons, corrects the VL53L1X active-low data-ready
-polling condition. The 500 us lower bound is a
-firmware choice, not a measured mechanical limit; the servo's actual mechanical
-range is still unknown. Physical loaded movement and rail voltage still require
-operator measurement.
+`0.4.2` records the user-confirmed 800 us zero with a 500-1400 us manual clamp,
+500-950 us scan clamp, 200/50/25 us hold buttons, and corrects the VL53L1X
+active-low data-ready polling condition. The 500 us lower bound is a firmware
+choice, not a measured mechanical limit; the servo's actual mechanical range is
+still unknown. Physical loaded movement and rail voltage still require operator
+measurement.
+
+**Measured brownout (2026-11-09):** after `0.4.0` OTA, a 25 us servo nudge
+(`servo_up_25`) attached the servo and the ESP32 reset with `reset_reason=9`,
+`brownout=true`. The board rebooted safely to IDLE/detached; the stepper was
+returned from 57 to 0 and released. Do not run loaded servo movement or a full
+scan until the servo/5 V rail is fixed and measured under load. This is an
+electrical finding, not a firmware success claim.
 
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional

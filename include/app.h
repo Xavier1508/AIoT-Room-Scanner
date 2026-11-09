@@ -44,6 +44,7 @@ class App {
   void syncPoseMode(uint32_t now);
   void releaseStepper();
   void releaseServo();
+  void maybeHlkAlert(uint32_t now);
   Console console_;
   SettingsStore settings_;
   Network network_;
@@ -56,8 +57,12 @@ class App {
   HlkParser hlk_;
   bool hlkEnabled_ = false, wifiWasConnected_ = false;
   bool stepperHolding_ = false, servoHolding_ = false, stepperMovePending_ = false;
+  bool scanMode_ = false, hlkAlertEnabled_ = false;
   bool stepperReferencePersisted_ = false;
   bool servoBasePersisted_ = false;
+  uint32_t hlkAlertLastMs_ = 0, hlkAlertCount_ = 0, lastMotionMs_ = 0;
+  uint16_t hlkAlertLastDistanceCm_ = 0;
+  uint8_t hlkAlertLastEnergy_ = 0;
   String poseReferenceSource_ = "migration_default_1024";
   String servoBaseSource_ = "default_800";
   uint16_t servoBaseUs_ = config::servoParkPulseUs;

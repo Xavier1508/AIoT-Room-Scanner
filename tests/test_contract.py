@@ -45,10 +45,17 @@ class LocalContract(unittest.TestCase):
 
     def test_sensor_commands_and_status_are_in_contract(self):
         command_schema = self.spec["paths"]["/api/command"]["post"]["requestBody"]["content"]["text/plain"]["schema"]
-        self.assertIn("sensors_start", command_schema["enum"])
-        self.assertIn("sensors_stop", command_schema["enum"])
+        for command in ("sensors_start", "sensors_stop", "scan_mode_start", "scan_mode_stop",
+                        "hlk_alert_on", "hlk_alert_off", "stepper_left_5", "stepper_right_5",
+                        "servo_up_25", "servo_down_25"):
+            self.assertIn(command, command_schema["enum"])
         status = self.spec["components"]["schemas"]["Status"]
         self.assertIn("sensors", status["required"])
+        self.assertIn("scan", status["required"])
+        self.assertIn("hlk_alert", status["required"])
+        self.assertIn("health", status["properties"]["sensors"]["properties"])
+        self.assertIn("stats", status["properties"]["sensors"]["properties"])
+        self.assertIn("hlk", status["properties"]["sensors"]["properties"])
         self.assertIn("hc_sr04", status["properties"]["sensors"]["properties"])
         self.assertIn("vl53l1x", status["properties"]["sensors"]["properties"])
 
