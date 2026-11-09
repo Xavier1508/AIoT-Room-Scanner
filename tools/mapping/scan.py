@@ -193,8 +193,8 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                     progress({"phase": "moving_stepper", "scan_id": scan_id,
                               "yaw_index": yaw_index, "yaw_count": len(yaws),
                               "points": len(points), "total": total})
-                client.move_stepper_to(yaw, settle_s=0.35, step_deg=config.stepper_step_deg)
-                if config.release_stepper_during_sweep:
+                state = client.move_stepper_to(yaw, settle_s=0.35, step_deg=config.stepper_step_deg)
+                if config.release_stepper_during_sweep and state.get("actuators", {}).get("stepper_holding"):
                     result = client.command("release_stepper")
                     if not result.get("ok"):
                         raise RuntimeError("Stepper release rejected: " + str(result.get("message")))

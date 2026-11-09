@@ -3,8 +3,8 @@
 Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
 A full coarse sequential scan now completes without brownout using software
-power timing. ToF is valid at rest but stalls during servo motion, so scans use
-HC fallback points; the 3D map is therefore HC-based, not ToF-based.
+power timing. `0.6.1-tof-watchdog` recovers the ToF during scans; the final
+coarse map has 103 ToF + 3 HC points and all sensors report OK.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -12,11 +12,11 @@ HC fallback points; the 3D map is therefore HC-based, not ToF-based.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.5.0-sequential-scan`**, installed through real LAN OTA
+- **Running firmware: `0.6.1-tof-watchdog`**, installed through real LAN OTA
   after the board was power-cycled. Current application artifact:
-  `analysis/platformio/build-20261109T091806602Z/firmware.bin`.
-  Size **837088 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `32968459f67083ae247d2cf25e1e1ebe9f8cd7ef066b287322c0e8c348e41c5d`.
+  `analysis/platformio/build-20261109T151241Z/firmware.bin`.
+  Size **837856 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -233,28 +233,36 @@ HC fallback points; the 3D map is therefore HC-based, not ToF-based.
   18 frames. `tools/mapping/ml/train.py` trains a small 1D CNN and exports
   `model.tflite`/`model_data.h`; training itself is pending real labeled data.
   On-device inference is **not** integrated yet and must run only when parked.
-- `0.6.1-tof-watchdog` is built (837856 bytes, SHA-256
-  `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`) but
-  **not OTA-installed yet**. It adds `Wire.setTimeOut(50)`, suspends ToF polling
-  after 3 s without data-ready, retries after 5 s, and retries every 10 s on
-  failure. Status exposes `tof_recoveries` and `tof_stall_suspended`.
-  Evidence: `analysis/platformio/build-20261109T151241Z/`.
-- A later validation scan from a released-stepper start left the board web
-  server unresponsive (ping intermittent, HTTP timeout) after 2/30 points. This
-  needs a power cycle before the 0.6.1 OTA. The successful 0.6.0 coarse scan
-  remains valid; no new scan is claimed from the failed run.
-- The PC dashboard now loads `/api/mapping/scans` independently of ESP32 health,
+- `0.6.1-tof-watchdog` is **OTA-installed** (837856 bytes, SHA-256
+  `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`). It adds
+  `Wire.setTimeOut(50)`, suspends ToF polling after 3 s without data-ready,
+  retries after 5 s, and retries every 10 s on failure. Status exposes
+  `tof_recoveries` and `tof_stall_suspended`. OTA reboot reported
+  `reset_reason=3`, `brownout=false`; sensors then reported HC/ToF/HLK OK.
+  Evidence: `analysis/device/ota-tof-watchdog-20261109T181258Z/`.
+- **0.6.1 scans succeed with ToF recovery:** validation `20261109T180145Z`
+  completed 30/30 points (30 valid, 28 ToF + 2 HC); coarse full
+  `20261109T180415Z` completed 110/110 points (106 valid, 103 ToF + 3 HC)
+  across yaw ±45°. The watchdog recovered the ToF 2 and 10 times respectively;
+  no new brownout and the board stayed responsive. Stepper was released after
+  the scan. Evidence:
+  `analysis/mapping/scan-success-061-20261109T181300Z/`.
+- Final dashboard render: `0.6.1-tof-watchdog`, 110-point coarse map, cyan ToF
+  points, orange HC points and magenta HLK arc. Screenshot:
+  `analysis/mapping/dashboard-20261109T181300Z/final-tof-map.png`.
+- The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** power cycle the 9V jack (unplug, wait 5 s, replug; do
-not use USB + jack) to recover the unresponsive board, then OTA
-`0.6.1-tof-watchdog` and verify `/api/status` plus the ToF watchdog fields.
-Do not run another scan on `0.6.0`; after 0.6.1 is verified, collect the labeled
-HLK dataset and train the TinyML model. The 0.6.0 coarse scan remains the
-current 3D map; no new scan or deep-learning result is claimed yet.
+**Current next action:** collect the labeled HLK dataset and train the TinyML
+model. The scan and 3D map are now complete enough for the demo: 0.6.1,
+validation 30/30 and coarse 110/110 with 103 ToF points, all sensors OK, no
+brownout. Next: (1) record empty/human/non-human sessions in the Dataset tab,
+(2) train the 1D CNN on the PC, (3) export/quantize and integrate on-device
+inference after the model is validated, and (4) verify the 30–75 cm buzzer ramp
+with a real approach. No deep-learning accuracy is claimed yet.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -274,7 +282,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **81 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **83 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -296,7 +304,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   75 = jack-powered servo small movement success; 76-77 = two sequential scan
   brownouts with ToF stale during servo movement; 78 = 0.6.0 software-power OTA;
   79 = successful validation/coarse scans with HC fallback; 80 = 0.1 s servo
-  delay test; 81 = ToF motion stall with servo detached during sampling.
+  delay test; 81 = ToF motion stall with servo detached during sampling;
+  82 = 0.6.1 ToF watchdog OTA; 83 = 0.6.1 validation/coarse ToF scans.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

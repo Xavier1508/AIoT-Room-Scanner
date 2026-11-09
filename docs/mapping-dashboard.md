@@ -103,11 +103,13 @@ validation scan completed 30/30 points and the coarse full scan completed
 stepper during the sweep can brown out again; this is a software timing
 mitigation on the existing 9 V/3 A supply, not a hardware power fix.
 
-**ToF motion limitation:** ToF is valid at rest (~72.9–74.6 cm, HC agreement
-within ~0.1 cm) but becomes stale at the first servo movement. Detaching the
-servo during sampling did not recover it. The scan pipeline falls back to HC
-points, so the current 3D map is HC-based; no ToF point cloud is claimed during
-motion.
+**ToF watchdog (0.6.1):** ToF is valid at rest and can stall during servo
+movement. `0.6.1-tof-watchdog` suspends ToF polling after 3 s without
+data-ready, retries after 5 s/10 s, and exposes `tof_recoveries`/
+`tof_stall_suspended`. In the successful coarse scan it recovered 10 times and
+supplied 103 of 110 points (3 HC). This is a software mitigation, not a
+hardware fix; a separate servo supply or shielding would make ToF fully stable
+during motion.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is

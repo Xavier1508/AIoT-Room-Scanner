@@ -71,6 +71,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W26 | Lulus - PC 3D dashboard render | Browser test loaded `http://127.0.0.1:8000/`, showed `0.6.0-software-power`, scan selector, HC points and HLK presence arc. Screenshot: `analysis/mapping/dashboard-20261109T143500Z/pointcloud.png`. |
 | W27 | Lulus build - 0.6.1 ToF watchdog, OTA pending | `0.6.1-tof-watchdog` built at 837856 bytes, SHA-256 `dc9f968e...f285`. It adds `Wire.setTimeOut(50)`, suspends ToF polling after 3 s without data-ready, retries after 5 s and every 10 s on failure, and exposes `tof_recoveries`/`tof_stall_suspended`. Not OTA-installed yet; board needs a power cycle. Evidence: `analysis/platformio/build-20261109T151241Z/`. |
 | W28 | Gagal - board HTTP hang after scan from released stepper | A validation scan from a released-stepper start captured 2/30 points and then `/api/status` timed out; ping was intermittent and the web server stayed unresponsive. No brownout was read before the hang. Power cycle required before 0.6.1 OTA. The earlier 0.6.0 coarse 110/110 scan remains valid; no new scan is claimed from this failed run. |
+| W29 | Lulus - 0.6.1 ToF watchdog OTA | `0.6.1-tof-watchdog` installed over LAN OTA (837856 bytes, SHA-256 `dc9f968e...f285`). Reboot reported `reset_reason=3`, `brownout=false`; sensors then reported HC/ToF/HLK OK, ToF ~75 cm, `tof_recoveries=0`. Evidence: `analysis/device/ota-tof-watchdog-20261109T181258Z/`. |
+| W30 | Lulus - 0.6.1 validation and coarse ToF scans | Validation `20261109T180145Z` completed 30/30 (28 ToF + 2 HC); coarse `20261109T180415Z` completed 110/110 (106 valid, 103 ToF + 3 HC) across yaw ±45°. Watchdog recovered ToF 2 and 10 times; no new brownout, board stayed responsive, stepper released after scan. Evidence: `analysis/mapping/scan-success-061-20261109T181300Z/`, screenshot `analysis/mapping/dashboard-20261109T181300Z/final-tof-map.png`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -130,6 +132,9 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/scan-brownout-2-20261109T133435Z/`
 - `analysis/platformio/build-20261109T142743Z/`
 - `analysis/platformio/build-20261109T151241Z/`
+- `analysis/device/ota-tof-watchdog-20261109T181258Z/`
+- `analysis/mapping/scan-success-061-20261109T181300Z/`
+- `analysis/mapping/dashboard-20261109T181300Z/`
 - `analysis/device/ota-software-power-20261109T144126Z/`
 - `analysis/mapping/servo-delay-0.10-20261109T140434Z/`
 - `analysis/mapping/single-column-20261109T140521Z/`
@@ -146,8 +151,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/gcc/tests-20261105T161636731Z/` (final host regression run)
 
 The current application SHA-256 is
-`1d5e8a223adb7547c3459d648791fe082f075af9a044dd886a1bee91c98755ad`.
-Research CLI verified 81 stored evidence artifacts with zero integrity failures.
+`dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`.
+Research CLI verified 83 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.
