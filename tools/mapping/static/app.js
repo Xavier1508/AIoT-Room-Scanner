@@ -483,8 +483,8 @@ for (const button of document.querySelectorAll('[data-tab]')) {
 function applyScanPreset(name) {
   const presets = {
     validation: { yawStep: 10, yawLimit: 10, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
-    coarse: { yawStep: 10, yawLimit: 45, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
-    fine: { yawStep: 5, yawLimit: 45, tiltStep: 25, dwell: 400, samples: 5, interval: 250 },
+    coarse: { yawStep: 10, yawLimit: 60, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
+    fine: { yawStep: 5, yawLimit: 60, tiltStep: 25, dwell: 400, samples: 5, interval: 250 },
   };
   const preset = presets[name];
   if (!preset) return;

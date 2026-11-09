@@ -19,7 +19,7 @@ from common import (CALIBRATION, SCANS, as_float, median, polar_to_xyz,
                     read_json, tilt_from_pulse, utc_iso, utc_stamp, write_json)
 from esp_client import EspClient
 
-YAW_LIMIT = 513
+YAW_LIMIT = 684
 YAW_STEP = 57
 TILT_MIN = 500
 TILT_MAX = 950
@@ -61,17 +61,14 @@ class ScanConfig:
 def _yaw_targets(step_deg: int, limit_deg: int = 45):
     if step_deg not in (5, 10):
         raise ValueError("yaw step must be 5 or 10 degrees")
-    if limit_deg not in (5, 10, 15, 20, 30, 45):
-        raise ValueError("yaw limit must be 5, 10, 15, 20, 30 or 45 degrees")
+    if limit_deg not in (5, 10, 15, 20, 30, 45, 50, 55, 60):
+        raise ValueError("yaw limit must be 5, 10, 15, 20, 30, 45, 50, 55 or 60 degrees")
     if limit_deg < step_deg:
         raise ValueError("yaw limit must be at least the yaw step")
     stride = YAW_STEP if step_deg == 5 else YAW_STEP * 2
-    if limit_deg >= 45:
-        limit_steps = YAW_LIMIT
-    else:
-        # Quantize to the 57-half-step nudge grid; otherwise the stepper
-        # orchestrator cannot reach the requested limit.
-        limit_steps = int(round(limit_deg * 4096 / 360 / YAW_STEP)) * YAW_STEP
+    # Quantize every limit to the 57-half-step nudge grid; 45 deg = 513,
+    # 50 deg = 570, 55 deg = 627, 60 deg = 684.
+    limit_steps = int(round(limit_deg * 4096 / 360 / YAW_STEP)) * YAW_STEP
     limit_steps = max(stride, min(YAW_LIMIT, limit_steps))
     targets = list(range(0, limit_steps + 1, stride))
     if targets[-1] != limit_steps:
@@ -332,7 +329,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yaw-step-deg", type=int, default=5, choices=(5, 10))
-    parser.add_argument("--yaw-limit-deg", type=int, default=45, choices=(5, 10, 15, 20, 30, 45))
+    parser.add_argument("--yaw-limit-deg", type=int, default=45, choices=(5, 10, 15, 20, 30, 45, 50, 55, 60))
     parser.add_argument("--tilt-step-us", type=int, default=25, choices=(25, 50))
     parser.add_argument("--tilt-min-us", type=int, default=500)
     parser.add_argument("--tilt-max-us", type=int, default=950)

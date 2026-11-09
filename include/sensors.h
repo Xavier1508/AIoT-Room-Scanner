@@ -39,6 +39,7 @@ class SensorController {
   void stopTofContinuous();
   bool tofDataReady();
   bool readTofMeasurement(uint32_t now);
+  bool tofHardReset();
   void sampleUltrasonic(uint32_t now);
 
   bool tofWrite8(uint16_t reg, uint8_t value);
@@ -87,6 +88,7 @@ class SensorController {
   uint32_t tofLastReadyMs_ = 0;
   uint32_t tofDisabledUntilMs_ = 0;
   uint32_t tofRecoveries_ = 0;
+  uint32_t tofHardResets_ = 0;
   bool tofStallSuspended_ = false;
   uint32_t startedMs_ = 0;
 

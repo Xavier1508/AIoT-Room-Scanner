@@ -27,6 +27,10 @@ class ScanTargets(unittest.TestCase):
         self.assertEqual(scan._yaw_targets(10, 45),
                          [-513, -456, -342, -228, -114, 0, 114, 228, 342, 456, 513])
 
+    def test_full_coarse_60_degree_endpoints(self):
+        self.assertEqual(scan._yaw_targets(10, 60),
+                         [-684, -570, -456, -342, -228, -114, 0, 114, 228, 342, 456, 570, 684])
+
     def test_yaw_limits_are_stepper_aligned(self):
         for limit in (5, 10, 15, 20, 30, 45):
             for step in (5, 10):

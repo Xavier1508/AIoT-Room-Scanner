@@ -35,7 +35,7 @@
       <label class="note">Yaw step</label>
       <select id="yaw-step"><option value="10">10° (coarse)</option><option value="5" selected>5° (fine)</option></select>
       <label class="note">Yaw limit (each side)</label>
-      <select id="yaw-limit"><option value="10">±10° (smoke test)</option><option value="20">±20°</option><option value="30">±30°</option><option value="45" selected>±45° (full)</option></select>
+      <select id="yaw-limit"><option value="10">±10° (smoke test)</option><option value="20">±20°</option><option value="30">±30°</option><option value="45">±45°</option><option value="50">±50°</option><option value="55">±55°</option><option value="60" selected>±60° (room)</option></select>
       <label class="note">Tilt step</label>
       <select id="tilt-step"><option value="50">50 µs (coarse)</option><option value="25" selected>25 µs (fine)</option></select>
       <label class="note">Tilt min / max (µs)</label>
@@ -43,7 +43,7 @@
       <label class="note">Servo step delay (s)</label><input id="servo-delay" type="number" value="0.1" min="0.05" max="0.5" step="0.01">
       <label class="note">Column cooldown (s)</label><input id="cooldown" type="number" value="0.5" min="0" max="5" step="0.1">
       <label class="note">Sample interval (ms)</label><input id="sample-interval" type="number" value="250" min="50" max="1000">
-      <div class="row"><button id="preset-validation" type="button">Validation ±10°</button><button id="preset-coarse" type="button">Coarse ±45°</button><button id="preset-fine" type="button">Fine ±45°</button></div>
+      <div class="row"><button id="preset-validation" type="button">Validation ±10°</button><button id="preset-coarse" type="button">Coarse ±60°</button><button id="preset-fine" type="button">Fine ±60°</button></div>
       <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="400" min="100" max="2000">
       <label class="note">Samples / point</label><input id="samples" type="number" value="5" min="1" max="10">
       <label class="note"><input id="release-stepper" type="checkbox" checked> Lepas stepper selama sweep servo (hemat arus; di-hold lagi sebelum pindah yaw).</label>

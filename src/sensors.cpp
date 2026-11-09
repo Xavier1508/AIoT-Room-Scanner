@@ -402,6 +402,18 @@ void SensorController::stopTofContinuous() {
   tofCalibrated_ = false;
 }
 
+bool SensorController::tofHardReset() {
+  pinMode(pins::tofXshut, OUTPUT);
+  digitalWrite(pins::tofXshut, LOW);
+  delay(5);
+  digitalWrite(pins::tofXshut, HIGH);
+  delay(10);
+  tofInitialized_ = initTof();
+  if (!tofInitialized_) return false;
+  tofContinuous_ = startTofContinuous();
+  return tofContinuous_;
+}
+
 bool SensorController::tofDataReady() {
   uint8_t status = 0;
   if (!tofRead8(regGpioStatus, status)) {
@@ -565,6 +577,7 @@ String SensorController::statusJson(uint32_t now, const SensorExternalState& ext
       ",\"tof_consecutive_errors\":" + tofConsecutiveErrors_ +
       ",\"tof_last_success_ms\":" + tofLastSuccessMs_ +
       ",\"tof_recoveries\":" + tofRecoveries_ +
+      ",\"tof_hard_resets\":" + tofHardResets_ +
       ",\"tof_stall_suspended\":" + (tofStallSuspended_ ? "true" : "false") +
       ",\"tof_responsive\":" + (tofResponsive_ ? "true" : "false") + "}" +
       ",\"hc_sr04\":{\"configured\":true,\"received\":" + (hcReceived_ ? "true" : "false") +

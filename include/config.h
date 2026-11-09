@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.6.1-tof-watchdog";
+constexpr char version[] = "0.7.1-scan60-safe";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -30,7 +30,7 @@ constexpr uint16_t servoMinPulseUs = 500;
 constexpr uint16_t servoMaxPulseUs = 1400;
 // Mapping scan envelope requested by the operator. It is enforced only while
 // scan mode is active, so manual tuning retains the wider 500-1400 us range.
-constexpr int scanStepperLimitHalfSteps = 513;          // 9 x 57 = 45.1 deg nominal, within the cable-safe envelope.
+constexpr int scanStepperLimitHalfSteps = 684;          // 12 x 57 = 60.1 deg nominal; cable-safe user limit.
 constexpr uint16_t scanServoMinPulseUs = 500;           // Up.
 constexpr uint16_t scanServoMaxPulseUs = 950;           // Down.
 constexpr uint16_t hlkAlertMinCm = 30;                  // LD2410C blind/clamp zone.
