@@ -148,11 +148,34 @@ It visualizes recorded data; it does not infer occupancy or train a model.
 
 ## Deep learning boundary
 
-The current pipeline produces a clean dataset for later work. Training is not
-performed on the ESP32 and is not claimed by this dashboard. A future training
-step can consume `points.csv`/`samples.jsonl` on the PC after enough scans
-exist. A geometric occupancy grid is the recommended baseline before any
-learned model.
+The **Dataset** tab records HLK time-series frames for TinyML. It polls the
+ESP32 at roughly 3–5 Hz and writes:
+
+```text
+research/mapping/ml/<UTC>-<label>/
+  frames.jsonl
+```
+
+Use one label per session: `empty`, `human`, `non-human`, or activity labels
+(`walking`, `sitting`, `standing`, `lying`). Record with the arm parked, not
+during a scan. The CLI equivalent is:
+
+```powershell
+py -3 tools/mapping/ml/collect.py --label human --duration 60
+```
+
+Training runs on the PC:
+
+```powershell
+py -3 tools/mapping/ml/train.py --data research/mapping/ml --window 32 --stride 8
+```
+
+It trains a small 1D CNN, evaluates it, and exports `model.tflite`,
+`model_data.h`, labels, normalization and metrics. The ESP32 inference layer is
+not integrated yet; it will run only when the arm is parked, never during the
+scan. A quantized model under ~50 KB plus an ~80 KB arena fits the current
+~230 KB free heap without PSRAM. The current scan still produces a geometric
+HC point cloud; TinyML is for HLK presence/activity, not point-cloud geometry.
 
 ## Endpoints
 
@@ -165,6 +188,9 @@ learned model.
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
 - `GET /api/mapping/calibration`
+- `POST /api/mapping/ml/start`
+- `POST /api/mapping/ml/stop`
+- `GET /api/mapping/ml/status`
 - `POST /api/mapping/calibration/capture`
 
 ## Safety

@@ -261,6 +261,48 @@ async function stopScan() {
   }
 }
 
+async function refreshMlStatus() {
+  try {
+    const data = await api('/api/mapping/ml/status');
+    const job = data.job || {};
+    setText('ml-status', JSON.stringify(job, null, 2));
+    $('ml-start').disabled = job.state === 'running';
+    $('ml-stop').disabled = job.state !== 'running';
+  } catch (error) {
+    setText('ml-status', `Status dataset gagal: ${error.message}`);
+  }
+}
+
+async function startMl() {
+  try {
+    const label = $('ml-label').value;
+    $('ml-start').disabled = true;
+    setText('ml-status', 'Memulai rekaman…');
+    await api('/api/mapping/ml/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    });
+    await refreshMlStatus();
+  } catch (error) {
+    setText('ml-status', `Gagal mulai rekam: ${error.message}`);
+    $('ml-start').disabled = false;
+  }
+}
+
+async function stopMl() {
+  try {
+    await api('/api/mapping/ml/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    setText('ml-status', 'Stop diminta; menunggu frame terakhir…');
+  } catch (error) {
+    setText('ml-status', `Gagal stop rekam: ${error.message}`);
+  }
+}
+
 async function captureCalibration() {
   try {
     const body = {
@@ -449,6 +491,8 @@ $('preset-coarse').addEventListener('click', () => applyScanPreset('coarse'));
 $('preset-fine').addEventListener('click', () => applyScanPreset('fine'));
 $('start-scan').addEventListener('click', startScan);
 $('stop-scan').addEventListener('click', stopScan);
+$('ml-start').addEventListener('click', startMl);
+$('ml-stop').addEventListener('click', stopMl);
 $('capture-cal').addEventListener('click', captureCalibration);
 $('reload-points').addEventListener('click', () => loadPoints($('scan-select').value));
 $('scan-select').addEventListener('change', () => loadPoints($('scan-select').value));
@@ -467,6 +511,7 @@ bindCanvas();
   await refreshHealth();
   await refreshScanStatus();
   await refreshCalibration();
+  await refreshMlStatus();
   const latest = (state.scans || [])[0];
   if (latest) {
     $('scan-select').value = latest.scan_id;
@@ -474,4 +519,5 @@ bindCanvas();
   }
   setInterval(refreshHealth, 2000);
   setInterval(refreshScanStatus, 1000);
+  setInterval(refreshMlStatus, 1000);
 })();

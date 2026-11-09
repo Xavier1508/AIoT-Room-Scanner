@@ -16,12 +16,13 @@ import csv
 import json
 import mimetypes
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from calibrate import capture
-from common import CALIBRATION, RESEARCH, SCANS, read_json, write_json
+from common import CALIBRATION, RESEARCH, SCANS, read_json, utc_iso, utc_stamp, write_json
 from esp_client import EspClient
 from scan import ScanConfig, run_scan
 
@@ -37,12 +38,103 @@ JOB = {
     "thread": None,
     "stop_event": None,
 }
+ML_LOCK = threading.Lock()
+ML_JOB = {
+    "state": "idle",
+    "label": "",
+    "frames": 0,
+    "path": None,
+    "error": None,
+    "started_utc": None,
+    "thread": None,
+    "stop_event": None,
+}
 
 
 def _public_job():
     with JOB_LOCK:
         return {key: JOB[key] for key in
                 ("state", "scan_id", "points", "total", "error", "progress")}
+
+
+def _public_ml():
+    with ML_LOCK:
+        return {key: ML_JOB[key] for key in
+                ("state", "label", "frames", "path", "error", "started_utc")}
+
+
+def _start_ml(label: str):
+    label = str(label or "unlabeled").strip()[:40] or "unlabeled"
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in label)
+    with JOB_LOCK:
+        if JOB["state"] == "running":
+            raise RuntimeError("scan running; stop the scan before recording a dataset")
+    with ML_LOCK:
+        if ML_JOB["state"] == "running":
+            raise RuntimeError("dataset recording already running")
+        directory = RESEARCH / "ml" / f"{utc_stamp()}-{safe}"
+        directory.mkdir(parents=True, exist_ok=False)
+        path = directory / "frames.jsonl"
+        stop_event = threading.Event()
+        ML_JOB.update({"state": "running", "label": label, "frames": 0,
+                       "path": str(path), "error": None,
+                       "started_utc": utc_iso(), "stop_event": stop_event})
+
+    def worker():
+        client = EspClient()
+        try:
+            with path.open("w", encoding="utf-8") as handle:
+                while not stop_event.is_set():
+                    try:
+                        state = client.status()
+                    except Exception as exc:
+                        with ML_LOCK:
+                            ML_JOB["error"] = str(exc)
+                        time.sleep(0.5)
+                        continue
+                    sensors = state.get("sensors", {})
+                    hlk = sensors.get("hlk", {})
+                    frame = {
+                        "utc": utc_iso(),
+                        "label": label,
+                        "mode": state.get("mode"),
+                        "servo_attached": state.get("actuators", {}).get("servo_attached"),
+                        "stepper_holding": state.get("actuators", {}).get("stepper_holding"),
+                        "relative_half_steps": state.get("actuators", {}).get("relative_half_steps"),
+                        "hc_cm": sensors.get("hc_sr04", {}).get("distance_cal_cm"),
+                        "tof_cm": sensors.get("vl53l1x", {}).get("distance_cal_cm"),
+                        "hlk_valid": hlk.get("valid"),
+                        "hlk_distance_cm": hlk.get("distance_cm"),
+                        "hlk_energy": hlk.get("energy"),
+                        "hlk_target_state": hlk.get("target_state"),
+                        "hlk_frames": hlk.get("frames"),
+                        "hlk_last_reading": state.get("hlk", {}).get("last_reading"),
+                    }
+                    handle.write(json.dumps(frame, ensure_ascii=False) + "\n")
+                    handle.flush()
+                    with ML_LOCK:
+                        ML_JOB["frames"] += 1
+                        ML_JOB["error"] = None
+                    time.sleep(0.2)
+            with ML_LOCK:
+                ML_JOB["state"] = "done"
+        except Exception as exc:
+            with ML_LOCK:
+                ML_JOB["state"] = "error"
+                ML_JOB["error"] = str(exc)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    with ML_LOCK:
+        ML_JOB["thread"] = thread
+    thread.start()
+
+
+def _stop_ml():
+    with ML_LOCK:
+        event = ML_JOB.get("stop_event")
+    if event:
+        event.set()
+    return {"ok": True, "message": "stop_requested"}
 
 
 def _list_scans():
@@ -92,6 +184,9 @@ def _points(scan_id):
 def _start_scan(config: dict):
     if config.get("confirm_power") is not True:
         raise ValueError("power confirmation required: fix and measure the servo/5V rail before scanning")
+    with ML_LOCK:
+        if ML_JOB["state"] == "running":
+            raise RuntimeError("dataset recording running; stop it before scanning")
     with JOB_LOCK:
         if JOB["state"] == "running":
             raise RuntimeError("scan already running")
@@ -191,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len("/static/"):])
             if path == "/api/mapping/health":
                 try:
-                    status = EspClient().status(timeout=2.0)
+                    status = EspClient().status(timeout=6.0)
                     esp = {
                         "version": status.get("version"),
                         "mode": status.get("mode"),
@@ -218,6 +313,8 @@ class Handler(BaseHTTPRequestHandler):
                                         "points": _points(scan_id)})
             if path == "/api/mapping/scan/status":
                 return self._send(200, {"ok": True, "job": _public_job()})
+            if path == "/api/mapping/ml/status":
+                return self._send(200, {"ok": True, "job": _public_ml()})
             if path == "/api/mapping/calibration":
                 return self._send(200, {"ok": True,
                                         "calibration": read_json(CALIBRATION, {}) or {}})
@@ -246,6 +343,11 @@ class Handler(BaseHTTPRequestHandler):
                 if event:
                     event.set()
                 return self._send(200, {"ok": True, "message": "stop_requested"})
+            if path == "/api/mapping/ml/start":
+                _start_ml(body.get("label", "unlabeled"))
+                return self._send(202, {"ok": True, "job": _public_ml()})
+            if path == "/api/mapping/ml/stop":
+                return self._send(200, _stop_ml())
             if path == "/api/mapping/calibration/capture":
                 actual_cm = float(body["actual_cm"])
                 samples = max(1, min(30, int(body.get("samples", 10))))

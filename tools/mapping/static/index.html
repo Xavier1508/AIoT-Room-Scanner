@@ -12,6 +12,7 @@
   <button data-tab="scan">Scan</button>
   <button data-tab="calibration">Calibration</button>
   <button data-tab="cloud">Point Cloud 3D</button>
+  <button data-tab="dataset">Dataset</button>
 </div>
 
 <section id="tab-overview" class="tab active">
@@ -83,6 +84,30 @@
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
     <p class="note">Drag canvas untuk rotasi, wheel untuk zoom. Warna: cyan = ToF, oranye = HC, magenta = presence HLK (blob/arc, bukan titik presisi), tinggi z memengaruhi kecerahan. Ini visualisasi data terkalibrasi, bukan model deep learning.</p>
   </section>
+</section>
+
+<section id="tab-dataset" class="tab">
+  <div class="grid">
+    <section class="card"><h2>Rekam dataset HLK</h2>
+      <label class="note">Label sesi</label>
+      <select id="ml-label">
+        <option value="empty">empty</option>
+        <option value="human">human</option>
+        <option value="non-human">non-human</option>
+        <option value="walking">human walking</option>
+        <option value="sitting">human sitting</option>
+        <option value="standing">human standing</option>
+        <option value="lying">human lying</option>
+      </select>
+      <div class="row"><button id="ml-start">Mulai rekam</button><button id="ml-stop" class="danger">Stop</button></div>
+      <pre id="ml-status">Idle.</pre>
+      <p class="note">Rekam setelah scan selesai dan arm parked. Satu sesi satu label; polling ~5 Hz. Data disimpan di <code>research/mapping/ml/</code>.</p>
+    </section>
+    <section class="card"><h2>Panduan dataset</h2>
+      <p class="note"><b>empty</b> = tidak ada target. <b>human</b> = Anda bergerak/duduk/berdiri. <b>non-human</b> = benda dilempar/digoyang. Untuk aktivitas, rekam sesi terpisah walking/sitting/standing/lying.</p>
+      <p class="note">Training: <code>python tools/mapping/ml/train.py --data research/mapping/ml</code>. Model yang dilatih nanti diintegrasikan ke ESP32-S3; dashboard ini tetap menampilkan presence/HLK.</p>
+    </section>
+  </div>
 </section>
 
 <footer class="note">Dashboard PC ini berjalan terpisah dari web diagnostik ESP32. Default bind 127.0.0.1; jangan port-forward ke internet.</footer>

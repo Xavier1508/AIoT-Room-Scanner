@@ -227,6 +227,12 @@ HC fallback points; the 3D map is therefore HC-based, not ToF-based.
 - PC 3D dashboard verified in a browser: scan selector, HC points, and HLK
   presence arc render correctly. Screenshot:
   `analysis/mapping/dashboard-20261109T143500Z/pointcloud.png`.
+- TinyML data path added: the PC dashboard **Dataset** tab and
+  `tools/mapping/ml/collect.py` record labeled HLK frames to
+  `research/mapping/ml/<UTC>-<label>/frames.jsonl`. A test recording wrote
+  18 frames. `tools/mapping/ml/train.py` trains a small 1D CNN and exports
+  `model.tflite`/`model_data.h`; training itself is pending real labeled data.
+  On-device inference is **not** integrated yet and must run only when parked.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
