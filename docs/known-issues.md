@@ -94,6 +94,25 @@ I2C timeout, ToF stall suspension/recovery, and stepper release after the scan.
 Validation 30/30 and coarse 110/110 scans then stayed responsive with no new
 brownout. Keep this as a historical failure; do not run 0.6.0 scans.
 
+**0.7.0 ToF hard-reset hang:** `0.7.0-scan60` added an XSHUT hard reset to
+the ToF watchdog. When the ToF was truly faulted, the reset blocked the main
+loop and the board became unresponsive. `0.7.1-scan60-safe` removes the hard
+reset from the main loop and keeps the 0.6.1 suspend/recover behavior. The board
+then completed 60-degree room scans without hanging. Do not re-enable a
+main-loop XSHUT reset without a separate task/timeout.
+
+**Expired scan commands:** a dense 5°/50 µs scan stopped at 40/250 with
+`expired_no_action`; the ToF fault delayed the command queue beyond the
+firmware's 500 ms expiry. The PC `servo_to` now checks the observed target and
+retries an expired nudge only if the servo did not move. A 10°/25 µs scan then
+completed 247/247. This is a PC-side mitigation, not a firmware queue fix.
+
+**Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
+one fixed viewpoint. Near-mount returns are removed, points are clustered,
+rectangles are fitted and extruded to the observed top. Hidden sides are
+inferred; it is not a full mesh. The dense scan produced one wall and five
+object blocks.
+
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%
 positive. A rule `max(moving_energy)>0` reached 100% on the same validation

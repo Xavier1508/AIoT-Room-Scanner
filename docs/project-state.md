@@ -2,9 +2,11 @@
 
 Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-A full coarse sequential scan now completes without brownout using software
-power timing. `0.6.1-tof-watchdog` recovers the ToF during scans; the final
-coarse map has 103 ToF + 3 HC points and all sensors report OK.
+`0.7.1-scan60-safe` supports a ±60° room scan. The final dense scan has
+247/247 points (219 valid, 50 ToF + 169 HC), and the dashboard renders a
+top-down 2D map plus 6 estimated solid blocks (one wall + five objects).
+ToF remains unreliable; scans use HC fallback and the watchdog keeps the board
+responsive.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -12,11 +14,11 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.6.1-tof-watchdog`**, installed through real LAN OTA
-  after the board was power-cycled. Current application artifact:
-  `analysis/platformio/build-20261109T151241Z/firmware.bin`.
-  Size **837856 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`.
+- **Running firmware: `0.7.1-scan60-safe`**, installed through real LAN OTA.
+  Current application artifact:
+  `analysis/platformio/build-20261109T201351Z/firmware.bin`.
+  Size **837936 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -36,7 +38,7 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 32 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 35 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -273,19 +275,41 @@ coarse map has 103 ToF + 3 HC points and all sensors report OK.
 - Final dashboard render: `0.6.1-tof-watchdog`, 110-point coarse map, cyan ToF
   points, orange HC points and magenta HLK arc. Screenshot:
   `analysis/mapping/dashboard-20261109T181300Z/final-tof-map.png`.
+- `0.7.0-scan60` added a ToF XSHUT hard reset, but when the ToF was truly
+  faulted the reset blocked the main loop and the board became unresponsive.
+  `0.7.1-scan60-safe` removes the hard reset from the main loop, keeps yaw
+  ±60° (684 half-steps), and keeps the 0.6.1-style suspend/recover watchdog.
+  OTA evidence: `analysis/device/ota-scan60-safe-20261109T210859Z/`.
+- **0.7.1 room scans:** coarse `20261109T203919Z` 130/130 points (109 valid,
+  21 ToF + 88 HC); dense `20261109T205833Z` 247/247 points (219 valid,
+  50 ToF + 169 HC) across yaw ±60°, sensor height 770 mm. No new brownout;
+  stepper released after scan. Evidence:
+  `analysis/mapping/scan-success-60-20261109T210900Z/`.
+- **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
+  top-down grid, clusters them, fits oriented rectangles and extrudes estimated
+  boxes. The dense scan produced **6 estimated blocks** (one 3.28 m wall +
+  five objects). The dashboard shows 3D isometric and top-down 2D side by side
+  with Points/Blocks/Both toggles. Screenshot:
+  `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`.
+- A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
+  servo retry now checks the observed target and retries an expired nudge only
+  when it did not move. The 10°/25 µs scan then completed 247/247.
+- ToF remains unreliable (stale, 508 I2C errors, 51 recoveries in the latest
+  session); the scan uses HC fallback and `0.7.1` keeps the board responsive.
+  No ToF reliability claim is made; hardware/power investigation is deferred.
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** keep the rule-based movement/presence baseline for the
-demo. For a meaningful DL model, record a second human session with different
-activities (held-out), a second empty session at a different time, and then
-non-human/activity sessions. Retrain and require the DL model to beat the rule
-on a true held-out session before deploying it. The current 82.7% binary model
-and its TFLite export are retained as a pipeline baseline, not as the primary
-detector.
+**Current next action:** the dashboard/3D deliverable is complete: ±60° room
+scan, top-down map, 3D isometric, and estimated solid blocks. Remaining work is
+optional tuning (fine scan/object labels), ToF hardware reliability, and the
+harder DL targets (human vs non-human or activity) once a second held-out
+session exists. Keep the rule-based movement/presence baseline for the demo;
+the 82.7% binary DL model and its TFLite export remain a pipeline baseline, not
+the primary detector.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -305,7 +329,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **84 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **86 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -329,7 +353,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   79 = successful validation/coarse scans with HC fallback; 80 = 0.1 s servo
   delay test; 81 = ToF motion stall with servo detached during sampling;
   82 = 0.6.1 ToF watchdog OTA; 83 = 0.6.1 validation/coarse ToF scans;
-  84 = binary empty/human training and rule-baseline comparison.
+  84 = binary empty/human training and rule-baseline comparison;
+  85 = 0.7.1 scan60-safe OTA; 86 = 60-degree room scans and solid-block viewer.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

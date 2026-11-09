@@ -25,7 +25,7 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**32 Python tests** passed for image headers, local-address validation,
+**35 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
 generation, scan config bounds and OpenAPI contract consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
@@ -74,6 +74,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W29 | Lulus - 0.6.1 ToF watchdog OTA | `0.6.1-tof-watchdog` installed over LAN OTA (837856 bytes, SHA-256 `dc9f968e...f285`). Reboot reported `reset_reason=3`, `brownout=false`; sensors then reported HC/ToF/HLK OK, ToF ~75 cm, `tof_recoveries=0`. Evidence: `analysis/device/ota-tof-watchdog-20261109T181258Z/`. |
 | W30 | Lulus - 0.6.1 validation and coarse ToF scans | Validation `20261109T180145Z` completed 30/30 (28 ToF + 2 HC); coarse `20261109T180415Z` completed 110/110 (106 valid, 103 ToF + 3 HC) across yaw ±45°. Watchdog recovered ToF 2 and 10 times; no new brownout, board stayed responsive, stepper released after scan. Evidence: `analysis/mapping/scan-success-061-20261109T181300Z/`, screenshot `analysis/mapping/dashboard-20261109T181300Z/final-tof-map.png`. |
 | W31 | Lulus pipeline - binary empty/human training, rule baseline wins | 2,234 empty frames (0% moving-energy positives) + 3,342 human frames (93.9% positive) produced 1,387 windows. The 1D CNN reached 82.7% validation accuracy (empty recall 91.0%, human recall 77.2%, confusion `[[101,10],[38,129]]`). A rule `max(moving_energy)>0` reached 100% on the same split. The binary task is rule-separable; the DL model is retained as a pipeline baseline, not deployed. Evidence: `analysis/mapping/ml-training-20261109T193000Z/`, `research/mapping/ml/model-empty-human/`. |
+| W32 | Lulus - 0.7.1 scan60-safe after hard-reset hang | `0.7.0-scan60` added a ToF XSHUT hard reset but hung the main loop when the ToF was truly faulted. `0.7.1-scan60-safe` removes the hard reset from the main loop, keeps yaw ±60° (684 half-steps), and preserves the suspend/recover watchdog. OTA reported `reset_reason=3`, `brownout=false`, `tof_hard_resets=0`; board stayed responsive. Evidence: `analysis/device/ota-scan60-safe-20261109T210859Z/`. |
+| W33 | Lulus - 60-degree room scans and solid-block viewer | Coarse `20261109T203919Z` completed 130/130 (109 valid, 21 ToF + 88 HC); dense `20261109T205833Z` completed 247/247 (219 valid, 50 ToF + 169 HC) across yaw ±60° at 770 mm sensor height. The reconstruction produced 6 estimated boxes (one 3.28 m wall + five objects); the dashboard shows top-down 2D and 3D solid blocks. A 5°/50 µs attempt failed at 40/250 with `expired_no_action`; the PC servo retry now handles expired nudges, and the 10°/25 µs scan completed. Evidence: `analysis/mapping/scan-success-60-20261109T210900Z/`, screenshot `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -133,6 +135,12 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/scan-brownout-2-20261109T133435Z/`
 - `analysis/platformio/build-20261109T142743Z/`
 - `analysis/platformio/build-20261109T151241Z/`
+- `analysis/platformio/build-20261109T201351Z/`
+- `analysis/device/ota-scan60-safe-20261109T210859Z/`
+- `analysis/mapping/scan-success-60-20261109T210900Z/`
+- `analysis/mapping/dashboard-20261109T210800Z/`
+- `research/mapping/scans/20261109T203919Z/`
+- `research/mapping/scans/20261109T205833Z/`
 - `analysis/device/ota-tof-watchdog-20261109T181258Z/`
 - `analysis/mapping/scan-success-061-20261109T181300Z/`
 - `analysis/mapping/dashboard-20261109T181300Z/`
@@ -152,8 +160,8 @@ Evidence directories (gitignored, retain locally):
 - `analysis/gcc/tests-20261105T161636731Z/` (final host regression run)
 
 The current application SHA-256 is
-`dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`.
-Research CLI verified 84 stored evidence artifacts with zero integrity failures.
+`36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
+Research CLI verified 86 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

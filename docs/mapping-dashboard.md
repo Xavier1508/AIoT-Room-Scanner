@@ -88,12 +88,13 @@ enforces the mapping envelope:
 - servo: `500..950` microseconds (500 = up, 950 = down)
 
 The UI/API exposes a bounded validation mode: yaw step 5/10 degrees, yaw limit
-±5/10/15/20/30/45 degrees, tilt step 25/50 microseconds, tilt min/max inside
-500..950 microseconds, servo step delay 0.05–0.5 s, column cooldown 0–5 s, and
-sample interval 50–1000 ms. Presets: Validation ±10°, Coarse ±45°, Fine ±45°.
-The default full grid is yaw -45..+45 degrees in 5-degree steps and tilt
-500..950 microseconds in 25-microsecond steps: 19 x 19 = 361 points. A coarse
-run uses 10 degrees and 50 microseconds.
+±5/10/15/20/30/45/50/55/60 degrees, tilt step 25/50 microseconds, tilt min/max
+inside 500..950 microseconds, servo step delay 0.05–0.5 s, column cooldown
+0–5 s, and sample interval 50–1000 ms. Presets: Validation ±10°, Coarse ±60°,
+Fine ±60°. The default full grid is yaw -60..+60 degrees in 5-degree steps and
+tilt 500..950 microseconds in 25-microsecond steps. A coarse run uses 10
+degrees and 50 microseconds; a denser room run uses 10 degrees and 25
+microseconds.
 
 **Measured power strategy (2026-11-09):** two early scans browned out when the
 servo moved quickly with the stepper held. With the 0.1 s servo step delay,
@@ -103,13 +104,13 @@ validation scan completed 30/30 points and the coarse full scan completed
 stepper during the sweep can brown out again; this is a software timing
 mitigation on the existing 9 V/3 A supply, not a hardware power fix.
 
-**ToF watchdog (0.6.1):** ToF is valid at rest and can stall during servo
-movement. `0.6.1-tof-watchdog` suspends ToF polling after 3 s without
-data-ready, retries after 5 s/10 s, and exposes `tof_recoveries`/
-`tof_stall_suspended`. In the successful coarse scan it recovered 10 times and
-supplied 103 of 110 points (3 HC). This is a software mitigation, not a
-hardware fix; a separate servo supply or shielding would make ToF fully stable
-during motion.
+**ToF watchdog (0.7.1):** ToF is valid at rest but remains unreliable during
+servo movement and sometimes faults at rest. `0.7.1-scan60-safe` keeps the
+0.6.1 suspend/recover watchdog, removes the XSHUT hard reset that could block
+the main loop, and exposes `tof_recoveries`/`tof_stall_suspended`. The 0.7.1
+room scans used HC fallback (169 HC vs 50 ToF in the dense scan). No ToF
+reliability claim is made; a separate servo supply/shielding or sensor
+replacement would be required.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is
@@ -144,9 +145,19 @@ viewer consistently.
 
 ## 3D viewer
 
-The **Point Cloud 3D** tab uses a dependency-free canvas isometric renderer.
-Cyan points are ToF, orange points are HC. Drag to rotate, wheel to zoom.
-It visualizes recorded data; it does not infer occupancy or train a model.
+The **Point Cloud 3D** tab shows two views side by side:
+
+- **3D isometric:** cyan ToF points, orange HC points, blue estimated wall
+  blocks, green estimated object blocks, magenta HLK presence arc.
+- **Top-down 2D:** the same points/blocks on a north-up floor plan with a
+  0.5 m grid, sensor origin, ±60° FOV wedge, scale bar and HLK ray.
+
+`reconstruct.py` removes near-mount returns, clusters points in the x/y plane,
+fits an oriented rectangle, and extrudes it from the floor to the observed top.
+The blocks are **estimated** from one fixed viewpoint; hidden sides are
+inferred. Use the Points/Blocks/Both buttons to switch. The dense 0.7.1 scan
+produced six blocks (one wall + five objects). This is a 2.5D reconstruction,
+not a full mesh or a trained model.
 
 ## Deep learning boundary
 
@@ -198,6 +209,7 @@ held-out session.
 - `GET /api/mapping/scan/status`
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
+- `GET /api/mapping/scans/{id}/reconstruct`
 - `GET /api/mapping/calibration`
 - `POST /api/mapping/ml/start`
 - `POST /api/mapping/ml/stop`
