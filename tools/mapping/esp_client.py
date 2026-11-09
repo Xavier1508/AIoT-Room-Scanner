@@ -19,8 +19,11 @@ class EspClient:
     def __init__(self) -> None:
         self.lan = Lan()
 
-    def status(self) -> dict:
-        return self.lan.status()
+    def status(self, timeout: float = 8.0) -> dict:
+        code, value = self.lan.call("/api/status", timeout=timeout)
+        if code != 200 or "version" not in value:
+            raise ValueError(f"Device status unavailable (HTTP {code}).")
+        return value
 
     def command(self, name: str) -> dict:
         return self.lan.command(name)

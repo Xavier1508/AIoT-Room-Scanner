@@ -147,8 +147,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+            return
 
     def _body(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -178,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len("/static/"):])
             if path == "/api/mapping/health":
                 try:
-                    status = EspClient().status()
+                    status = EspClient().status(timeout=2.0)
                     esp = {
                         "version": status.get("version"),
                         "mode": status.get("mode"),
