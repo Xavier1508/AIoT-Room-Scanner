@@ -27,6 +27,35 @@ The server reads `tools/ops/device.local.json` (gitignored) and proxies the
 ESP32 API server-side. ESP32 Basic-auth credentials are never sent to the
 browser. Default bind is loopback only; do not port-forward this dashboard.
 
+### Restart and auto-start
+
+There are two independent web applications:
+
+- **ESP32 dashboard** `http://<ESP-IP>/` — served by the board itself. It starts
+  automatically after boot when Wi-Fi connects. If the board is off, brownout
+  looping, or Wi-Fi is down, this page is down; the PC cannot keep it alive.
+- **PC mapping dashboard** `http://127.0.0.1:8000/` — served by the PC Python
+  process. It stays up even when the ESP32 is offline (health panel shows an
+  error), but it stops if its terminal is closed or the process crashes.
+
+For a restart-on-crash supervisor, run:
+
+```powershell
+.\tools\ops\start-mapping.cmd
+```
+
+Keep the window open. The supervisor restarts `mapping_server.py` after an exit.
+To start it automatically at Windows logon, create a shortcut to
+`tools\ops\start-mapping.cmd` in `shell:startup` (or a Task Scheduler entry).
+That is a user-level system change; do it deliberately. Do not expose the
+dashboard to the internet.
+
+If the ESP32 IP changes after DHCP, the PC mapping health panel will time out
+even though the PC page is up. Find the new IP from the router DHCP list or
+connect USB and run `device.py status`. `aiot-room.local` is the mDNS fallback;
+if it does not resolve, the board is likely offline rather than merely on a new
+IP.
+
 ## Calibration
 
 1. Start the ESP32 sensors and point HC/ToF at the same flat target.

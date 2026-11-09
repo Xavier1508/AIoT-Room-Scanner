@@ -255,7 +255,15 @@ Buka `http://127.0.0.1:8000/`. Dashboard menyediakan kalibrasi HC/ToF, scan
 grid 5°/25 µs atau 10°/50 µs secara **sequential** (stepper hold → servo attach
 → sweep vertikal → servo detach → stepper lagi), penyimpanan
 `research/mapping/scans/`, dan viewer point cloud 3D isometrik berbasis canvas
-dengan overlay presence HLK. Detail dan batas klaim ada di
+dengan overlay presence HLK.
+
+Untuk restart otomatis bila server PC crash, jalankan
+`.\tools\ops\start-mapping.cmd` dan biarkan jendelanya terbuka. Ini **berbeda**
+dari dashboard ESP32: dashboard ESP32 (`http://<IP-ESP>/`) menyala sendiri
+setelah board boot dan Wi-Fi tersambung; server PC tidak ikut hidup/mati bersama
+ESP32. Auto-start saat login Windows bisa dibuat lewat shortcut ke
+`start-mapping.cmd` di `shell:startup`, tetapi itu perubahan sistem tingkat
+pengguna dan sebaiknya dilakukan sengaja. Detail dan batas klaim ada di
 [docs/mapping-dashboard.md](docs/mapping-dashboard.md). Jangan port-forward
 dashboard ini ke internet.
 
