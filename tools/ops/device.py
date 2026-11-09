@@ -190,7 +190,7 @@ class Lan:
             raise ValueError(f"Device status unavailable (HTTP {code}).")
         return value
 
-    def command(self, name):
+    def command(self, name, timeout_s=3.0):
         if self.csrf is None:
             self.session()
         code, value = self.call("/api/command", "POST", name.encode("ascii"),
@@ -198,7 +198,7 @@ class Lan:
         if code != 202:
             return {"http_status": code, "result": value}
         ident = value["command_id"]
-        until = time.monotonic() + 3
+        until = time.monotonic() + max(1.0, float(timeout_s))
         while time.monotonic() < until:
             state = self.status()
             if ident == 0:

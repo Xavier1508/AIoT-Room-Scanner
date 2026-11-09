@@ -19,14 +19,14 @@ class EspClient:
     def __init__(self) -> None:
         self.lan = Lan()
 
-    def status(self, timeout: float = 8.0) -> dict:
+    def status(self, timeout: float = 12.0) -> dict:
         code, value = self.lan.call("/api/status", timeout=timeout)
         if code != 200 or "version" not in value:
             raise ValueError(f"Device status unavailable (HTTP {code}).")
         return value
 
-    def command(self, name: str) -> dict:
-        return self.lan.command(name)
+    def command(self, name: str, timeout_s: float = 10.0) -> dict:
+        return self.lan.command(name, timeout_s=timeout_s)
 
     def ensure_sensors(self, timeout_s: float = 12.0) -> dict:
         state = self.status()
@@ -60,15 +60,24 @@ class EspClient:
         current = int(state["actuators"]["relative_half_steps"])
         while current != target_half_steps:
             delta = target_half_steps - current
-            if delta > 0:
-                result = self.command("stepper_right_5")
-            else:
-                result = self.command("stepper_left_5")
+            expected = current + (57 if delta > 0 else -57)
+            name = "stepper_right_5" if delta > 0 else "stepper_left_5"
+            try:
+                result = self.command(name)
+            except TimeoutError:
+                # The command may have completed after the observation window.
+                # Check the resulting state; never resend a movement blindly.
+                state = self.wait_for(
+                    lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
+                    int(s["actuators"]["relative_half_steps"]) == expected,
+                    timeout_s=timeout_s)
+                current = int(state["actuators"]["relative_half_steps"])
+                continue
             if not result.get("ok"):
                 raise RuntimeError("Stepper nudge rejected: " + str(result.get("message")))
             current = int(self.wait_for(
-                lambda s: bool(s["actuators"].get("stepper_holding")) and
-                int(s["actuators"]["relative_half_steps"]) == current + (57 if delta > 0 else -57),
+                lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
+                int(s["actuators"]["relative_half_steps"]) == expected,
                 timeout_s=timeout_s)["actuators"]["relative_half_steps"])
         if settle_s:
             time.sleep(settle_s)
@@ -80,15 +89,20 @@ class EspClient:
         state = self.status()
         current = int(state["actuators"]["servo_target_us"])
         while current != target_us:
-            if target_us > current:
-                result = self.command("servo_up_25")
-            else:
-                result = self.command("servo_down_25")
+            expected = current + (25 if target_us > current else -25)
+            name = "servo_up_25" if target_us > current else "servo_down_25"
+            try:
+                result = self.command(name)
+            except TimeoutError:
+                state = self.wait_for(
+                    lambda s, expected=expected: int(s["actuators"]["servo_target_us"]) == expected,
+                    timeout_s=timeout_s)
+                current = int(state["actuators"]["servo_target_us"])
+                continue
             if not result.get("ok"):
                 raise RuntimeError("Servo nudge rejected: " + str(result.get("message")))
             current = int(self.wait_for(
-                lambda s: int(s["actuators"]["servo_target_us"]) ==
-                current + (25 if target_us > current else -25),
+                lambda s, expected=expected: int(s["actuators"]["servo_target_us"]) == expected,
                 timeout_s=timeout_s)["actuators"]["servo_target_us"])
             if step_delay_s:
                 time.sleep(step_delay_s)

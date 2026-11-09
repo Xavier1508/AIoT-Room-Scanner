@@ -114,7 +114,7 @@ function renderScans() {
   }
   const table = document.createElement('table');
   const head = document.createElement('tr');
-  for (const label of ['Scan', 'Points', 'Valid', 'ToF', 'HC', 'Status']) {
+  for (const label of ['Scan', 'Points', 'Valid', 'ToF', 'HC', 'Bounds', 'Status']) {
     const th = document.createElement('th');
     th.textContent = label;
     head.append(th);
@@ -122,8 +122,10 @@ function renderScans() {
   table.append(head);
   for (const scan of scans.slice(0, 20)) {
     const row = document.createElement('tr');
+    const config = scan.config || {};
+    const bounds = `${config.yaw_limit_deg ?? '—'}° / ${config.tilt_min_us ?? '—'}–${config.tilt_max_us ?? '—'} µs`;
     for (const value of [scan.scan_id, scan.points, scan.valid_points, scan.tof_points,
-                         scan.hc_points, scan.error ? 'ERROR' : 'OK']) {
+                         scan.hc_points, bounds, scan.error ? 'ERROR' : 'OK']) {
       const td = document.createElement('td');
       td.textContent = value ?? '—';
       row.append(td);
@@ -136,7 +138,8 @@ function renderScans() {
   }
   list.append(table);
   const latest = scans[0];
-  setText('last-scan', `${latest.scan_id} · ${latest.points} points · ${latest.valid_points} valid · ${latest.tof_points} ToF · ${latest.hc_points} HC`);
+  const latestConfig = latest.config || {};
+  setText('last-scan', `${latest.scan_id} · ${latest.points} points · ${latest.valid_points} valid · ${latest.tof_points} ToF · ${latest.hc_points} HC · yaw ±${latestConfig.yaw_limit_deg ?? '—'}° · tilt ${latestConfig.tilt_min_us ?? '—'}–${latestConfig.tilt_max_us ?? '—'} µs`);
   if (!state.loadedScan) {
     select.value = latest.scan_id;
   } else {
@@ -218,7 +221,10 @@ async function startScan() {
     }
     const body = {
       yaw_step_deg: Number($('yaw-step').value),
+      yaw_limit_deg: Number($('yaw-limit').value),
       tilt_step_us: Number($('tilt-step').value),
+      tilt_min_us: Number($('tilt-min').value),
+      tilt_max_us: Number($('tilt-max').value),
       dwell_ms: Number($('dwell').value),
       samples: Number($('samples').value),
       confirm_power: true,

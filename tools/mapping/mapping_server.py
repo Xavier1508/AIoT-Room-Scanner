@@ -61,6 +61,7 @@ def _list_scans():
                 "error": metadata.get("error"),
                 "started_utc": metadata.get("started_utc"),
                 "finished_utc": metadata.get("finished_utc"),
+                "config": metadata.get("config", {}),
             })
     return items
 
@@ -103,8 +104,12 @@ def _start_scan(config: dict):
         tilt_step_us=int(config.get("tilt_step_us", 25)),
         dwell_ms=max(100, min(2000, int(config.get("dwell_ms", 400)))),
         samples=max(1, min(10, int(config.get("samples", 5)))),
+        yaw_limit_deg=int(config.get("yaw_limit_deg", 45)),
+        tilt_min_us=int(config.get("tilt_min_us", 500)),
+        tilt_max_us=int(config.get("tilt_max_us", 950)),
         label=str(config.get("label", ""))[:80],
     )
+    scan_config.validate()
 
     def progress(value):
         with JOB_LOCK:

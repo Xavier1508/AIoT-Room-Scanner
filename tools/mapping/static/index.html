@@ -33,13 +33,17 @@
     <section class="card"><h2>Mulai scan</h2>
       <label class="note">Yaw step</label>
       <select id="yaw-step"><option value="10">10° (coarse)</option><option value="5" selected>5° (fine)</option></select>
+      <label class="note">Yaw limit (each side)</label>
+      <select id="yaw-limit"><option value="10">±10° (smoke test)</option><option value="20">±20°</option><option value="30">±30°</option><option value="45" selected>±45° (full)</option></select>
       <label class="note">Tilt step</label>
       <select id="tilt-step"><option value="50">50 µs (coarse)</option><option value="25" selected>25 µs (fine)</option></select>
+      <label class="note">Tilt min / max (µs)</label>
+      <div class="row"><input id="tilt-min" type="number" value="500" min="500" max="949"><input id="tilt-max" type="number" value="950" min="501" max="950"></div>
       <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="400" min="100" max="2000">
       <label class="note">Samples / point</label><input id="samples" type="number" value="5" min="1" max="10">
       <label class="note"><input id="power-confirm" type="checkbox"> Saya sudah memperbaiki dan mengukur suplai servo/5V di bawah beban.</label>
       <div class="row"><button id="start-scan">Start scan</button><button id="stop-scan" class="danger">Stop scan</button></div>
-      <p class="warn">Scan sequential: stepper bergerak → hold → servo attach → sweep vertikal → servo detach → stepper lagi. Servo tidak pernah bergerak bersamaan dengan stepper. Pada 2026-11-09 servo attach saja sudah menyebabkan board offline; jangan start sebelum rail diperbaiki. Pastikan kabel aman, arm didukung, dan area bebas.</p>
+      <p class="warn">Scan sequential: stepper bergerak → hold → servo attach → sweep vertikal → servo detach → stepper lagi. Servo tidak pernah bergerak bersamaan dengan stepper. Gunakan jack 9V (bukan USB saja). Gerakan servo kecil sudah terbukti; sweep penuh belum. Mulai dari yaw ±10° dan tilt 500–950 µs.</p>
     </section>
     <section class="card"><h2>Progress</h2><progress id="scan-progress" max="100" value="0"></progress><pre id="scan-status">Idle.</pre></section>
   </div>

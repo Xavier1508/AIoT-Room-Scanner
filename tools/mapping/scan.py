@@ -24,6 +24,7 @@ YAW_STEP = 57
 TILT_MIN = 500
 TILT_MAX = 950
 TILT_STEP = 25
+SERVO_PARK_US = 800
 
 
 @dataclass
@@ -33,23 +34,44 @@ class ScanConfig:
     dwell_ms: int = 400
     samples: int = 5
     sample_interval_ms: int = 250
+    yaw_limit_deg: int = 45
+    tilt_min_us: int = 500
+    tilt_max_us: int = 950
     label: str = ""
 
+    def validate(self):
+        _yaw_targets(self.yaw_step_deg, self.yaw_limit_deg)
+        _tilt_targets(self.tilt_step_us, self.tilt_min_us, self.tilt_max_us)
 
-def _yaw_targets(step_deg: int):
+
+def _yaw_targets(step_deg: int, limit_deg: int = 45):
     if step_deg not in (5, 10):
         raise ValueError("yaw step must be 5 or 10 degrees")
+    if limit_deg not in (5, 10, 15, 20, 30, 45):
+        raise ValueError("yaw limit must be 5, 10, 15, 20, 30 or 45 degrees")
+    if limit_deg < step_deg:
+        raise ValueError("yaw limit must be at least the yaw step")
     stride = YAW_STEP if step_deg == 5 else YAW_STEP * 2
-    targets = list(range(-YAW_LIMIT, YAW_LIMIT + 1, stride))
-    if targets[-1] != YAW_LIMIT:
-        targets.append(YAW_LIMIT)
+    if limit_deg >= 45:
+        limit_steps = YAW_LIMIT
+    else:
+        # Quantize to the 57-half-step nudge grid; otherwise the stepper
+        # orchestrator cannot reach the requested limit.
+        limit_steps = int(round(limit_deg * 4096 / 360 / YAW_STEP)) * YAW_STEP
+    limit_steps = max(stride, min(YAW_LIMIT, limit_steps))
+    targets = list(range(0, limit_steps + 1, stride))
+    if targets[-1] != limit_steps:
+        targets.append(limit_steps)
+    targets = sorted(set([-value for value in targets] + targets))
     return targets
 
 
-def _tilt_targets(step_us: int):
+def _tilt_targets(step_us: int, min_us: int = 500, max_us: int = 950):
     if step_us not in (25, 50):
         raise ValueError("tilt step must be 25 or 50 microseconds")
-    return list(range(TILT_MIN, TILT_MAX + 1, step_us))
+    if not (500 <= min_us < max_us <= 950):
+        raise ValueError("tilt range must satisfy 500 <= min < max <= 950")
+    return list(range(min_us, max_us + 1, step_us))
 
 
 def _median_sample(rows, path, key):
@@ -113,12 +135,13 @@ def _point_from_samples(rows, yaw_half_steps, servo_us, calibration):
 
 
 def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=None):
+    config.validate()
     calibration = read_json(CALIBRATION, {}) or {}
     scan_id = utc_stamp()
     out_dir = SCANS / scan_id
     out_dir.mkdir(parents=True, exist_ok=False)
-    yaws = _yaw_targets(config.yaw_step_deg)
-    tilts = _tilt_targets(config.tilt_step_us)
+    yaws = _yaw_targets(config.yaw_step_deg, config.yaw_limit_deg)
+    tilts = _tilt_targets(config.tilt_step_us, config.tilt_min_us, config.tilt_max_us)
     total = len(yaws) * len(tilts)
     points = []
     samples_path = out_dir / "samples.jsonl"
@@ -132,6 +155,8 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
         if current_steps % YAW_STEP != 0:
             raise RuntimeError("Stepper reference is not aligned to 5-degree units; zero it before scanning.")
         if current.get("actuators", {}).get("servo_attached"):
+            client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+            time.sleep(0.2)
             result = client.command("release_servo")
             if not result.get("ok"):
                 raise RuntimeError("Cannot detach servo before scan: " + str(result.get("message")))
@@ -144,6 +169,8 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                     raise InterruptedError("scan stopped by operator")
                 state = client.status()
                 if state.get("actuators", {}).get("servo_attached"):
+                    client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+                    time.sleep(0.2)
                     result = client.command("release_servo")
                     if not result.get("ok"):
                         raise RuntimeError("Cannot detach servo between columns: " + str(result.get("message")))
@@ -161,9 +188,9 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                 if not result.get("ok"):
                     raise RuntimeError("Servo attach rejected: " + str(result.get("message")))
                 motion_started = True
-                time.sleep(0.25)
+                time.sleep(0.5)
                 client.servo_to(tilts[0], step_delay_s=0.04)
-                time.sleep(0.15)
+                time.sleep(0.2)
                 for tilt_index, tilt in enumerate(tilts):
                     if stop_event is not None and stop_event.is_set():
                         raise InterruptedError("scan stopped by operator")
@@ -197,10 +224,15 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                             "total": total,
                             "last_point": point,
                         })
+                # Return to the base pulse before detaching. Re-attaching at
+                # 800 us after a column ended at 950 us caused a large jump and
+                # a measured brownout on the second column.
+                client.servo_to(SERVO_PARK_US, step_delay_s=0.04)
+                time.sleep(0.2)
                 result = client.command("release_servo")
                 if not result.get("ok"):
                     raise RuntimeError("Servo detach rejected: " + str(result.get("message")))
-                time.sleep(0.25)
+                time.sleep(0.35)
         client.move_stepper_to(0, settle_s=0.35)
         client.command("park_stepper")
         client.command("scan_mode_stop")
@@ -262,12 +294,24 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yaw-step-deg", type=int, default=5, choices=(5, 10))
+    parser.add_argument("--yaw-limit-deg", type=int, default=45, choices=(5, 10, 15, 20, 30, 45))
     parser.add_argument("--tilt-step-us", type=int, default=25, choices=(25, 50))
+    parser.add_argument("--tilt-min-us", type=int, default=500)
+    parser.add_argument("--tilt-max-us", type=int, default=950)
     parser.add_argument("--dwell-ms", type=int, default=400)
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--label", default="")
     args = parser.parse_args()
-    config = ScanConfig(args.yaw_step_deg, args.tilt_step_us, args.dwell_ms, args.samples, label=args.label)
+    config = ScanConfig(
+        yaw_step_deg=args.yaw_step_deg,
+        tilt_step_us=args.tilt_step_us,
+        dwell_ms=args.dwell_ms,
+        samples=args.samples,
+        yaw_limit_deg=args.yaw_limit_deg,
+        tilt_min_us=args.tilt_min_us,
+        tilt_max_us=args.tilt_max_us,
+        label=args.label,
+    )
     stop_event = threading.Event()
     result = run_scan(EspClient(), config, progress=lambda p: print(json.dumps(p)), stop_event=stop_event)
     print(json.dumps(result))
