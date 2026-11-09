@@ -36,7 +36,7 @@ HC fallback points; the 3D map is therefore HC-based, not ToF-based.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 28 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 32 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;

@@ -25,9 +25,9 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**28 Python tests** passed for image headers, local-address validation,
+**32 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
-generation and OpenAPI contract consistency.
+generation, scan config bounds and OpenAPI contract consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
 These do not validate electrical wiring or physical hardware.
 

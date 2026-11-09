@@ -49,6 +49,16 @@ ML_JOB = {
     "thread": None,
     "stop_event": None,
 }
+ESP_LOCK = threading.Lock()
+ESP_CLIENT = None
+
+
+def _esp_status(timeout: float = 6.0):
+    global ESP_CLIENT
+    with ESP_LOCK:
+        if ESP_CLIENT is None:
+            ESP_CLIENT = EspClient()
+        return ESP_CLIENT.status(timeout=timeout)
 
 
 def _public_job():
@@ -286,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len("/static/"):])
             if path == "/api/mapping/health":
                 try:
-                    status = EspClient().status(timeout=6.0)
+                    status = _esp_status(timeout=6.0)
                     esp = {
                         "version": status.get("version"),
                         "mode": status.get("mode"),
@@ -304,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "scans": _list_scans(),
                                             "calibration": read_json(CALIBRATION, {}) or {}})
             if path == "/api/mapping/status":
-                return self._send(200, {"ok": True, "status": EspClient().status()})
+                return self._send(200, {"ok": True, "status": _esp_status()})
             if path == "/api/mapping/scans":
                 return self._send(200, {"ok": True, "scans": _list_scans()})
             if path.startswith("/api/mapping/scans/") and path.endswith("/points"):
