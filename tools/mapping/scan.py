@@ -262,6 +262,11 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
         client.move_stepper_to(0, settle_s=0.35, step_deg=config.stepper_step_deg)
         client.command("park_stepper")
         client.command("scan_mode_stop")
+        if config.release_stepper_during_sweep:
+            try:
+                client.command("release_stepper")
+            except Exception:
+                pass
         fields = list(points[0].keys()) if points else []
         with (out_dir / "points.csv").open("w", encoding="utf-8", newline="") as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=fields)
@@ -276,6 +281,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             "sequential": True,
             "servo_detach_between_columns": True,
             "stepper_released_during_sweep": config.release_stepper_during_sweep,
+            "stepper_released_after_scan": config.release_stepper_during_sweep,
             "calibration": calibration,
             "yaw_targets": yaws,
             "tilt_targets": tilts,
@@ -314,6 +320,11 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                 if state.get("actuators", {}).get("servo_attached"):
                     client.command("release_servo")
                 client.command("park_stepper")
+                if config.release_stepper_during_sweep:
+                    try:
+                        client.command("release_stepper")
+                    except Exception:
+                        pass
         except Exception:
             pass
 

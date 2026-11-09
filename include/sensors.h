@@ -84,6 +84,10 @@ class SensorController {
   uint32_t tofReadyTimeouts_ = 0;
   uint32_t tofConsecutiveErrors_ = 0;
   uint32_t tofLastSuccessMs_ = 0;
+  uint32_t tofLastReadyMs_ = 0;
+  uint32_t tofDisabledUntilMs_ = 0;
+  uint32_t tofRecoveries_ = 0;
+  bool tofStallSuspended_ = false;
   uint32_t startedMs_ = 0;
 
   bool hcReceived_ = false;

@@ -69,6 +69,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W24 | Lulus - coarse full sequential scan | Scan `20261109T141830Z` completed 110/110 points (99 valid) across yaw ±45° (10° step), tilt 500–950 µs (50 µs step). No new brownout. This is the first full coarse scan; points are HC-based. Evidence: `research/mapping/scans/20261109T141830Z/`. |
 | W25 | Lulus parsial - 0.6.0 OTA and ToF motion limitation | `0.6.0-software-power` installed over LAN OTA with Wi-Fi TX 8.5 dBm, HLK confirm 3 frames, energy 40, parked stable 1000 ms. ToF at rest was valid ~72.9–74.6 cm and agreed with HC within ~0.1 cm, but became stale at the first servo movement; detaching the servo during sampling did not recover it. Scans correctly use HC fallback. Evidence: `analysis/device/ota-software-power-20261109T144126Z/`, `analysis/mapping/detach-sampling-20261109T143324Z/`. |
 | W26 | Lulus - PC 3D dashboard render | Browser test loaded `http://127.0.0.1:8000/`, showed `0.6.0-software-power`, scan selector, HC points and HLK presence arc. Screenshot: `analysis/mapping/dashboard-20261109T143500Z/pointcloud.png`. |
+| W27 | Lulus build - 0.6.1 ToF watchdog, OTA pending | `0.6.1-tof-watchdog` built at 837856 bytes, SHA-256 `dc9f968e...f285`. It adds `Wire.setTimeOut(50)`, suspends ToF polling after 3 s without data-ready, retries after 5 s and every 10 s on failure, and exposes `tof_recoveries`/`tof_stall_suspended`. Not OTA-installed yet; board needs a power cycle. Evidence: `analysis/platformio/build-20261109T151241Z/`. |
+| W28 | Gagal - board HTTP hang after scan from released stepper | A validation scan from a released-stepper start captured 2/30 points and then `/api/status` timed out; ping was intermittent and the web server stayed unresponsive. No brownout was read before the hang. Power cycle required before 0.6.1 OTA. The earlier 0.6.0 coarse 110/110 scan remains valid; no new scan is claimed from this failed run. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -127,6 +129,7 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/scan-brownout-20261109T132901Z/`
 - `analysis/device/scan-brownout-2-20261109T133435Z/`
 - `analysis/platformio/build-20261109T142743Z/`
+- `analysis/platformio/build-20261109T151241Z/`
 - `analysis/device/ota-software-power-20261109T144126Z/`
 - `analysis/mapping/servo-delay-0.10-20261109T140434Z/`
 - `analysis/mapping/single-column-20261109T140521Z/`

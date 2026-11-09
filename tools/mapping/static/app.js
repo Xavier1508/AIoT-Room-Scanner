@@ -47,6 +47,16 @@ function switchTab(name) {
   if (name === 'cloud') drawCloud();
 }
 
+async function refreshScans() {
+  try {
+    const data = await api('/api/mapping/scans');
+    state.scans = data.scans || [];
+    renderScans();
+  } catch (error) {
+    setText('scan-list', `Daftar scan gagal: ${error.message}`);
+  }
+}
+
 async function refreshHealth() {
   try {
     const data = await api('/api/mapping/health');
@@ -58,6 +68,7 @@ async function refreshHealth() {
     renderCalibration();
   } catch (error) {
     setText('summary', `ESP32 belum terhubung: ${error.message}`);
+    await refreshScans();
   }
 }
 
@@ -137,7 +148,7 @@ function renderScans() {
     select.append(option);
   }
   list.append(table);
-  const latest = scans[0];
+  const latest = scans.find(scan => !scan.error && (scan.points || 0) > 0) || scans[0];
   const latestConfig = latest.config || {};
   setText('last-scan', `${latest.scan_id} · ${latest.points} points · ${latest.valid_points} valid · ${latest.tof_points} ToF · ${latest.hc_points} HC · yaw ±${latestConfig.yaw_limit_deg ?? '—'}° · tilt ${latestConfig.tilt_min_us ?? '—'}–${latestConfig.tilt_max_us ?? '—'} µs`);
   if (!state.loadedScan) {
@@ -508,15 +519,17 @@ $('reset-view').addEventListener('click', () => {
 bindCanvas();
 
 (async () => {
+  await refreshScans();
   await refreshHealth();
   await refreshScanStatus();
   await refreshCalibration();
   await refreshMlStatus();
-  const latest = (state.scans || [])[0];
+  const latest = (state.scans || []).find(scan => !scan.error && (scan.points || 0) > 0) || (state.scans || [])[0];
   if (latest) {
     $('scan-select').value = latest.scan_id;
     await loadPoints(latest.scan_id);
   }
+  setInterval(refreshScans, 3000);
   setInterval(refreshHealth, 2000);
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);

@@ -122,6 +122,7 @@ bool SensorController::start(uint32_t now) {
   delay(5);
 
   Wire.begin(pins::tofSda, pins::tofScl, config::sensorI2cHz);
+  Wire.setTimeOut(50);
   i2cInitialized_ = true;
   i2cScanComplete_ = scanI2c();
   tofPresent_ = false;
@@ -131,6 +132,9 @@ bool SensorController::start(uint32_t now) {
   tofInitialized_ = false;
   tofContinuous_ = false;
   tofCalibrated_ = false;
+  tofStallSuspended_ = false;
+  tofDisabledUntilMs_ = 0;
+  tofLastReadyMs_ = now;
   if (tofPresent_) {
     tofInitialized_ = initTof();
     if (tofInitialized_) {
@@ -152,6 +156,8 @@ bool SensorController::start(uint32_t now) {
 
 void SensorController::stop() {
   if (tofContinuous_) stopTofContinuous();
+  tofStallSuspended_ = false;
+  tofDisabledUntilMs_ = 0;
   running_ = false;
   digitalWrite(pins::hcTrig, LOW);
 }
@@ -177,10 +183,35 @@ uint32_t SensorController::tofErrorRatePerMin(uint32_t now) const {
 void SensorController::tick(uint32_t now) {
   if (!running_) return;
   if (elapsed(now, lastHcSampleMs_, config::sensorHcIntervalMs)) sampleUltrasonic(now);
-  if (tofContinuous_ && elapsed(now, lastTofPollMs_, config::sensorTofPollMs)) {
+  if (tofStallSuspended_) {
+    if (int32_t(now - tofDisabledUntilMs_) >= 0) {
+      tofStallSuspended_ = false;
+      tofContinuous_ = startTofContinuous();
+      tofLastReadyMs_ = now;
+      lastTofMeasurementMs_ = now - config::sensorTofIntervalMs;
+      ++tofRecoveries_;
+      if (tofContinuous_) {
+        lastError_ = "vl53l1x_stall_recovered";
+      } else {
+        lastError_ = "vl53l1x_stall_recovery_failed";
+        tofStallSuspended_ = true;
+        tofDisabledUntilMs_ = now + config::sensorTofRecoverRetryMs;
+      }
+    }
+  } else if (tofContinuous_ && elapsed(now, lastTofPollMs_, config::sensorTofPollMs)) {
     lastTofPollMs_ = now;
     if (elapsed(now, lastTofMeasurementMs_, config::sensorTofIntervalMs) && tofDataReady()) {
+      tofLastReadyMs_ = now;
       if (readTofMeasurement(now)) lastTofMeasurementMs_ = now;
+    }
+    if (tofContinuous_ && elapsed(now, tofLastReadyMs_, config::sensorTofStallRecoverMs)) {
+      // The sensor is still ACKing I2C but has stopped producing data-ready.
+      // Stop polling for a cooldown so a stuck bus cannot starve the main loop.
+      stopTofContinuous();
+      tofStallSuspended_ = true;
+      tofDisabledUntilMs_ = now + config::sensorTofRecoverCooldownMs;
+      ++tofRecoveries_;
+      lastError_ = "vl53l1x_stall_suspended";
     }
   }
 }
@@ -533,6 +564,8 @@ String SensorController::statusJson(uint32_t now, const SensorExternalState& ext
       ",\"tof_error_rate_per_min\":" + tofErrorRatePerMin(now) +
       ",\"tof_consecutive_errors\":" + tofConsecutiveErrors_ +
       ",\"tof_last_success_ms\":" + tofLastSuccessMs_ +
+      ",\"tof_recoveries\":" + tofRecoveries_ +
+      ",\"tof_stall_suspended\":" + (tofStallSuspended_ ? "true" : "false") +
       ",\"tof_responsive\":" + (tofResponsive_ ? "true" : "false") + "}" +
       ",\"hc_sr04\":{\"configured\":true,\"received\":" + (hcReceived_ ? "true" : "false") +
       ",\"valid\":" + (hcValid ? "true" : "false") +

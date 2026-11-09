@@ -233,18 +233,28 @@ HC fallback points; the 3D map is therefore HC-based, not ToF-based.
   18 frames. `tools/mapping/ml/train.py` trains a small 1D CNN and exports
   `model.tflite`/`model_data.h`; training itself is pending real labeled data.
   On-device inference is **not** integrated yet and must run only when parked.
+- `0.6.1-tof-watchdog` is built (837856 bytes, SHA-256
+  `dc9f968e67b840dd70b4c79c16844e85df87c64b6cedf0d2f185f7cfa9dcf285`) but
+  **not OTA-installed yet**. It adds `Wire.setTimeOut(50)`, suspends ToF polling
+  after 3 s without data-ready, retries after 5 s, and retries every 10 s on
+  failure. Status exposes `tof_recoveries` and `tof_stall_suspended`.
+  Evidence: `analysis/platformio/build-20261109T151241Z/`.
+- A later validation scan from a released-stepper start left the board web
+  server unresponsive (ping intermittent, HTTP timeout) after 2/30 points. This
+  needs a power cycle before the 0.6.1 OTA. The successful 0.6.0 coarse scan
+  remains valid; no new scan is claimed from the failed run.
+- The PC dashboard now loads `/api/mapping/scans` independently of ESP32 health,
+  so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** collect the HLK dataset and train the TinyML model.
-The scan power path is now workable with software timing; ToF is at-rest only,
-so the HC map is the current geometry. Next: (1) collect labeled HLK windows
-(empty/human/non-human; later walking/sitting/standing/lying), (2) train a small
-1D CNN/MLP on the PC, (3) quantize/export and integrate it on the ESP32-S3,
-(4) run a fine 5°/25 µs scan if time allows, and (5) verify the 30–75 cm buzzer
-ramp and scan/motion mute. No ToF point cloud or deep-learning result is claimed
-yet.
+**Current next action:** power cycle the 9V jack (unplug, wait 5 s, replug; do
+not use USB + jack) to recover the unresponsive board, then OTA
+`0.6.1-tof-watchdog` and verify `/api/status` plus the ToF watchdog fields.
+Do not run another scan on `0.6.0`; after 0.6.1 is verified, collect the labeled
+HLK dataset and train the TinyML model. The 0.6.0 coarse scan remains the
+current 3D map; no new scan or deep-learning result is claimed yet.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.

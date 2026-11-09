@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.6.0-software-power";
+constexpr char version[] = "0.6.1-tof-watchdog";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -55,6 +55,9 @@ constexpr uint32_t sensorTofIntervalMs = 100;
 constexpr uint32_t sensorTofPollMs = 10;
 constexpr uint32_t sensorTofBootTimeoutMs = 150;
 constexpr uint32_t sensorTofMaxRangeMm = 4000;
+constexpr uint32_t sensorTofStallRecoverMs = 3000;
+constexpr uint32_t sensorTofRecoverCooldownMs = 5000;
+constexpr uint32_t sensorTofRecoverRetryMs = 10000;
 constexpr uint32_t sensorStaleMs = 1500;
 constexpr uint32_t sensorI2cHz = 100000;
 constexpr uint32_t wifiRetryMs = 15000;

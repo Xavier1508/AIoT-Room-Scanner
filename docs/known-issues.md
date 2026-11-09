@@ -85,6 +85,14 @@ servo holding PWM. The scan pipeline falls back to HC points, so the current 3D
 map is HC-based; no ToF point cloud is claimed. A separate servo supply or
 shielding would be required for ToF during motion.
 
+**Web-server hang after a failed scan:** after a validation scan started from a
+released stepper and captured 2/30 points, the board's Wi-Fi stayed visible to
+ping but HTTP `/api/status` timed out repeatedly. The board did not report a
+brownout before the hang. `0.6.1-tof-watchdog` is built but not OTA-installed;
+it adds a 50 ms I2C timeout, suspends ToF polling after 3 s without data-ready,
+retries after 5 s, and retries every 10 s on failure. A power cycle is required
+to recover the current board before the OTA. Do not run another scan on 0.6.0.
+
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional
 INT14/XSHUT13. `0.3.2` adds XSHUT reset and interval-limited ToF reads after a
