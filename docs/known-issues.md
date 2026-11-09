@@ -65,6 +65,12 @@ the 5V sensor rail is not adequately powered: HC stale, VL53L1X absent, HLK no
 data. Use the 9V jack for sensor calibration; do not connect USB and jack
 together. The ESP32 web dashboard still auto-starts over Wi-Fi when jack-powered.
 
+**Jack partial attach:** with the 9V jack and USB removed, a `park_servo` attach
+at 800 µs held without immediate brownout; HC and HLK were valid. VL53L1X was
+absent with an empty I2C scan. A later `sensors_stop` timed out and the board
+became unreachable again. The power path remains unstable; this is not proof
+that a full scan is safe. Re-seat ToF wiring and verify stable power first.
+
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional
 INT14/XSHUT13. `0.3.2` adds XSHUT reset and interval-limited ToF reads after a
