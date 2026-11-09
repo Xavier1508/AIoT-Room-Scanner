@@ -143,6 +143,20 @@ def main() -> int:
     history = model.fit(x[train_idx], y[train_idx],
                         validation_data=(x[val_idx], y[val_idx]) if val_idx else None,
                         epochs=args.epochs, batch_size=args.batch, verbose=2)
+    try:
+        from sklearn.metrics import classification_report, confusion_matrix
+    except ImportError:
+        classification_report = confusion_matrix = None
+    val_confusion = []
+    val_report = {}
+    if val_idx and confusion_matrix is not None:
+        val_pred = model.predict(x[val_idx], verbose=0).argmax(axis=1)
+        val_confusion = confusion_matrix(y[val_idx], val_pred,
+                                         labels=list(range(len(classes)))).tolist()
+        val_report = classification_report(y[val_idx], val_pred,
+                                           labels=list(range(len(classes))),
+                                           target_names=classes,
+                                           zero_division=0, output_dict=True)
 
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -176,6 +190,8 @@ def main() -> int:
         "classes": classes,
         "final_accuracy": float(history.history.get("accuracy", [0])[-1]),
         "final_val_accuracy": float(history.history.get("val_accuracy", [0])[-1]) if history.history.get("val_accuracy") else None,
+        "val_confusion_matrix": val_confusion,
+        "val_classification_report": val_report,
         "tflite_bytes": len(tflite),
     }
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")

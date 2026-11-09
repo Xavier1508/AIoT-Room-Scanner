@@ -29,11 +29,22 @@ only after the first model is reliable.
 
 ## 2. Train
 
+Before training, check the dataset quality:
+
 ```powershell
-py -3 tools/mapping/ml/train.py --data research/mapping/ml --window 32 --stride 8 --epochs 30
+py -3 tools/mapping/ml/analyze.py --data research/mapping/ml
 ```
 
-TensorFlow is required on the PC. The script writes:
+A human session should have a meaningful share of frames with
+`moving_energy > 0`; if it is mostly zero, the recording contains long still or
+empty periods.
+
+```powershell
+py -3 tools/mapping/ml/train.py --data research/mapping/ml --window 16 --stride 4 --epochs 30
+```
+
+TensorFlow is required on the PC. The script writes `metrics.json` including
+the validation confusion matrix and classification report, plus:
 
 ```text
 research/mapping/ml/model/
