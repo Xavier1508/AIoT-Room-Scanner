@@ -60,6 +60,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W16 | Lulus parsial - sequential-scan build, attach-only offline | 0.5.0-sequential-scan built with 837088 bytes and SHA-256 `32968459...e41c5d`. It adds sequential scan guard, servo detach between columns, HLK parking-sensor ramp 75→30 cm, scan/motion muting, 2-frame confirmation and HLK 3D overlay. The attach-only `park_servo` test made the board completely offline (no HTTP/ping/USB), confirming the rail collapses before deliberate movement. Full scan remains pending power fix. |
 | W17 | Lulus parsial - 0.5.0 OTA, USB-only power and scan mute | 0.5.0-sequential-scan installed via real LAN OTA and returned IDLE/detached with stepper 0. Status exposed sequential_guard=true and alert min/max 30/75 cm, 150-2000 ms ramp. USB-only power kept web/API online but HC was stale, VL53L1X absent and HLK no data; the 5V sensor rail needs the 9V jack. `scan_mode_start` set alert_muted=true and mute_reason=scan_mode; after stop it returned no_valid_hlk. No servo attach or scan was performed. |
 | W18 | Lulus parsial - jack-powered servo attach, ToF absent, board later offline | With 9V jack and USB removed, `park_servo` attached at 800 µs and held without immediate brownout; HC valid ~288.8 cm, HLK ~267 cm, VL53L1X absent with empty I2C scan. A later `sensors_stop` timed out and the board became unreachable again (ICMP/HTTP false, USB ports empty). Partial attach success does not establish stable power; ToF wiring must be re-seated. |
+| W19 | Lulus parsial - jack-powered servo small movement | After recovery, `park_servo` → `servo_down_25` (800→775) → `servo_up_25` (775→800) → `release_servo` all returned ok with no brownout and reset reason 1. HC ~71.3 cm, HLK ~62 cm, ToF still absent. This establishes small servo movement under jack power; full scan still requires ToF and power stability. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -114,6 +115,7 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/attach-only-offline-20261109T092304Z/`
 - `analysis/device/ota-sequential-050-20261109T094841Z/`
 - `analysis/device/jack-servo-partial-20261109T124803Z/`
+- `analysis/device/jack-servo-motion-20261109T125129Z/`
 - `research/mapping/calibration.json` (PC calibration capture)
 - `analysis/device/usb-conservative-20261105T154820Z/`
 - `analysis/device/usb-confirmed-20261105T154856Z/`

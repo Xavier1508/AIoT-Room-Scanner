@@ -173,6 +173,11 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   timed out and the board became unreachable again. Partial attach success does
   not prove stable power or a working full scan. Evidence:
   `analysis/device/jack-servo-partial-20261109T124803Z/`.
+- After recovery, a controlled jack-powered servo test succeeded:
+  `park_servo` → `servo_down_25` (800→775) → `servo_up_25` (775→800) →
+  `release_servo`. All returned ok, no brownout, reset reason stayed 1; HC
+  ~71.3 cm and HLK ~62 cm. ToF still absent. Evidence:
+  `analysis/device/jack-servo-motion-20261109T125129Z/`.
 - **Brownout blocker:** a small validation (`servo_up_25`) reset the board with
   `reset_reason=9`, `brownout=true`. A later attach-only `park_servo` test made
   the board go completely offline (no HTTP/ping/USB), so the rail collapses even
@@ -183,14 +188,13 @@ Physical servo movement is currently blocked by a measured brownout on attach.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** restore stable jack power and re-seat the VL53L1X
-wiring (VIN 3.3V, GND, SDA 8, SCL 9, XSHUT 13 HIGH). I2C scan is empty, so ToF
-is not merely miscalibrated. After the board is stable and HC/ToF/HLK health is
-OK, capture calibration at 30/50/75/100/150/250 cm. A 9V-jack servo attach at
-800 µs worked briefly, but the board later dropped offline; do not run a full
-scan until power is stable. The PC calibration and sequential scan pipeline are
-ready, but no full scan is claimed. Do not train a deep-learning model until
-repeatable calibrated scans exist.
+**Current next action:** re-seat the VL53L1X wiring (VIN 3.3V, GND, SDA 8,
+SCL 9, XSHUT 13 HIGH) and re-run `sensors_start`; the I2C scan is empty, so ToF
+is not merely miscalibrated. Jack-powered servo attach and small 25 µs movement
+now work without brownout. After HC/ToF/HLK health is OK, capture calibration at
+30/50/75/100/150/250 cm, then test a small sequential scan. The PC calibration
+and sequential scan pipeline are ready, but no full scan is claimed. Do not
+train a deep-learning model until repeatable calibrated scans exist.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -210,7 +214,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **74 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **75 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -228,7 +232,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   61–67 = 0.4.2 build, OTA, post-start health, calibration, brownout and PC
   dashboard screenshots; 68–69 = 0.5.0 sequential-scan build and attach-only
   offline observation; 70–73 = 0.5.0 OTA, USB-only sensor power, scan-mode mute
-  and PC mapping health; 74 = jack-powered partial servo attach/ToF absent.
+  and PC mapping health; 74 = jack-powered partial servo attach/ToF absent;
+  75 = jack-powered servo small movement success.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
