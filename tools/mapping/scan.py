@@ -124,6 +124,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
     samples_path = out_dir / "samples.jsonl"
     started = utc_iso()
     error = None
+    motion_started = False
     try:
         client.ensure_sensors()
         current = client.status()
@@ -132,6 +133,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             raise RuntimeError("Stepper reference is not aligned to 5-degree units; zero it before scanning.")
         client.command("scan_mode_start")
         client.command("park_servo")
+        motion_started = True
         client.command("park_stepper")
         client.move_stepper_to(yaws[0])
         client.servo_to(tilts[0])
@@ -215,11 +217,13 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             progress({"phase": "error", "scan_id": scan_id, "error": error, "points": len(points), "total": total})
         raise
     finally:
-        # Leave the arm held; never auto-release it on a scan error.
+        # Leave the arm held if motion began; never attach the servo on a
+        # preflight failure (a servo attach brownout was observed).
         try:
             client.command("scan_mode_stop")
-            client.command("park_servo")
-            client.command("park_stepper")
+            if motion_started:
+                client.command("park_servo")
+                client.command("park_stepper")
         except Exception:
             pass
 
