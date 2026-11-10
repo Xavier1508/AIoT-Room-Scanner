@@ -104,15 +104,15 @@ validation scan completed 30/30 points and the coarse full scan completed
 stepper during the sweep can brown out again; this is a software timing
 mitigation on the existing 9 V/3 A supply, not a hardware power fix.
 
-**ToF watchdog and near-reflector flag (0.7.3):** ToF is valid at rest but
-currently sees a fixed near object around 10–16 cm; with HC at 111 cm it mostly
-returns `wrap_target_fail`. `0.7.3-tof-obstruction` keeps the 0.6.1
-suspend/recover watchdog, removes the XSHUT hard reset from the main loop, and
-adds `near_reflector`/`near_count`. If ToF is valid <500 mm while HC >1000 mm
-for 10 samples, health becomes `OBSTRUCTED` and the dashboard shows
-`NEAR REFLECTOR`. An 8×8 ROI test produced `wrap_target_fail` and was reverted.
-The room scans use HC fallback (169 HC vs 50 ToF in the dense scan). No ToF
-reliability claim is made until the lens/rack is physically clear.
+**ToF watchdog and near-reflector flag (0.7.3):** `0.7.3-tof-obstruction` keeps
+the 0.6.1 suspend/recover watchdog, removes the XSHUT hard reset from the main
+loop, and adds `near_reflector`/`near_count`. If ToF is valid <500 mm while HC
+>1000 mm for 10 samples, health becomes `OBSTRUCTED` and the dashboard shows
+`NEAR REFLECTOR`. The fixed 10–16 cm return was the protective lens cover;
+after it was removed, ToF reads ~2.4 m with `near_reflector=false` and health
+`OK`. The full scan uses **445 ToF + 27 HC** points. An 8×8 ROI test produced
+`wrap_target_fail` and was reverted. The flag remains as a regression guard if
+the lens/mount is obstructed again.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is
@@ -157,19 +157,25 @@ The **Point Cloud 3D** tab shows two views side by side:
   blocks, dashed distance leaders and a highlighted human box. Drag to pan,
   wheel or the **2D zoom** buttons to zoom; **Reset 2D** restores the view.
 
-`reconstruct.py` removes near-field returns, clusters points in the x/y plane,
-splits a thick wall cluster at its largest along-wall gap, fits oriented
-rectangles and extrudes them from the floor to the observed top. The blocks are
-**estimated** from one fixed viewpoint; hidden sides are inferred.
+`reconstruct.py` removes near-field returns, then extracts continuous
+axis-aligned wall lines first (the dashboard rotation control makes the walls
+horizontal/vertical). This keeps a dense room perimeter from becoming one
+room-sized object. Interior points are clustered in 3D so furniture separates
+from the ceiling; a surface parallel to a wall and just outside it is treated
+as the sloped-ceiling extension and hidden. Sparse or curved scans fall back to
+the original 2D clustering. The blocks are **estimated** from one fixed
+viewpoint; hidden sides are inferred.
 
-**Yaw calibration and map rotation:** the commanded yaw is larger than the
-effective mechanical yaw. The dense scan is viewed at **yaw scale 0.76**
-(user-tuned; effective FOV ±45.6°) and **map rotation 10.7°**, which makes the
-measured right wall vertical and aligns the map with the plan. The **Yaw scale**
-and **Rotasi** inputs re-project points/blocks live; manual labels are remapped
-to the nearest box. The chosen values are kept in browser localStorage and in
-the room metadata when annotations are saved. This is provisional, not a
-measured servo curve.
+**Yaw calibration and map rotation:** the values are per physical placement.
+The full ToF scan `20261110T124935Z` uses **yaw scale 1.00** and **map
+rotation 0.0°**: the measured right wall is at x=2.44 m, the bottom wall at
+y=-1.06 m and the top wall at y=1.50 m, so the scan is already axis-aligned.
+The older `20261109T205833Z` scan used the historical **0.76 / 10.7°** frame
+(effective FOV ±45.6°). The **Yaw scale** and **Rotasi** inputs re-project
+points/blocks live; manual labels are remapped to the nearest box. The chosen
+values are kept in browser localStorage and in the room metadata when
+annotations are saved. These are per-scan adjustments, not a measured servo
+curve.
 
 **3D projection and axes:** the 3D view now uses +X right, +Y up and +Z up,
 matching the 2D plan. The previous projection put +Y downward, which made the
@@ -181,43 +187,40 @@ below the map states the axis convention.
 **Scan direction:** the scan is labelled from **−60° on the chair side** →
 fan → bed/wardrobe → **+60°**, clockwise. The top-down view draws the FOV
 boundaries and `start −60° (kursi)` / `end +60° (kasur/lemari)` labels. The
-commanded sweep is ±60°; the displayed effective FOV is ±45.6° at yaw scale
-0.76.
+commanded sweep is ±60°; at yaw scale 1.00 the displayed effective FOV is
+±60° (the old scan at 0.76 showed ±45.6°).
 
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
 also treated as the table/arm edge that the downward servo sweep hits; this is
 what caused the earlier blocks that appeared to hug the sensor. Below-floor
 returns (`z < -5 cm`) are discarded too. A small thin tall cluster close to the
-scanner is classified `mount` and hidden as a box. At yaw 0.76 the measured map
-shows a wall and the fan; the former table-edge block `#6` is gone.
+scanner is classified `mount` and hidden as a box. The full scan hides 29 mount
+points and 78 sloped-ceiling points.
 
-**Room prior overlay (per scan, optional):** the photos and plan give a
-consistent room model. The plan frame is **sensor at the left wall (0,0),
-+X right, +Y up**:
+**Room prior overlay (per scan, optional):** the prior is stored per scan and
+is not hard-coded. For the full scan `20261110T124935Z` the measured walls are
+bottom `y=-1.06 m`, right `x=2.44 m` and top `y=1.50 m`; the left wall at
+`x=-0.26 m` is assumed because the scanner sits in front of it. The resulting
+outline is **2.70 × 2.56 m = 6.91 m²**, with the bathroom **2.25 m²** and total
+**9.16 m²**. The plan frame is **sensor at (0,0), +X right, +Y up**:
 
-- bedroom rectangle **2.70 × 2.20 m = 5.94 m²** (outline y −1.45…+0.75)
-- bathroom **1.50 × 1.50 m = 2.25 m²** (excluded from the bedroom map)
-- desk niche **≈0.40 m²**
-- total **8.59 m²** (matches the 8.6 m² figure)
-- bed **2.00 × 1.20 × 0.57 m** at bottom-right, long axis along the bottom
-  wall, pillows at the right/top corner
-- wardrobe **0.70 × 0.60 × 2.00 m** at bottom-left, front face ~0.85 m from
-  the rack
-- chair **0.45 × 0.45 × 0.45 m** at top-left; desk niche marker outside the
-  top wall (desk is recessed, not flanking the room)
-- WC door on the **left wall**, exit door on the **right wall**
-- prior wall segments **0.12 × 2.2 × 2.4 m** on the left/right walls, so each
-  door is embedded in a wall instead of floating in front of it
+- measured desk **1.20 × 1.05 × 0.87 m** at ~1.2 m
+- measured bed **2.15 × 0.48 × 0.66 m** along the right wall
+- measured fan **0.57 × 0.37 × 0.53 m** near the scanner
+- prior-only wardrobe **0.70 × 0.60 × 2.00 m** at bottom-left
+- prior-only chair **0.45 × 0.45 × 0.45 m** at top-left
+- WC door on the **left wall** (red), exit door on the **right wall** (yellow)
+- prior wall segment **0.12 × 2.56 × 2.4 m** on the assumed left wall
 - UI colours: fan **purple**, desk **green**, WC door **red**, exit door
   **yellow**
 - sensor rack on the desk edge at **77 cm**, looking right across the room
 
-The prior is drawn as dashed boxes/outline (`bed (prior)`, `wardrobe (prior)`,
-`prior room 2.7×2.2 m`) and can be toggled with **Prior**. It is stored per
-scan in `annotations.json`, not hard-coded in the application, so the sensor
-can be reused in another room with a different prior. Prior boxes are not
-measured data and are excluded from training unless the user confirms them.
+The measured desk/bed/fan boxes are labelled manual labels on measured points;
+the wardrobe/chair/doors have zero measured points and are drawn dashed. The
+prior can be toggled with **Prior**. Prior boxes are not measured data and are
+excluded from training unless the user confirms them. The older
+`20261109T205833Z` scan keeps its historical **0.76 / 10.7°** frame.
 
 **Label readability and distances:** 3D block labels and 2D distance tags
 scale up to 1.6× with zoom and never shrink below their base size. The page
@@ -343,7 +346,7 @@ held-out session.
 - `GET /api/mapping/scan/status`
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
-- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=0.76`
+- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=1.00`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
 - `GET /api/mapping/calibration`

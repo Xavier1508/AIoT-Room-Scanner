@@ -3,12 +3,14 @@
 Updated: 2026-11-10. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
 `0.7.3-tof-obstruction` is installed; it keeps the ±60° room scan and adds
-near-reflector detection. The final dense scan has 247/247 points (219 valid,
-50 ToF + 169 HC). The dashboard renders a full-width top-down 2D map and 3D
-isometric view with yaw 0.76, map rotation 10.7°, a per-scan room prior, custom
-labels, box/point selection and a rule-based human capsule. ToF is electrically
-alive but currently reports a fixed near reflector around 10–16 cm; health is
-`OBSTRUCTED` and scans use HC fallback until the lens/mount is physically clear.
+near-reflector detection. The ToF near reflector was the protective lens cover;
+after it was removed, ToF is valid at ~2.4 m. The full fine scan
+`20261110T124935Z` completed **475/475 points (472 valid, 445 ToF + 27 HC)**.
+The dashboard renders a full-width top-down 2D map and 3D isometric view with
+**yaw 1.00 and map rotation 0.0°** for this scan, wall-first reconstruction,
+a per-scan room prior, custom labels, box/point selection and a rule-based
+human capsule. ToF is now `OK` (`near_reflector=false`); scans use ToF with HC
+fallback.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -43,7 +45,7 @@ alive but currently reports a fixed near reflector around 10–16 cm; health is
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 45 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 46 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -292,12 +294,13 @@ alive but currently reports a fixed near reflector around 10–16 cm; health is
   `analysis/mapping/scan-success-60-20261109T210900Z/`.
 - **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
   top-down grid, clusters them, splits a thick wall cluster at its largest
-  along-wall gap, fits oriented rectangles and extrudes estimated boxes. At
-  yaw 0.76 + map rotation 10.7° the measured right wall is vertical. The plan
-  frame has the sensor on the left wall, wardrobe bottom-left, bed bottom-right,
-  chair/desk top-left, WC door left and exit door right. The table-edge block
-  `#6` is classified `mount` and hidden. The dashboard shows 3D isometric and
-  top-down 2D side by side with Points/Blocks/Both, Jarak and Prior toggles.
+  along-wall gap, fits oriented rectangles and extrudes estimated boxes. For
+  the older 0.7.1 placement, yaw 0.76 + map rotation 10.7° made the measured
+  right wall vertical. The plan frame has the sensor on the left wall, wardrobe
+  bottom-left, bed bottom-right, chair/desk top-left, WC door left and exit door
+  right. The table-edge block `#6` is classified `mount` and hidden. The
+  dashboard shows 3D isometric and top-down 2D side by side with
+  Points/Blocks/Both, Jarak and Prior toggles.
   Screenshot: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`.
 - **3D projection fix:** the old projection put +Y downward (`center + y2`),
   making the 3D view vertically flipped relative to the 2D plan. The projection
@@ -305,23 +308,26 @@ alive but currently reports a fixed near reflector around 10–16 cm; health is
   (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4). **Top 3D** switches to a
   near-top view; the legend states X horizontal, Y vertical plan, Z height.
   The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise.
-- **Yaw calibration + responsive layout:** the commanded yaw is larger than the
-  effective mechanical yaw; the user-tuned default is **yaw scale 0.76**
-  (effective FOV ±45.6°) plus **map rotation 10.7°** to make the measured right
-  wall vertical. At 0.76 the wall panels merge; 0.77–0.80 separates them. The
-  Yaw scale and Rotasi inputs re-project points/blocks live and remap manual
-  labels. The page uses the full desktop width, the map grid is responsive, and
-  2D pan/zoom plus label scaling (1–1.6×) keep numbers readable. This is
-  provisional until a known-target calibration is measured.
-- **Room prior + area:** per-scan prior from photos/measurements:
+- **Yaw calibration + responsive layout:** for the older 0.7.1 placement the
+  commanded yaw was larger than the effective mechanical yaw; the user-tuned
+  default was **yaw scale 0.76** (effective FOV ±45.6°) plus **map rotation
+  10.7°**. The full ToF scan `20261110T124935Z` uses **yaw 1.00 / rotation
+  0.0°** because the sensor mount was realigned and the measured walls are
+  axis-aligned. The Yaw scale and Rotasi inputs re-project points/blocks live
+  and remap manual labels. The page uses the full desktop width, the map grid
+  is responsive, and 2D pan/zoom plus label scaling (1–1.6×) keep numbers
+  readable. This remains adjustable per scan, not a measured servo curve.
+- **Room prior + area:** per-scan prior. The older 0.7.1 prior was
   2.70×2.20 m bedroom = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche
-  0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m at bottom-right (long
-  axis along the bottom wall), wardrobe 0.70×0.60×2.00 m at bottom-left (front
-  face ~0.85 m), chair/desk at top-left, WC door left and exit door right.
-  Prior wall segments 0.12×2.2×2.4 m on the left/right walls embed the doors;
-  UI colours are fan purple, desk green, WC door red, exit door yellow. They
-  are dashed, toggleable, per-scan data, not hard-coded, and excluded from
-  training until confirmed.
+  0.40 m², total 8.59 m², with bed 2.00×1.20×0.57 m and wardrobe
+  0.70×0.60×2.00 m. The full ToF scan `20261110T124935Z` realigns the outline to
+  the measured walls: **2.70×2.56 m = 6.91 m²**, total **9.16 m²** with the
+  bathroom; measured desk 1.20×1.05×0.87 m, bed 2.15×0.48×0.66 m and fan
+  0.57×0.37×0.53 m; wardrobe 0.70×0.60×2.00 m, chair 0.45×0.45×0.45 m and the
+  two doors remain prior-only. Prior wall segments embed the doors; UI colours
+  are fan purple, desk green, WC door red, exit door yellow. They are dashed,
+  toggleable, per-scan data, not hard-coded, and excluded from training until
+  confirmed.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously
@@ -351,33 +357,34 @@ alive but currently reports a fixed near reflector around 10–16 cm; health is
   and `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`.
 - A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
   servo retry now checks the observed target and retries an expired nudge only
-  when it did not move. The 10°/25 µs scan then completed 247/247.
-- ToF currently reports a fixed near reflector around 10–16 cm while HC sees
-  ~111 cm; `0.7.3-tof-obstruction` flags `OBSTRUCTED`/`near_reflector` and the
-  scan uses HC fallback. This is an optical/mount obstruction, not a 50 cm or
-  4 m range limit; remove lens film and move the sensor forward before ToF can
-  be used for mapping. Evidence:
-  `analysis/device/tof-near-reflector-20261110T115547Z/`.
-  No ToF reliability claim is made; hardware/power investigation is deferred.
+  when it did not move. The 10°/25 µs scan then completed 247/247. The final
+  5°/25 µs scan `20261110T124935Z` completed **475/475 (472 valid, 445 ToF +
+  27 HC)** in 16 min 11 s.
+- **ToF near reflector resolved (2026-11-10):** the fixed 10–16 cm return was
+  the protective lens cover. After removing it, live status is HC 241.7 cm /
+  ToF 246.5 cm, `range_valid`, `near_reflector=false`, health `OK`. Calibration
+  at 2.4 m: `hc_offset_mm=-5.0`, `tof_offset_mm=-23.5`, both valid rate 1.0.
+  The 8×8 ROI experiment (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was
+  reverted. Evidence:
+  `analysis/device/tof-near-reflector-20261110T115547Z/` and
+  `research/mapping/calibration.json`.
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the software-only visualization/labeling layer is
-complete: yaw-calibrated room scan, per-scan room prior, straight block panels,
-occluded sectors, distance leaders, numbered block table, custom labels,
-box/point selection, manual box creation, 2D pan/zoom, full-width layout,
-rule-based human capsule and the AI/Presence panel. Remaining work:
-confirm the **yaw scale 0.76** against a known target; confirm the prior
-bed/wardrobe placement; clear the **ToF near reflector** (remove lens film,
-move the sensor forward of the rack lip), verify `near_reflector=false`, then
-recalibrate `tofOffsetMm` against HC and run a fine 5°/25 µs scan for more
-points. For DL, use the exported 3D point/object labels
-(`ml/pointcloud`) as the first 3D-object dataset; the HLK
-`empty`/`human`/`non-human` time-series model remains a separate later task.
-Only deploy DL if it beats the rule on a true held-out session.
+**Current next action:** the full ToF scan and the software visualization layer
+are complete: 475/475 points, wall-first reconstruction (3 measured walls),
+measured bed/desk/fan boxes, per-scan room prior, custom labels, box/point
+selection, 2D pan/zoom, rule-based human capsule and the AI/Presence panel.
+Remaining work: confirm the **yaw 1.00 / rotation 0.0°** alignment for this
+physical placement against a known target; confirm the bed/desk/fan labels and
+the prior wardrobe/chair positions; add point-level labels for segmentation if
+needed. For DL, use the exported 3D point/object labels
+(`analysis/mapping/ml-export-20261110T124935Z`) as the first 3D-object dataset;
+the HLK `empty`/`human`/`non-human` time-series model remains a separate later
+task. Only deploy DL if it beats the rule on a true held-out session.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -397,7 +404,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **94 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **98 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -430,7 +437,9 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   91 = room prior, selection/labels and 3D object export;
   92 = 3D projection flip fix, map rotation and plan-aligned prior;
   93 = wall/door intersection, colours, axes and scan direction;
-  94 = ToF near-reflector diagnosis and 0.7.3 obstruction firmware.
+  94 = ToF near-reflector diagnosis and 0.7.3 obstruction firmware;
+  95 = full ToF scan reconstruction summary; 96 = final dashboard screenshot;
+  97 = 3D object export table; 98 = 3D object export manifest.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

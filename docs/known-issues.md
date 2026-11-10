@@ -94,19 +94,19 @@ I2C timeout, ToF stall suspension/recovery, and stepper release after the scan.
 Validation 30/30 and coarse 110/110 scans then stayed responsive with no new
 brownout. Keep this as a historical failure; do not run 0.6.0 scans.
 
-**ToF fixed near reflector (2026-11-10):** live sampling showed HC 111 cm while
-ToF mostly returned `wrap_target_fail` with occasional valid 13–16 cm; with a
-hand close, HC 13–22 cm and ToF 19–31 cm. The sensor is electrically alive
-(I2C 0x29, init, continuous), but its optical path sees a fixed near object at
-about 10–16 cm. This is not a 50 cm/4 m range configuration limit. An 8×8
-centered ROI (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
-`0.7.3-tof-obstruction` adds `near_reflector`/`near_count` and reports
-`health.vl53l1x=OBSTRUCTED` when ToF is valid <500 mm while HC >1000 mm for 10
-samples. Likely causes: protective film/tape on the lens, rack/desk lip in
-front of the lens, or a recessed mount. Remove the film and move the sensor
-forward until the lens is flush/proud; then recalibrate `tofOffsetMm` against
-HC. Do not use ToF for mapping while `near_reflector` is true; HC fallback is
-used.
+**ToF fixed near reflector — resolved (2026-11-10):** live sampling showed HC
+111 cm while ToF mostly returned `wrap_target_fail` with occasional valid
+13–16 cm; with a hand close, HC 13–22 cm and ToF 19–31 cm. The sensor was
+electrically alive (I2C 0x29, init, continuous), but its optical path saw a
+fixed near object at about 10–16 cm. This was not a 50 cm/4 m range limit. An
+8×8 centered ROI (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was
+reverted. `0.7.3-tof-obstruction` adds `near_reflector`/`near_count` and
+reports `health.vl53l1x=OBSTRUCTED` when ToF is valid <500 mm while HC >1000 mm
+for 10 samples. The cause was the protective lens cover; after removing it,
+live status is HC 241.7 cm / ToF 246.5 cm, `range_valid`, `near_reflector=false`,
+health `OK`. Calibration at 2.4 m: `hc_offset_mm=-5.0`, `tof_offset_mm=-23.5`.
+The full scan `20261110T124935Z` used 445 ToF + 27 HC points. Keep the flag as
+a regression guard; if `near_reflector` returns, check the lens cover/mount.
 
 **0.7.0 ToF hard-reset hang:** `0.7.0-scan60` added an XSHUT hard reset to
 the ToF watchdog. When the ToF was truly faulted, the reset blocked the main
@@ -135,46 +135,48 @@ still sits slightly inside the 2.7 m room rectangle; the wall prior fills the
 gap so the door and wall touch. The fan is purple, the desk green.
 
 **Scan direction:** the commanded sweep is labelled −60° (chair side) → fan →
-bed/wardrobe → +60°, clockwise. The effective FOV at yaw 0.76 is ±45.6°; the
-top-down view draws the start/end labels and the clockwise note.
+bed/wardrobe → +60°, clockwise. The older 0.7.1 scan at yaw 0.76 showed an
+effective FOV of ±45.6°; the full ToF scan at yaw 1.00 shows ±60°. The top-down
+view draws the start/end labels and the clockwise note.
 
 **Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
 one fixed viewpoint. Returns <40 cm are removed; low table/mount returns below
 the sensor plane inside 75 cm and below-floor returns are also removed. A small
-thin tall cluster close to the scanner is classified `mount` and hidden. Points
-are clustered, a thick wall cluster is split at its largest along-wall gap,
-rectangles are fitted and extruded to the observed top. Hidden sides are
-inferred; it is not a full mesh. At yaw scale 0.76 the measured dense map shows
-a wall and the fan; the former table-edge block `#6` is hidden. The wall block
-is 3.06 m long because it includes the corner/side surface; the intended room
-rectangle is 2.70×2.20 m. Wall display thickness uses the robust 25–75% spread
-while `width_observed_m` keeps the full HC beam spread.
+thin tall cluster close to the scanner is classified `mount` and hidden. For
+dense axis-aligned scans, continuous wall lines are extracted first and interior
+points are clustered in 3D; a surface parallel to a wall is treated as the
+sloped-ceiling extension and hidden. Sparse or curved scans fall back to the
+original 2D clustering. Hidden sides are inferred; it is not a full mesh. The
+full ToF scan shows three measured walls (1.96/2.85/1.64 m), measured
+desk/bed/fan boxes, 78 ceiling points hidden and 29 mount points. Wall display
+thickness uses the robust 25–75% spread while `width_observed_m` keeps the full
+observed spread.
 
-**Room prior is an estimate, not measured data:** the prior room is
+**Room prior is an estimate, not measured data:** the older 0.7.1 prior was
 2.70×2.20 m (5.94 m²), bathroom 1.50×1.50 m (2.25 m²), desk niche ~0.40 m²,
-total 8.59 m². The plan frame is sensor at the left wall, +X right, +Y up.
-Prior bed 2.00×1.20×0.57 m is bottom-right with its long axis along the bottom
-wall; wardrobe 0.70×0.60×2.00 m is bottom-left (front ~0.85 m); chair/desk are
-top-left; WC door is left, exit door right. They are dashed and toggleable,
-based on photos/user measurements and stored per scan, not hard-coded. Do not
-treat prior boxes as measured evidence or include them in training until
-confirmed. The measured wall/wardrobe block is not the 70 cm wardrobe; the
-actual wardrobe is the bottom-left prior.
+total 8.59 m². The full ToF scan `20261110T124935Z` realigns the outline to the
+measured walls: **2.70×2.56 m = 6.91 m²**, total **9.16 m²** with the bathroom.
+Measured desk/bed/fan boxes are labelled manual boxes; wardrobe 0.70×0.60×2.00 m,
+chair 0.45×0.45×0.45 m, the left wall and both doors remain prior-only. They are
+dashed and toggleable, based on photos/user measurements and stored per scan,
+not hard-coded. Do not treat prior boxes as measured evidence or include them in
+training until confirmed.
 
-**Yaw scale is provisional:** the commanded yaw is larger than the effective
-mechanical yaw. The user-tuned default is **0.76** plus **map rotation 10.7°**
-to make the measured right wall vertical; effective FOV is about ±45.6°, not
-±60°. At 0.76 the wall panels merge; 0.77–0.80 separates them. The Yaw scale and
-Rotasi inputs re-project points/blocks live, and manual labels are remapped to
-the nearest box. Confirm the values against a known target before treating the
-map as calibrated.
+**Yaw scale is per-scan, not a fixed calibration:** for the older 0.7.1
+placement the commanded yaw was larger than the effective mechanical yaw; the
+user-tuned value was **0.76** plus **map rotation 10.7°**, effective FOV about
+±45.6°. The full ToF scan `20261110T124935Z` uses **yaw 1.00 / rotation 0.0°**
+because the sensor mount was realigned and the measured walls are axis-aligned;
+its displayed FOV is ±60°. The Yaw scale and Rotasi inputs re-project
+points/blocks live, and manual labels are remapped to the nearest box. Confirm
+the values against a known target before treating the map as calibrated.
 
-**Bed and wardrobe:** the tall right-side measured block is not the 70 cm
-wardrobe; it is the right wall/corner. The actual wardrobe is the bottom-left
-prior (front ~0.85 m), and the bed is the bottom-right prior with its long axis
-along the bottom wall. Confirm the prior placement visually before labelling
-them as measured. A new ToF/fine scan is needed for measured points on the low
-bed and the bottom-left wardrobe.
+**Bed and wardrobe:** in the full ToF scan the measured bed is the low 2.15 m
+box along the right wall; the measured desk is the 1.20×1.05 m box and the fan
+is the 0.57×0.37 m box near the scanner. The wardrobe 0.70×0.60×2.00 m and
+chair 0.45×0.45×0.45 m remain prior-only and are not measured. Confirm the
+desk/bed/fan labels visually before using them as ground truth; prior boxes are
+excluded from training.
 
 **Manual annotations are per scan:** labels/hide/merge, point labels, label
 catalog, manual/prior boxes and the room outline are stored in

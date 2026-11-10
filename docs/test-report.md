@@ -25,9 +25,10 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**45 Python tests** passed for image headers, local-address validation,
+**46 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
-generation, scan config bounds and OpenAPI contract consistency.
+generation, scan config bounds, wall-first reconstruction and OpenAPI contract
+consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
 These do not validate electrical wiring or physical hardware.
 
@@ -83,6 +84,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W38 | Lulus UI/reconstruction - plan orientation, 3D flip fix and map rotation | The 3D projection sign was corrected (`center - y2`), so +X is right, +Y up and +Z up, matching the 2D plan. Map rotation **10.7°** makes the measured right wall vertical. Priors were re-authored to the user plan: sensor left wall, wardrobe bottom-left, bed bottom-right (2.0 m along bottom wall), chair/desk top-left, WC door left, exit door right; room 2.70×2.20 m, bathroom 1.50×1.50 m, niche 0.40 m², total 8.59 m². Prior distances: wardrobe 0.85 m, bed 0.74 m, chair 0.36 m, desk 0.76 m. Tests increased to 45 and passed. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`. |
 | W39 | Lulus UI - wall/door intersection, colours, axes and scan direction | Added prior wall segments 0.12×2.2×2.4 m on left/right walls so the WC door (left, red) and exit door (right, yellow) are embedded in walls instead of floating; measured right wall touches the right wall prior. Fan is purple, desk green. The 3D projection is +X right, +Y up, +Z up; **Top 3D** gives a near-top view and the legend states X horizontal, Y vertical plan, Z height. The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise. Tests 45 pass. Screenshots: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`, `analysis/mapping/dashboard-20261110Tpresence/top3d-axis.png`. |
 | W40 | Lulus diagnosis - ToF fixed near reflector, ROI revert and 0.7.3 obstruction flag | `0.7.2-tof-roi8` (8×8 centered ROI) produced `wrap_target_fail` and no valid far readings, so ROI reduction was reverted. `0.7.3-tof-obstruction` adds near-reflector detection: ToF valid <500 mm while HC >1000 mm for 10 samples sets `near_reflector=true` and `health.vl53l1x=OBSTRUCTED`. Live sample: HC 111 cm, ToF mostly `wrap_target_fail` with occasional valid 13–16 cm; with hand close, HC 13–22 cm and ToF 19–31 cm. This is a fixed optical return at ~10–16 cm, not a 50 cm/4 m range limit; likely lens film/rack lip/recessed mount. Tests: 87 C++ + 45 Python pass. Evidence: `analysis/device/tof-near-reflector-20261110T115547Z/`. |
+| W41 | Lulus scan/reconstruction - full 5°/25 µs ToF scan and wall-first map | After removing the protective lens cover, ToF is `range_valid` at ~2.4 m with `near_reflector=false`; calibration at 241.7 cm gave `hc_offset_mm=-5.0`, `tof_offset_mm=-23.5`. Full scan `20261110T124935Z` completed **475/475 (472 valid, 445 ToF + 27 HC)** in 16 min 11 s, yaw ±60°, tilt 500–950 µs. The new physical placement is axis-aligned: **yaw 1.00, map rotation 0.0°** (the old 0.76/10.7° was for the previous mount). `reconstruct.py` now extracts continuous axis-aligned walls first, clusters interior objects in 3D, hides the sloped-ceiling extension, and falls back to the old 2D clustering for sparse/curved scans. Result: 3 measured walls (bottom 1.96 m, right 2.85 m, top 1.64 m) plus measured desk (1.20×1.05×0.87 m), bed (2.15×0.48×0.66 m) and fan (0.57×0.37×0.53 m); 78 ceiling points hidden; 29 mount points. The prior outline was realigned to the measured walls (−0.26..2.44 × −1.06..1.50 m = 2.70×2.56 m, 6.91 m²; total 9.16 m² with bathroom). Tests: 87 C++ + 46 Python pass. Screenshot: `analysis/mapping/dashboard-20261110T124935Z/dashboard-2d3d.png`; summary: `reconstruction-summary.json`; export: `analysis/mapping/ml-export-20261110T124935Z/`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -169,7 +171,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
-Research CLI verified 94 stored evidence artifacts with zero integrity failures.
+Research CLI verified 98 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

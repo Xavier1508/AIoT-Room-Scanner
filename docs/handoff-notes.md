@@ -1,8 +1,10 @@
 # Handoff notes — AIoT ESP32-S3 room scanner
 
-Updated: 2026-11-09. This note records the current design, measured/user-reported
-state, and the next safe steps. It is not a claim of physical measurements that
-were not taken.
+Updated: 2026-11-09. Historical snapshot: the current firmware/scan state is
+`0.7.3-tof-obstruction` with the full ToF scan `20261110T124935Z`; see
+[project-state.md](project-state.md) for current numbers. This note records the
+earlier design, measured/user-reported state, and the next safe steps. It is not
+a claim of physical measurements that were not taken.
 
 ## Project shape
 
