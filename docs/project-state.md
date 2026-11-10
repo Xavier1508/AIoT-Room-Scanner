@@ -307,8 +307,9 @@ scans use HC fallback and the watchdog keeps the board responsive.
 - **Room prior + area:** per-scan prior from photos/measurements:
   2.70×2.20 m bedroom = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche
   0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m and wardrobe
-  0.70×0.60×2.00 m are dashed and toggleable. They are per-scan data, not
-  hard-coded, and are excluded from training until confirmed.
+  0.70×0.60×2.00 m (near the sensor/right, front face ~0.85 m) are dashed and
+  toggleable. They are per-scan data, not hard-coded, and are excluded from
+  training until confirmed.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously

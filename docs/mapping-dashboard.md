@@ -185,7 +185,8 @@ consistent room model:
 - desk niche **≈0.40 m²**
 - total **8.59 m²** (matches the 8.6 m² figure)
 - bed **2.00 × 1.20 × 0.57 m** against the back wall
-- wardrobe **0.70 × 0.60 × 2.00 m** at the right end of the back wall
+- wardrobe **0.70 × 0.60 × 2.00 m** near the sensor/right side, front face
+  about **0.85 m** from the rack (consistent with the 75–80 cm measurement)
 - sensor rack on the desk edge at **77 cm**, looking toward the bed/exit door
 
 The prior is drawn as dashed boxes/outline (`bed (prior)`, `wardrobe (prior)`,

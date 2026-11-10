@@ -136,8 +136,9 @@ manual labels are remapped to the nearest box. Confirm the scale against a
 known target before treating the map as calibrated.
 
 **Bed and wardrobe:** the tall right-side measured block is not the 70 cm
-wardrobe; it is the back wall/corner. The actual wardrobe and the bed are
-represented by prior boxes. Confirm the prior placement visually before
+wardrobe; it is the back wall/corner. The actual wardrobe is near the
+sensor/right side (prior front face ~0.85 m), and the bed is represented by a
+prior box against the back wall. Confirm the prior placement visually before
 labelling them as measured. A new ToF/fine scan is needed for measured points
 on the low bed and the near-sensor wardrobe.
 
