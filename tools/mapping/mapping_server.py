@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from calibrate import capture
 from common import CALIBRATION, RESEARCH, ROOT, SCANS, read_json, utc_iso, utc_stamp, write_json
+from dataset_export import export_run
 from esp_client import EspClient
 from presence import PresenceTracker
 from reconstruct import reconstruct_points
@@ -281,9 +282,24 @@ def _presence_from_status(status):
                 "moving_distance_cm", "stationary_distance_cm"):
         if hlk.get(key) is None and last.get(key) is not None:
             hlk[key] = last[key]
+    tof = sensors.get("vl53l1x") or {}
+    hc = sensors.get("hc_sr04") or {}
+    ranges = []
+    for sensor in (tof, hc):
+        value = sensor.get("distance_cal_cm")
+        if value is None:
+            value = sensor.get("distance_cm")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if 20.0 <= value <= 600.0:
+            ranges.append(value)
+    max_range_cm = max(ranges) if ranges else None
     scan_mode = bool((status.get("scan") or {}).get("mode"))
     with PRESENCE_LOCK:
-        presence = PRESENCE.update(hlk, scanning=scan_mode)
+        presence = PRESENCE.update(hlk, scanning=scan_mode,
+                                   max_range_cm=max_range_cm)
     return {"presence": presence,
             "hlk_alert": status.get("hlk_alert"),
             "scan_mode": scan_mode,
@@ -476,6 +492,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "status": EspClient().status()})
             if path == "/api/mapping/scans":
                 return self._send(200, {"ok": True, "scans": _list_scans()})
+            if path == "/api/mapping/dataset":
+                index_path = RESEARCH / "dataset" / "index.csv"
+                runs = []
+                if index_path.is_file():
+                    with index_path.open("r", encoding="utf-8", newline="") as handle:
+                        runs = list(csv.DictReader(handle))
+                return self._send(200, {"ok": True, "runs": runs[-100:]})
             if path.startswith("/api/mapping/scans/") and path.endswith("/points"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/points")].strip("/")
                 return self._send(200, {"ok": True, "scan_id": scan_id,
@@ -546,6 +569,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/export"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/export")].strip("/")
+                _scan_directory(scan_id)
+                result = export_run(
+                    scan_id,
+                    clean=bool(body.get("clean", False)),
+                    run_label=str(body.get("run_label", ""))[:120],
+                    notes=str(body.get("notes", ""))[:500],
+                )
+                return self._send(200, result)
+            if path == "/api/mapping/presence/reset":
+                with PRESENCE_LOCK:
+                    PRESENCE.reset()
+                return self._send(200, {"ok": True, "presence": PRESENCE.snapshot()})
             if path == "/api/mapping/scan/start":
                 _start_scan(body)
                 return self._send(202, {"ok": True, "job": _public_job()})

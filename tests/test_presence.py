@@ -66,6 +66,43 @@ class PresenceTrackerTest(unittest.TestCase):
         self.assertEqual(len(snapshot["history"]), 10)
         self.assertEqual(snapshot["history"][-1]["state"], "present")
 
+    def test_beyond_wall_clears_immediately(self):
+        tracker = presence.PresenceTracker(confirm_frames=1, hold_s=6.0)
+        present = tracker.update(positive(distance_cm=120), now=0.0)
+        self.assertEqual(present["state"], "present")
+        gated = tracker.update(positive(distance_cm=356), now=1.0,
+                               max_range_cm=240)
+        self.assertEqual(gated["state"], "empty")
+        self.assertEqual(gated["gate"], "beyond_wall")
+        self.assertEqual(gated["class"], "empty")
+
+    def test_no_target_hold_is_short(self):
+        tracker = presence.PresenceTracker(
+            confirm_frames=1, hold_s=6.0, no_target_hold_s=2.5)
+        tracker.update(positive(), now=0.0)
+        holding = tracker.update(positive(target_state=0, energy=100), now=1.0)
+        self.assertEqual(holding["state"], "holding")
+        expired = tracker.update(positive(target_state=0, energy=100), now=4.0)
+        self.assertEqual(expired["state"], "empty")
+        self.assertEqual(expired["gate"], "no_target")
+
+    def test_distance_unstable_does_not_confirm(self):
+        tracker = presence.PresenceTracker(
+            confirm_frames=1, distance_spread_cm=20.0)
+        tracker.update(positive(distance_cm=120), now=0.0)
+        tracker.update(positive(distance_cm=130), now=1.0)
+        unstable = tracker.update(positive(distance_cm=180), now=2.0)
+        self.assertNotEqual(unstable["state"], "present")
+        self.assertEqual(unstable["gate"], "distance_unstable")
+
+    def test_reset(self):
+        tracker = presence.PresenceTracker(confirm_frames=1)
+        tracker.update(positive(), now=0.0)
+        tracker.reset()
+        snapshot = tracker.snapshot()
+        self.assertEqual(snapshot["state"], "empty")
+        self.assertEqual(snapshot["class"], "empty")
+
 
 if __name__ == "__main__":
     unittest.main()
