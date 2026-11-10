@@ -2,12 +2,15 @@
 
 Updated: 2026-11-10. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-`0.7.1-scan60-safe` supports a ±60° room scan. The final dense scan has
-247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
-top-down 2D map and 3D isometric view with split wall segments, `wall_edge`
-fragments, occluded sectors, distance leaders, a numbered block list, manual
-label/hide/merge annotations and a rule-based human capsule. ToF remains
-unreliable; scans use HC fallback and the watchdog keeps the board responsive.
+`0.7.1-scan60-safe` supports a ±60° commanded room scan. The final dense scan
+has 247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
+full-width top-down 2D map and 3D isometric view with yaw calibration (default
+0.85, effective FOV ±51°), straight block panels, occluded sectors, distance
+leaders, a numbered block list, manual label/hide/merge annotations, 2D
+pan/zoom and a rule-based human capsule. The visible dense map has a wall, a
+manually labelled `wardrobe` and the `fan`; the table-edge block `#6` is
+hidden. ToF remains unreliable; scans use HC fallback and the watchdog keeps
+the board responsive.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -39,7 +42,7 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 42 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 44 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -289,21 +292,30 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 - **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
   top-down grid, clusters them, splits a thick wall cluster at its largest
   along-wall gap, fits oriented rectangles and extrudes estimated boxes. The
-  dense scan produced **6 estimated blocks** (two wall segments, two
-  `wall_edge`, the fan, one small object). The dashboard shows 3D isometric and
-  top-down 2D side by side with Points/Blocks/Both and Jarak toggles.
-  Screenshot: `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`.
+  dense scan with yaw scale 0.85 yields **3 visible blocks**: a wall, a
+  manually labelled `wardrobe` and the `fan`; the table-edge block `#6` is
+  classified `mount` and hidden. The dashboard shows 3D isometric and top-down
+  2D side by side with Points/Blocks/Both and Jarak toggles.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/final-fullwidth-yaw085-v2.png`.
+- **Yaw calibration + responsive layout:** the commanded yaw is larger than the
+  effective mechanical yaw; wall thickness is minimised around **yaw scale
+  0.85** (effective FOV ±51°). The Yaw scale input (0.50–1.00) re-projects
+  points/blocks live, and manual labels are remapped to the nearest box after a
+  scale change. The page uses the full desktop width, the map grid is
+  responsive, and 2D pan/zoom plus label scaling (1–1.6×) keep numbers readable.
+  This is provisional until a known-target yaw calibration is measured.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously
   produced blocks hugging the sensor. The fan at ~0.88 m is retained and
-  manually labelled `fan`.
+  manually labelled `fan`. The bed (~57 cm) is not separable from the
+  mount/table area with this scan; it needs a new ToF/fine scan.
 - **Distance and annotation UI:** each block has `distance_m`/`nearest_m`;
   top-down draws dashed leaders with `#n 2.27 m` tags and the 3D view shows the
   selected block's distance. A numbered block table lists distance, size,
   height, points and auto/manual source. Manual label, hide, merge and reset are
   stored per scan in `annotations.json` and applied by `/reconstruct`.
-  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/room-distance-blocks-v3.png`.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/final-fullwidth-yaw085-v2.png`.
 - **Rule presence + human marker:** `presence.py` requires valid HLK,
   `target_state>0`, `energy>=40`, 30–600 cm and 3 confirmation frames, with a
   6 s hold. The AI/Presence tab shows class, confidence, distance, energy,
@@ -326,12 +338,14 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
 **Current next action:** the software-only visualization layer is complete:
-±60° room scan, split wall segments, occluded sectors, distance leaders,
-numbered block table, manual annotations, rule-based human capsule and the
-AI/Presence panel. Remaining work needs hardware/data: install and verify the
-new ToF, run a fine 5°/25 µs ±60° scan, record a non-human session, train the
-3-class `empty`/`human`/`non-human` model and evaluate it on a true held-out
-session. Only deploy DL if it beats the rule; until then keep the rule-based
+yaw-calibrated room scan, straight block panels, occluded sectors, distance
+leaders, numbered block table, manual annotations, 2D pan/zoom, full-width
+layout, rule-based human capsule and the AI/Presence panel. Remaining work needs
+hardware/data: confirm the **yaw scale** against a known target (0.85 is
+provisional), install and verify the new ToF, run a fine 5°/25 µs ±60° scan to
+recover the bed/wardrobe detail, record a non-human session, train the 3-class
+`empty`/`human`/`non-human` model and evaluate it on a true held-out session.
+Only deploy DL if it beats the rule; until then keep the rule-based
 movement/presence baseline for the demo. The 82.7% binary DL model and its
 TFLite export remain a pipeline baseline, not the primary detector.
 
@@ -353,7 +367,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **89 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **90 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -381,7 +395,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   85 = 0.7.1 scan60-safe OTA; 86 = 60-degree room scans and solid-block viewer;
   87 = software-only wall split/mount guard/distance/annotations/rule presence;
   88 = final room view screenshot with distances and block table;
-  89 = final robust wall-thickness display screenshot.
+  89 = final robust wall-thickness display screenshot;
+  90 = yaw calibration, mount removal, full-width layout and 2D zoom.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

@@ -151,21 +151,37 @@ The **Point Cloud 3D** tab shows two views side by side:
   blocks, light-blue dashed `wall_edge` fragments, green estimated objects,
   magenta HLK presence dot and a green human capsule when presence is confirmed.
 - **Top-down 2D:** the same points/blocks on a floor plan with a 0.5 m grid,
-  sensor origin, ±60° FOV wedge, scale bar, red occluded sectors, numbered
-  blocks, dashed distance leaders and a highlighted human box.
+  sensor origin, effective FOV wedge, scale bar, red occluded sectors, numbered
+  blocks, dashed distance leaders and a highlighted human box. Drag to pan,
+  wheel or the **2D zoom** buttons to zoom; **Reset 2D** restores the view.
 
 `reconstruct.py` removes near-field returns, clusters points in the x/y plane,
 splits a thick wall cluster at its largest along-wall gap, fits oriented
 rectangles and extrudes them from the floor to the observed top. The blocks are
 **estimated** from one fixed viewpoint; hidden sides are inferred.
 
+**Yaw calibration:** the commanded yaw is larger than the effective mechanical
+yaw. The dense scan's wall thickness is minimised around **yaw scale 0.85**, so
+the default is 0.85 (effective FOV ±51°, not ±60°). The **Yaw scale** input
+(0.50–1.00) re-projects points and blocks live; use it to make the wall panels
+straight, then confirm the value against a known target. This is a provisional
+calibration, not a measured servo curve.
+
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
 also treated as the table/arm edge that the downward servo sweep hits; this is
 what caused the earlier blocks that appeared to hug the sensor. Below-floor
-returns (`z < -5 cm`) are discarded too. The dense 0.7.1 scan now yields six
-blocks (two wall segments, two `wall_edge`, the fan, one small object) instead
-of one thick wall plus near-field artefacts.
+returns (`z < -5 cm`) are discarded too. A small thin tall cluster close to the
+scanner is classified `mount` and hidden as a box. With yaw scale 0.85 the
+dense scan yields three visible blocks: a wall, a manually labelled `wardrobe`
+and the `fan`; the table-edge block that was `#6` is gone. The bed (~57 cm) is
+not separable from the mount/table area with this scan and needs a new ToF/fine
+scan.
+
+**Label readability:** 3D block labels and 2D distance tags scale up to 1.6×
+with zoom and never shrink below their base size, so numbers remain readable
+when zoomed out. The page uses the full desktop width; the map grid is
+responsive (two columns on a normal desktop, one on narrow screens).
 
 **Distance annotations:** every block carries `distance_m` (centre) and
 `nearest_m` (closest footprint corner). The top-down view draws a dashed
@@ -186,8 +202,9 @@ the label is automatic or manual. Use the block selectors to:
 
 Annotations are stored per scan in
 `research/mapping/scans/<id>/annotations.json` and are applied by the
-`/reconstruct` endpoint. The fan block is labelled `fan` manually in the
-current dense scan.
+`/reconstruct` endpoint. The current dense scan has manual labels `fan` and
+`wardrobe`; the `wardrobe` label is a best-effort placement of the tall
+right-side block and should be confirmed against the room.
 
 **Human marker:** the **AI / Presence** tab polls the HLK rule at ~1.5 s. When
 the rule confirms a target for 3 frames (valid HLK, `target_state>0`,
@@ -265,7 +282,7 @@ held-out session.
 - `GET /api/mapping/scan/status`
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
-- `GET /api/mapping/scans/{id}/reconstruct`
+- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=0.85`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
 - `GET /api/mapping/calibration`

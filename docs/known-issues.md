@@ -109,20 +109,35 @@ completed 247/247. This is a PC-side mitigation, not a firmware queue fix.
 
 **Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
 one fixed viewpoint. Returns <40 cm are removed; low table/mount returns below
-the sensor plane inside 75 cm and below-floor returns are also removed. Points
+the sensor plane inside 75 cm and below-floor returns are also removed. A small
+thin tall cluster close to the scanner is classified `mount` and hidden. Points
 are clustered, a thick wall cluster is split at its largest along-wall gap,
 rectangles are fitted and extruded to the observed top. Hidden sides are
-inferred; it is not a full mesh. The dense scan now yields two wall segments,
-two `wall_edge`, the fan and one small object. Wall display thickness uses the
-robust 25–75% spread (about 0.25–0.28 m in the dense scan) while
-`width_observed_m` keeps the full HC beam spread (0.52–0.56 m). The right side
-of the room is partly occluded by the mount/table; the red top-down sectors
-mark areas with too few returns.
+inferred; it is not a full mesh. With yaw scale 0.85 the dense scan yields three
+visible blocks: a wall, a manually labelled `wardrobe` and the `fan`; the
+table-edge block `#6` is hidden. Wall display thickness uses the robust 25–75%
+spread (about 0.25–0.29 m) while `width_observed_m` keeps the full HC beam
+spread (0.52–0.61 m). The right side of the room is partly occluded by the
+mount/table; the red top-down sectors mark areas with too few returns.
+
+**Yaw scale is provisional:** the commanded yaw is larger than the effective
+mechanical yaw. Wall thickness is minimised around **yaw scale 0.85**, giving an
+effective FOV of about ±51°, not ±60°. The Yaw scale input (0.50–1.00)
+re-projects points and blocks live, and manual labels are remapped to the
+nearest box. Confirm the scale against a known target before treating the map
+as calibrated; do not claim ±60° geometric coverage until then.
+
+**Bed and wardrobe:** the tall right-side block is manually labelled
+`wardrobe`; this is a best-effort placement and should be confirmed. The bed is
+about 57 cm high (20 cm below the 77 cm mounting height) and is not separable
+from the table/mount area in this scan. A new ToF/fine scan is needed to give it
+its own block. The current `fan` block at ~0.88 m is retained.
 
 **Manual annotations are per scan:** labels/hide/merge are stored in
-`research/mapping/scans/<id>/annotations.json`. If the reconstruction
-parameters change, box ids can change and an old annotation may no longer
-match. Reset annotations after a parameter change. The fan label is manual.
+`research/mapping/scans/<id>/annotations.json`. Box ids change when the yaw
+scale changes; annotations are remapped to the nearest box within 0.8 m, so
+verify them after a large scale change and reset if a hide/merge maps wrongly.
+The current dense scan has manual `fan` and `wardrobe` labels.
 
 **Live human marker is rule-based:** the 3D capsule/top-down highlight appears
 only after 3 confirmed HLK frames with `energy>=40` and 30–600 cm. It is
