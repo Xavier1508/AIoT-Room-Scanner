@@ -234,16 +234,21 @@ function renderPresence() {
     badge('presence-state', '—');
     badge('presence-energy', '—');
   } else {
+    const offlineEmpty = Boolean(state.presenceError) && presence.state === 'empty';
     const confidence = Math.max(0, Math.min(1, Number(presence.confidence) || 0));
-    setText('presence-summary', `${String(presence.class || 'empty').toUpperCase()} · ${Math.round(confidence * 100)}%`);
-    setText('presence-detail', `state ${presence.state} · ${presence.reason} · konfirmasi ${presence.confirm_frames}/${presence.confirm_required} frame · hold ${presence.hold_s}s`);
-    setText('presence-class', String(presence.class || 'empty'));
-    setText('presence-confidence', `${Math.round(confidence * 100)}%`);
+    setText('presence-summary', offlineEmpty
+      ? 'OFFLINE · no live HLK'
+      : `${String(presence.class || 'empty').toUpperCase()} · ${Math.round(confidence * 100)}%`);
+    setText('presence-detail', offlineEmpty
+      ? `Tidak ada data HLK live: ${state.presenceError}`
+      : `state ${presence.state} · ${presence.reason} · konfirmasi ${presence.confirm_frames}/${presence.confirm_required} frame · hold ${presence.hold_s}s`);
+    setText('presence-class', offlineEmpty ? '—' : String(presence.class || 'empty'));
+    setText('presence-confidence', offlineEmpty ? '—' : `${Math.round(confidence * 100)}%`);
     setText('presence-distance', presence.distance_cm != null ? `${Number(presence.distance_cm).toFixed(1)} cm` : '—');
     badge('presence-state', presence.state);
     badge('presence-energy', presence.energy != null ? `energy ${presence.energy}` : 'energy —');
     setText('presence-reason', `Rule: ${presence.rule}. Model: ${presence.model}.`);
-    if (state.presenceError) setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
+    if (state.presenceError && !offlineEmpty) setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
   }
   if (alert.enabled != null) {
     setText('actuator-summary', `${alert.enabled ? 'ON' : 'OFF'} · ${alert.state || 'idle'}`);
