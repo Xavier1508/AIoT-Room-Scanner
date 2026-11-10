@@ -358,9 +358,12 @@ without resizing it, and clicking a block opens the panel on the **Edit** tab.
   the exact box by row.
 - **Edit** contains: add prior, convert an auto box to an editable prior, delete
   a prior, 2D drag mode, step 5/10 cm, X/Y/Z nudge buttons, rotation buttons,
-  numeric X/Y/Z/panjang/lebar/sudut fields and **Simpan prior**. Z is clamped to
-  `>= 0` (no box under the floor); priors are stored per scan in
-  `annotations.json`.
+  P/L/T size buttons, numeric X/Y/Z/panjang/lebar/sudut fields and **Simpan
+  prior**. Z is clamped to `>= 0` (no box under the floor); priors are stored per
+  scan in `annotations.json`. **Hapus** hides an auto box and deletes a
+  prior/manual box (with confirmation). Every save/nudge/resize/export action
+  shows a busy spinner and a success/error toast; static JS/HTML/CSS are served
+  with `charset=utf-8` so UI text is not mojibaked.
 - **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
   and the selected-box panel shows the exact coordinates. The **Skala sumbu**
   checkbox toggles the ticks.

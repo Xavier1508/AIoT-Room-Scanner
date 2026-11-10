@@ -379,7 +379,12 @@ fallback.
   tag in 2D and a white edge loop in 3D. Overlap selection prefers
   non-wall/smaller boxes (door vs wall) and cycles on repeated clicks; the
   sidebar row selects the exact box. Axis ticks (0.5 m 2D, 1 m 3D) and a Skala
-  sumbu toggle were added. **Dataset export:** per-run CSV under
+  sumbu toggle were added. **Prior UX:** the Hapus button hides auto boxes and
+  deletes prior/manual boxes (with confirm); the sidebar has P/P/L/T size
+  buttons plus numeric length/width/Z fields; every save/nudge/resize/export
+  action shows a busy spinner and a success/error toast; static JS/HTML/CSS are
+  served with `charset=utf-8`. Objects 5/6/7 (old measured fan/object boxes)
+  are hidden for the next full rescan. **Dataset export:** per-run CSV under
   `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
   `objects.csv`, `manifest.json/csv`, `annotations.json`, `README.txt` and
   `dataset/index.csv`; points include timestamps, raw sensors, XYZ, point/object/
@@ -425,7 +430,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **102 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **103 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -462,7 +467,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   95 = full ToF scan reconstruction summary; 96 = final dashboard screenshot;
   97 = 3D object export table; 98 = 3D object export manifest;
   99 = block sidebar/prior editor screenshot; 100 = dataset CSV export UI;
-  101 = floating sidebar closed (full map); 102 = floating sidebar open (overlay).
+  101 = floating sidebar closed (full map); 102 = floating sidebar open (overlay);
+  103 = prior size controls and saved toast.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
