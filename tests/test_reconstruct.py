@@ -19,7 +19,8 @@ class Reconstruction(unittest.TestCase):
             rows.append({"x_mm": 2000, "y_mm": index * 100 - 1000, "z_mm": 1500, "range_mm": 2000})
         for index in range(10):
             rows.append({"x_mm": 1000, "y_mm": 0, "z_mm": 300, "range_mm": 1000})
-        result = reconstruct.reconstruct_points(rows, cell_m=0.1, eps_m=0.45, min_points=5)
+        result = reconstruct.reconstruct_points(rows, cell_m=0.1, eps_m=0.45, min_points=5,
+                                                map_rotation_deg=0.0)
         labels = [box["label"] for box in result["boxes"]]
         self.assertIn("wall", labels)
         self.assertIn("object", labels)
@@ -44,7 +45,7 @@ class Reconstruction(unittest.TestCase):
     def test_wall_edge_and_occluded(self):
         rows = [{"x_mm": 2000, "y_mm": index * 100, "z_mm": 1800, "range_mm": 2000}
                 for index in range(10)]
-        result = reconstruct.reconstruct_points(rows)
+        result = reconstruct.reconstruct_points(rows, map_rotation_deg=0.0)
         labels = [box["label"] for box in result["boxes"]]
         self.assertIn("wall_edge", labels)
         self.assertTrue(result["occluded_deg"])
@@ -72,27 +73,48 @@ class Reconstruction(unittest.TestCase):
         self.assertAlmostEqual(box["cx_m"], 1.477, places=2)
         self.assertAlmostEqual(box["cy_m"], 0.260, places=2)
 
+    def test_dense_room_perimeter_keeps_walls_separate(self):
+        rows = []
+        for index in range(21):
+            value = index * 100 - 1000
+            rows.append({"x_mm": 2500, "y_mm": value, "z_mm": 1200, "range_mm": 2500})
+            rows.append({"x_mm": value + 1500, "y_mm": -1000, "z_mm": 1200, "range_mm": 2500})
+            rows.append({"x_mm": value + 1500, "y_mm": 1000, "z_mm": 1200, "range_mm": 2500})
+        for index in range(10):
+            rows.append({"x_mm": 1000, "y_mm": 0, "z_mm": 400, "range_mm": 1000})
+        result = reconstruct.reconstruct_points(
+            rows, eps_m=0.30, min_points=5, map_rotation_deg=0.0)
+        labels = [box["label"] for box in result["boxes"]]
+        self.assertGreaterEqual(labels.count("wall"), 3)
+        self.assertIn("object", labels)
+        self.assertFalse(any(box["label"] == "object"
+                             and box["length_m"] > 2.0 and box["width_m"] > 1.5
+                             for box in result["boxes"]))
+
     def test_annotations_label_hide_merge(self):
         rows = []
         for index in range(20):
             rows.append({"x_mm": 2000, "y_mm": index * 100 - 1000, "z_mm": 1500, "range_mm": 2000})
         for index in range(10):
             rows.append({"x_mm": 1000, "y_mm": 0, "z_mm": 300, "range_mm": 1000})
-        base = reconstruct.reconstruct_points(rows)
+        base = reconstruct.reconstruct_points(rows, map_rotation_deg=0.0)
         wall = next(box for box in base["boxes"] if box["label"] == "wall")
         obj = next(box for box in base["boxes"] if box["label"] == "object")
 
         labelled = reconstruct.reconstruct_points(
-            rows, annotations={"labels": {wall["id"]: "bed"}})
+            rows, map_rotation_deg=0.0,
+            annotations={"labels": {wall["id"]: "bed"}})
         self.assertTrue(any(box["label"] == "bed" and box["label_source"] == "manual"
                             for box in labelled["boxes"]))
 
         hidden = reconstruct.reconstruct_points(
-            rows, annotations={"hidden": [obj["id"]]})
+            rows, map_rotation_deg=0.0,
+            annotations={"hidden": [obj["id"]]})
         self.assertFalse(any(box["id"] == obj["id"] for box in hidden["boxes"]))
 
         merged = reconstruct.reconstruct_points(
-            rows, annotations={"merges": [[wall["id"], obj["id"]]]})
+            rows, map_rotation_deg=0.0,
+            annotations={"merges": [[wall["id"], obj["id"]]]})
         self.assertEqual(len(merged["boxes"]), 1)
         self.assertTrue(merged["boxes"][0]["id"].startswith("merged:"))
         self.assertEqual(merged["boxes"][0]["points"], wall["points"] + obj["points"])

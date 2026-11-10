@@ -26,7 +26,7 @@ def _percentile(values, fraction):
     return values[index]
 
 
-def _cluster_indices(points, eps_m):
+def _cluster_indices(points, eps_m, use_z=False):
     parent = list(range(len(points)))
 
     def find(index):
@@ -43,10 +43,12 @@ def _cluster_indices(points, eps_m):
     eps2 = eps_m * eps_m
     for i in range(len(points)):
         xi, yi = points[i][0], points[i][1]
+        zi = points[i][2] if use_z else 0.0
         for j in range(i + 1, len(points)):
             dx = xi - points[j][0]
             dy = yi - points[j][1]
-            if dx * dx + dy * dy <= eps2:
+            dz = zi - (points[j][2] if use_z else 0.0)
+            if dx * dx + dy * dy + dz * dz <= eps2:
                 union(i, j)
     groups = defaultdict(list)
     for index in range(len(points)):
@@ -148,9 +150,9 @@ def _split_wall_cluster(cluster, min_points, depth=0, max_depth=2):
             _split_wall_cluster(right, min_points, depth + 1, max_depth))
 
 
-def _box_from_cluster(cluster):
+def _box_from_cluster(cluster, force_label=None):
     geometry = _fit_geometry(cluster)
-    label = _classify(geometry)
+    label = force_label or _classify(geometry)
     # HC beam spread makes a wall look 0.5 m thick. Keep the observed width in
     # metadata but draw the wall with the robust 25-75% spread.
     display_width = geometry["width"]
@@ -353,7 +355,109 @@ def apply_annotations(result, annotations):
     return result
 
 
-def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
+def _detect_wall_lines(points, tolerance_m=0.12, min_span_m=0.60,
+                       min_inliers=8, bin_m=0.05, min_bin_count=4):
+    """Find dominant axis-aligned wall lines in the x/y plane.
+
+    The dashboard rotation control is used to make the room walls horizontal
+    or vertical, so wall detection works on x-constant and y-constant peaks.
+    A fixed-viewpoint dense scan otherwise connects the whole room perimeter
+    into one cluster; wall-first extraction keeps those long straight
+    surfaces out of the object clustering so furniture does not become one
+    room-sized box. A peak that passes through the scanner (offset near zero)
+    is the yaw-zero scan ray, not a wall, and is rejected.
+    """
+    if len(points) < min_inliers:
+        return []
+    lines = []
+    for axis in (0, 1):
+        bins = defaultdict(int)
+        for point in points:
+            bins[math.floor(point[axis] / bin_m)] += 1
+        peaks = []
+        current = []
+        for key in sorted(bins):
+            if bins[key] < min_bin_count:
+                if current:
+                    peaks.append(current)
+                    current = []
+                continue
+            if current and key - current[-1] > 1:
+                peaks.append(current)
+                current = []
+            current.append(key)
+        if current:
+            peaks.append(current)
+        candidates = []
+        for peak in peaks:
+            values = [point[axis] for point in points
+                      if peak[0] <= math.floor(point[axis] / bin_m) <= peak[-1]]
+            center = _percentile(values, 0.5)
+            if abs(center) < 0.40:
+                continue
+            inliers = [index for index, point in enumerate(points)
+                       if abs(point[axis] - center) <= tolerance_m]
+            if len(inliers) < min_inliers:
+                continue
+            if axis == 0:
+                ux, uy, nx, ny = 0.0, 1.0, 1.0, 0.0
+            else:
+                ux, uy, nx, ny = 1.0, 0.0, 0.0, 1.0
+            ordered = sorted((ux * points[index][0] + uy * points[index][1],
+                              index) for index in inliers)
+            runs = []
+            current_run = [ordered[0]]
+            for previous, item in zip(ordered, ordered[1:]):
+                if item[0] - previous[0] > 0.35:
+                    runs.append(current_run)
+                    current_run = []
+                current_run.append(item)
+            runs.append(current_run)
+            runs.sort(key=lambda run: run[-1][0] - run[0][0], reverse=True)
+            longest = runs[0]
+            total_span = ordered[-1][0] - ordered[0][0]
+            run_span = longest[-1][0] - longest[0][0]
+            # A real wall is one continuous surface. Scattered furniture or a
+            # sloped ceiling produces short fragments with large gaps.
+            if run_span < min_span_m or run_span < 0.75 * total_span:
+                continue
+            candidates.append({"ux": ux, "uy": uy, "nx": nx, "ny": ny,
+                               "offset": center,
+                               "inliers": [index for _, index in longest]})
+        candidates.sort(key=lambda line: -len(line["inliers"]))
+        kept = []
+        for line in candidates:
+            if any(abs(line["offset"] - other["offset"]) < 0.25 for other in kept):
+                continue
+            kept.append(line)
+        lines.extend(kept)
+    return lines
+
+
+def _wall_line_segments(indices, points, ux, uy, gap_m=0.35, min_points=4):
+    """Split one wall line into segments at real along-wall gaps."""
+    if not indices:
+        return []
+    ordered = sorted((ux * points[index][0] + uy * points[index][1], index)
+                     for index in indices)
+    segments = []
+    current = [ordered[0][1]]
+    for (previous_u, _), (current_u, index) in zip(ordered, ordered[1:]):
+        if current_u - previous_u > gap_m:
+            segments.append(current)
+            current = []
+        current.append(index)
+    segments.append(current)
+    return [segment for segment in segments if len(segment) >= min_points]
+
+
+def _line_span(line, points):
+    us = [line["ux"] * points[index][0] + line["uy"] * points[index][1]
+          for index in line["inliers"]]
+    return max(us) - min(us)
+
+
+def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                        near_field_m=0.40, mount_guard_m=0.75,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
                        yaw_scale=0.76, map_rotation_deg=10.7,
@@ -420,7 +524,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
 
     if not points:
         result = {"cell_m": cell_m, "eps_m": eps_m, "point_count": 0,
-                  "mount_points": mount_points, "mount_boxes": 0,
+                  "mount_points": mount_points, "ceiling_points": 0,
+                  "mount_boxes": 0,
                   "boxes": [], "grid": [],
                   "occluded_deg": [[-effective_fov_deg, effective_fov_deg]],
                   "fov_limit_deg": effective_fov_deg,
@@ -436,14 +541,72 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
         cells[(math.floor(point[0] / cell_m), math.floor(point[1] / cell_m))].append(point)
 
     boxes = []
-    for indices in _cluster_indices(points, eps_m):
-        if len(indices) < min_points:
-            continue
-        cluster = [points[index] for index in indices]
-        for part in _split_wall_cluster(cluster, min_points):
-            if len(part) < min_points:
+    wall_lines = _detect_wall_lines(points)
+    long_walls = [line for line in wall_lines
+                  if _line_span(line, points) >= 1.50]
+    wall_indices = set()
+    ceiling_points = 0
+    if long_walls:
+        for line in long_walls:
+            wall_indices.update(line["inliers"])
+        for line in long_walls:
+            for segment in _wall_line_segments(line["inliers"], points,
+                                               line["ux"], line["uy"]):
+                cluster = [points[index] for index in segment]
+                geometry = _fit_geometry(cluster)
+                label = "wall" if geometry["length"] >= 1.50 else "wall_edge"
+                boxes.append(_box_from_cluster(cluster, force_label=label))
+        wall_boxes = [box for box in boxes if box["label"] in WALL_LABELS]
+        interior = [point for index, point in enumerate(points)
+                    if index not in wall_indices]
+        for indices in _cluster_indices(interior, eps_m, use_z=True):
+            if len(indices) < min_points:
                 continue
-            boxes.append(_box_from_cluster(part))
+            cluster = [interior[index] for index in indices]
+            geometry = _fit_geometry(cluster)
+            # A surface parallel to a wall and just outside it is the sloped
+            # ceiling above that wall. Extend the wall instead of drawing a
+            # second, thicker wall.
+            extension = None
+            for line in long_walls:
+                distance = abs(line["nx"] * geometry["cx"]
+                               + line["ny"] * geometry["cy"] - line["offset"])
+                wall_angle = math.atan2(line["uy"], line["ux"])
+                difference = abs((geometry["angle"] - wall_angle + math.pi / 2)
+                                 % math.pi - math.pi / 2)
+                if distance <= 0.30 and difference <= math.radians(20):
+                    extension = line
+                    break
+            if extension is not None:
+                best_box = None
+                best_distance = float("inf")
+                for box in wall_boxes:
+                    distance = abs(extension["nx"] * box["cx_m"]
+                                   + extension["ny"] * box["cy_m"]
+                                   - extension["offset"])
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_box = box
+                if best_box is not None:
+                    best_box["z_top_m"] = round(max(float(best_box["z_top_m"]),
+                                                    geometry["z_top"]), 3)
+                ceiling_points += len(cluster)
+                continue
+            for part in _split_wall_cluster(cluster, min_points):
+                if len(part) < min_points:
+                    continue
+                boxes.append(_box_from_cluster(part))
+    else:
+        # Sparse or non-axis-aligned scans keep the original 2D clustering.
+        fallback_eps = max(eps_m, 0.45)
+        for indices in _cluster_indices(points, fallback_eps):
+            if len(indices) < min_points:
+                continue
+            cluster = [points[index] for index in indices]
+            for part in _split_wall_cluster(cluster, min_points):
+                if len(part) < min_points:
+                    continue
+                boxes.append(_box_from_cluster(part))
 
     boxes.sort(key=lambda box: (box["label"] not in WALL_LABELS, -box["points"]))
     mount_boxes = 0
@@ -471,6 +634,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
         "eps_m": eps_m,
         "point_count": len(points),
         "mount_points": mount_points,
+        "ceiling_points": ceiling_points,
         "mount_boxes": mount_boxes,
         "boxes": boxes,
         "grid": grid,

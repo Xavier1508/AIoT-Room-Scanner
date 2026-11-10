@@ -578,6 +578,7 @@ async function loadPoints(scanId) {
     $('scan-select').value = scanId;
     $('yaw-scale').value = Number(state.yawScale).toFixed(2);
     $('map-rotation').value = Number(state.mapRotation).toFixed(1);
+    setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° — sesuaikan sampai dinding lurus.`);
     let reconstruction = null;
     let annotations = { labels: {}, hidden: [], merges: [] };
     try {
