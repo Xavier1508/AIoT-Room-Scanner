@@ -177,6 +177,20 @@ values are kept in browser localStorage and in the room metadata when
 annotations are saved. These are per-scan adjustments, not a measured servo
 curve.
 
+**Mirror Y (scan vs prior):** the scanner yaw axis is opposite the
+hand-authored prior/2D frame, so without correction measured objects swap
+top/bottom relative to the priors. The **Mirror Y** button flips the measured
+scan vertically about the prior room-centre (`room.mirror_center_m`, currently
+0.355 m) and leaves the priors fixed. It is **ON by default** and persisted per
+scan as `room.mirror_y`; turning it off restores the raw sensor orientation.
+This is a display/geometry correction, not a new scan. It is also applied by
+the PLY and dataset exporters. In scan `20261110T184241Z`, the fan-sized object
+#6 was inside the bed prior before the fix; with Mirror Y ON, #6 is at
+`(0.806, 1.206)` top-centre and the bed-sized object #5 is at
+`(1.427, -0.029)` on the bed side. Evidence: `mirror-on-full-map.png`,
+`mirror-on-topdown-2d.png`, `mirror-off-topdown-2d.png` under
+`analysis/mapping/dashboard-20261110T184241Z/`.
+
 **3D projection and axes:** the 3D view now uses +X right, +Y up and +Z up,
 matching the 2D plan. The previous projection put +Y downward, which made the
 3D view look vertically flipped. The default camera is an isometric view
@@ -380,7 +394,8 @@ without resizing it, and clicking a block opens the panel on the **Edit** tab.
   `research/mapping/scenes/<scan>/<utc>.ply`. The PLY contains all filtered scan
   points (cyan ToF, orange HC) and every measured/prior box as 8 vertices +
   12 triangles, coloured by label. The sidecar records counts, yaw/rotation,
-  box geometry and the SHA-256 of the PLY. The status line shows the exact path.
+  mirror state/centre, box geometry and the SHA-256 of the PLY. The status line
+  shows the exact path.
 - **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
   and the selected-box panel shows the exact coordinates. The **Skala sumbu**
   checkbox toggles the ticks. Every save/nudge/resize/export action also shows a
@@ -425,11 +440,11 @@ shows the gate reason, wall distance and distance spread.
 - `GET /api/mapping/scan/status`
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
-- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=1.00`
+- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=1.00&map_rotation=0.0&mirror_y=1&mirror_center=0.355`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/export`
-- `POST /api/mapping/scans/{id}/scene` (body `{yaw_scale, map_rotation}`; writes PLY + JSON)
+- `POST /api/mapping/scans/{id}/scene` (body `{yaw_scale, map_rotation, mirror_y, mirror_center_m}`; writes PLY + JSON)
 - `GET /api/mapping/dataset`
 - `POST /api/mapping/presence/reset`
 - `GET /api/mapping/calibration`

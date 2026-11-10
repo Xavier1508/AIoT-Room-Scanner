@@ -1,16 +1,29 @@
 # Project state
 
-Updated: 2026-11-10. USB bring-up, SSID discovery, LAN dashboard access, real
+Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
 `0.7.3-tof-obstruction` is installed; it keeps the ±60° room scan and adds
 near-reflector detection. The ToF near reflector was the protective lens cover;
-after it was removed, ToF is valid at ~2.4 m. The full fine scan
-`20261110T124935Z` completed **475/475 points (472 valid, 445 ToF + 27 HC)**.
-The dashboard renders a full-width top-down 2D map and 3D isometric view with
-**yaw 1.00 and map rotation 0.0°** for this scan, wall-first reconstruction,
-a per-scan room prior, custom labels, box/point selection and a rule-based
-human capsule. ToF is now `OK` (`near_reflector=false`); scans use ToF with HC
-fallback.
+after it was removed, ToF is valid at ~2.4 m. The **current full fine scan**
+`20261110T184241Z` completed **475/475 points (473 valid, 452 ToF + 21 HC)** in
+**33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs over 500–950 µs,
+**8 samples/point**, dwell 500 ms and 250 ms sample interval. Reconstruction
+with **yaw 1.00 / map rotation 0.0°** produced 450 filtered points, 23 mount
+points, 83 ceiling points in the default mirrored view (63 pre-mirror),
+**3 measured walls + 2 measured objects + 8 priors**
+(13 blocks). The new room outline is **2.70×2.51 m = 6.78 m²** (total 9.03 m²
+with the bathroom/niche priors). The prior layout was transferred from
+`20261110T124935Z` with a translation of **dx=-0.039 m, dy=+0.137 m** based on
+the wall-centre delta. **Mirror Y is ON by default** because the scanner yaw
+axis is opposite the prior/2D frame: the measured scan is flipped vertically
+about the prior room centre (`y=0.355 m`). Before the fix the fan-sized object
+#6 sat inside the bed prior; after mirroring #6 is at `(0.806, 1.206)` and the
+bed-sized object #5 at `(1.427, -0.029)`. Previous scan `20261110T124935Z`
+remains historical: 475/475 points (472 valid, 445 ToF + 27 HC). The dashboard
+renders a full-width
+top-down 2D map and 3D isometric view, wall-first reconstruction, per-scan room
+prior, custom labels, box/point selection and a rule-based human capsule. ToF
+is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -45,7 +58,7 @@ fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 54 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 56 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -327,7 +340,17 @@ fallback.
   two doors remain prior-only. Prior wall segments embed the doors; UI colours
   are fan purple, desk green, WC door red, exit door yellow. They are dashed,
   toggleable, per-scan data, not hard-coded, and excluded from training until
-  confirmed.
+  confirmed. The newer full scan `20261110T184241Z` re-measures the room as
+  **2.70×2.51 m = 6.78 m²** (total 9.03 m²), keeps 3 measured walls, and finds
+  two measured objects: **#5 1.92×1.20×0.60 m** at `(1.427, 0.741)` with 65
+  points and **#6 0.51×0.45×0.54 m** at `(0.833, -0.526)` with 33 points before
+  mirroring. The old priors were translated by `dx=-0.039 m`, `dy=+0.137 m`;
+  #6 matches the old fan-sized measured object within 6 cm, supporting that
+  transfer. **Mirror Y defaults ON** and flips the measured scan about the prior
+  room-centre (`mirror_center_m=0.355`); after mirroring #6 is at
+  `(0.806, 1.206)` and #5 at `(1.427, -0.029)`, so #6 no longer penetrates the
+  bed prior. The setting is stored per scan in `room.mirror_y` and used by the
+  scene/dataset exporters.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously
@@ -401,7 +424,7 @@ fallback.
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 54 Python pass. Evidence:
+  presence. Tests: 87 C++ + 56 Python pass. Evidence:
   `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
   `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
   `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,
@@ -412,17 +435,20 @@ fallback.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the full ToF scan, wall-first reconstruction and the
-editing workflow are complete: 475/475 points, 3 measured walls, per-scan prior,
-block sidebar with Daftar/Edit tabs, 2D drag + nudge + numeric prior editing,
-selection priority/cycle, axis ticks, per-run clean/dirty CSV export and the
-presence wall gate. Remaining work: confirm the **yaw 1.00 / rotation 0.0°**
-alignment and the bed/desk/fan/wardrobe/chair positions, then export the first
-**clean** dataset run after the priors are confirmed. For DL, use the per-run
-`points.csv`/`objects.csv` under `research/mapping/dataset/clean/` as the first
-3D-object dataset; the HLK `empty`/`human`/`non-human` time-series model remains
-a separate later task. Only deploy DL if it beats the rule on a true held-out
-session.
+**Current next action:** the new full scan `20261110T184241Z` is complete:
+475/475 points, 3 measured walls + 2 measured objects + 8 transferred priors,
+per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
+resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
+PLY scene export, Mirror Y toggle (default ON) and per-run clean/dirty CSV
+export. Remaining work: confirm the two measured objects (especially #5 at
+`1.427, -0.029` in the mirrored view, 1.92×1.20×0.60 m, likely the bed or a
+large desk) and the transferred prior positions, then export the first
+**clean** dataset run after the labels are confirmed. The PLY scene is
+`research/mapping/scenes/20261110T184241Z/20261110T193522Z.ply` (Mirror Y ON).
+For DL, use the per-run `points.csv`/`objects.csv` under
+`research/mapping/dataset/clean/` as the first 3D-object dataset; the HLK
+`empty`/`human`/`non-human` time-series model remains a separate later task.
+Only deploy DL if it beats the rule on a true held-out session.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -442,7 +468,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **106 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **115 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -482,7 +508,11 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   101 = floating sidebar closed (full map); 102 = floating sidebar open (overlay);
   103 = prior size controls and saved toast; 104 = partition pivot + one-side
   resize handles (full page); 105 = Simpan 3D PLY scene status; 106 = partition
-  2D pivot crosshair and 8 resize handles.
+  2D pivot crosshair and 8 resize handles; 107 = new full scan full map;
+  108 = new full scan top-down 2D; 109 = new full scan block list;
+  110 = new full scan reconstruction summary; 111 = new full scan PLY scene
+  (pre-mirror); 112 = Mirror Y ON full map; 113 = Mirror Y ON top-down 2D;
+  114 = Mirror Y OFF comparison; 115 = Mirror Y ON final PLY scene.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
