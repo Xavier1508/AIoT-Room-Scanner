@@ -335,6 +335,60 @@ primary detector. A meaningful DL target must be harder: human vs non-human,
 stationary-human presence, or activity classification, evaluated on a true
 held-out session.
 
+## Prior editor, block sidebar and dataset export
+
+The **Point Cloud 3D** tab now uses a right-hand **block sidebar** so the map
+stays visible while editing:
+
+- **Daftar / Edit tabs** keep the block list and the editor separate; clicking a
+  block switches to **Edit** and shows its controls without scrolling the page.
+- **Daftar** groups blocks by label (wall, fan, door-wc, bed, ...), keeps the
+  global 1..N numbering used on the canvases, and has a label/source filter.
+- The **selected summary** shows the number, label, source, distance, size and
+  point count with the label colour.
+- **Selection outline:** the selected box gets a white dashed outline, corner
+  handles and a `SELECTED #n label` tag in 2D; the 3D view gets a white dashed
+  edge loop.
+- **Overlap selection:** prior/manual boxes and smaller footprints win over
+  walls, so a door embedded in a wall can be clicked directly. Clicking the same
+  spot again cycles through overlapping boxes. The sidebar stack always selects
+  the exact box by row.
+- **Edit** contains: add prior, convert an auto box to an editable prior, delete
+  a prior, 2D drag mode, step 5/10 cm, X/Y/Z nudge buttons, rotation buttons,
+  numeric X/Y/Z/panjang/lebar/sudut fields and **Simpan prior**. Z is clamped to
+  `>= 0` (no box under the floor); priors are stored per scan in
+  `annotations.json`.
+- **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
+  and the selected-box panel shows the exact coordinates. The **Skala sumbu**
+  checkbox toggles the ticks.
+
+**Dataset CSV export (Dataset tab):** pick a scan, enter a run label, mark
+**Run bersih** when the scan/labels are ready for training, and export. The
+exporter writes one folder per run under
+`research/mapping/dataset/clean|dirty/<scan_id>/<run_utc>/`:
+
+- `points.csv` — one row per scan point with raw HC/ToF/HLK values, calibrated
+  `x_m/y_m/z_m`, `range_source`, `point_utc_est`, `point_label`, containing
+  `object_label/object_id/object_source`, `prior_region/prior_label`,
+  `is_mount`, `is_ceiling`, and sample aggregates (count, uptime, HLK median).
+- `objects.csv` — one row per box with `is_measured`, `is_prior`, label/source,
+  geometry, footprint, volume, room and calibration metadata, clean flag and
+  notes.
+- `manifest.json` / `manifest.csv` — run metadata, counts and SHA-256 hashes.
+- `annotations.json` and `README.txt` — the exact labels/priors and column
+  notes.
+- `research/mapping/dataset/index.csv` — one row per export so clean and dirty
+  runs can be found later. Prior boxes have `points=0` and are not training
+  ground truth.
+
+**Presence false-positive gate:** the HLK distance is compared with the current
+ToF/HC wall distance. If HLK sees farther than the wall + 50 cm, the tracker
+reports `beyond_wall`, clears the human marker immediately and the dashboard
+draws a small orange `HLK beyond wall` diagnostic instead. A valid HLK target
+with no `target_state` uses a shorter 2.5 s hold; three stable distance frames
+are required. The **AI / Presence** tab has a **Clear presence** button and
+shows the gate reason, wall distance and distance spread.
+
 ## Endpoints
 
 - `GET /api/mapping/health`
@@ -349,6 +403,9 @@ held-out session.
 - `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=1.00`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
+- `POST /api/mapping/scans/{id}/export`
+- `GET /api/mapping/dataset`
+- `POST /api/mapping/presence/reset`
 - `GET /api/mapping/calibration`
 - `POST /api/mapping/ml/start`
 - `POST /api/mapping/ml/stop`

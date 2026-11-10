@@ -45,7 +45,7 @@ fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 46 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 52 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -368,23 +368,41 @@ fallback.
   reverted. Evidence:
   `analysis/device/tof-near-reflector-20261110T115547Z/` and
   `research/mapping/calibration.json`.
+- **Block sidebar + prior editor (2026-11-10):** the Point Cloud 3D tab has a
+  right-hand sidebar with **Daftar/Edit** tabs. Daftar groups blocks by label
+  with global numbering and a filter; Edit contains the prior editor (add,
+  convert auto box to prior, delete, 2D drag mode, 5/10 cm nudge, X/Y/Z nudge,
+  rotation, numeric fields, `Z>=0`, save). The selected box gets a white dashed
+  outline/handles and `SELECTED` tag in 2D and a white edge loop in 3D.
+  Overlap selection prefers non-wall/smaller boxes (door vs wall) and cycles on
+  repeated clicks; the sidebar row selects the exact box. Axis ticks (0.5 m 2D,
+  1 m 3D) and a Skala sumbu toggle were added. **Dataset export:** per-run CSV
+  under `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
+  `objects.csv`, `manifest.json/csv`, `annotations.json`, `README.txt` and
+  `dataset/index.csv`; points include timestamps, raw sensors, XYZ, point/object/
+  prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
+  HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
+  diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
+  presence. Tests: 87 C++ + 52 Python pass. Evidence:
+  `analysis/mapping/dashboard-20261110T124935Z/sidebar-editor.png` and
+  `dataset-export-ui.png`.
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the full ToF scan and the software visualization layer
-are complete: 475/475 points, wall-first reconstruction (3 measured walls),
-measured bed/desk/fan boxes, per-scan room prior, custom labels, box/point
-selection, 2D pan/zoom, rule-based human capsule and the AI/Presence panel.
-Remaining work: confirm the **yaw 1.00 / rotation 0.0°** alignment for this
-physical placement against a known target; confirm the bed/desk/fan labels and
-the prior wardrobe/chair positions; add point-level labels for segmentation if
-needed. For DL, use the exported 3D point/object labels
-(`analysis/mapping/ml-export-20261110T124935Z`) as the first 3D-object dataset;
-the HLK `empty`/`human`/`non-human` time-series model remains a separate later
-task. Only deploy DL if it beats the rule on a true held-out session.
+**Current next action:** the full ToF scan, wall-first reconstruction and the
+editing workflow are complete: 475/475 points, 3 measured walls, per-scan prior,
+block sidebar with Daftar/Edit tabs, 2D drag + nudge + numeric prior editing,
+selection priority/cycle, axis ticks, per-run clean/dirty CSV export and the
+presence wall gate. Remaining work: confirm the **yaw 1.00 / rotation 0.0°**
+alignment and the bed/desk/fan/wardrobe/chair positions, then export the first
+**clean** dataset run after the priors are confirmed. For DL, use the per-run
+`points.csv`/`objects.csv` under `research/mapping/dataset/clean/` as the first
+3D-object dataset; the HLK `empty`/`human`/`non-human` time-series model remains
+a separate later task. Only deploy DL if it beats the rule on a true held-out
+session.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -404,7 +422,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **98 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **100 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -439,7 +457,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   93 = wall/door intersection, colours, axes and scan direction;
   94 = ToF near-reflector diagnosis and 0.7.3 obstruction firmware;
   95 = full ToF scan reconstruction summary; 96 = final dashboard screenshot;
-  97 = 3D object export table; 98 = 3D object export manifest.
+  97 = 3D object export table; 98 = 3D object export manifest;
+  99 = block sidebar/prior editor screenshot; 100 = dataset CSV export UI.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
