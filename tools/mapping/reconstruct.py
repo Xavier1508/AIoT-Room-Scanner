@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Reconstruct a top-down occupancy grid and estimated solid boxes.
 
 This is a 2.5D reconstruction from one fixed scanner viewpoint: near-mount
@@ -474,7 +474,9 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
     effective_fov_deg = max(5.0, min(90.0, float(fov_limit_deg) * yaw_scale))
     points = []
     mount_points = 0
-    for row in rows:
+    mount_rows = []
+    ceiling_rows = []
+    for row_index, row in enumerate(rows):
         try:
             x = float(row.get("x_mm")) / 1000.0
             y = float(row.get("y_mm")) / 1000.0
@@ -501,30 +503,35 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         # Below-floor returns are floor/arm artefacts, not room geometry.
         if z < -0.05:
             mount_points += 1
+            mount_rows.append(row_index)
             continue
         distance = math.hypot(x, y)
         # The scanner mount/arm is a near-field return, not the room.
         if distance < near_field_m:
             mount_points += 1
+            mount_rows.append(row_index)
             continue
         # Low returns inside the mount radius are the table/arm edge that the
         # downward servo sweep hits. Keep them out of the 3D map.
         if distance < mount_guard_m and z < mount_guard_z_m:
             mount_points += 1
+            mount_rows.append(row_index)
             continue
         range_mm = row.get("range_mm")
         if range_mm is not None:
             try:
                 if float(range_mm) < near_field_m * 1000.0:
                     mount_points += 1
+                    mount_rows.append(row_index)
                     continue
             except (TypeError, ValueError):
                 pass
-        points.append((x, y, z, row.get("range_source") or ""))
+        points.append((x, y, z, row.get("range_source") or "", row_index))
 
     if not points:
         result = {"cell_m": cell_m, "eps_m": eps_m, "point_count": 0,
                   "mount_points": mount_points, "ceiling_points": 0,
+                  "mount_rows": mount_rows, "ceiling_rows": ceiling_rows,
                   "mount_boxes": 0,
                   "boxes": [], "grid": [],
                   "occluded_deg": [[-effective_fov_deg, effective_fov_deg]],
@@ -591,6 +598,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                     best_box["z_top_m"] = round(max(float(best_box["z_top_m"]),
                                                     geometry["z_top"]), 3)
                 ceiling_points += len(cluster)
+                ceiling_rows.extend(interior[index][4] for index in indices)
                 continue
             for part in _split_wall_cluster(cluster, min_points):
                 if len(part) < min_points:
@@ -623,7 +631,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
     fov_int = int(round(effective_fov_deg))
     for start in range(-fov_int, fov_int, bin_size):
         count = 0
-        for x, y, z, source in points:
+        for point in points:
+            x, y = point[0], point[1]
             yaw = math.degrees(math.atan2(y, x))
             if start <= yaw < start + bin_size:
                 count += 1
@@ -635,6 +644,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         "point_count": len(points),
         "mount_points": mount_points,
         "ceiling_points": ceiling_points,
+        "mount_rows": mount_rows,
+        "ceiling_rows": ceiling_rows,
         "mount_boxes": mount_boxes,
         "boxes": boxes,
         "grid": grid,
@@ -649,3 +660,4 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                  "Yaw scale is provisional until a known-target calibration."),
     }
     return apply_annotations(result, annotations)
+
