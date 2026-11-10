@@ -9,6 +9,13 @@ const state = {
   scanJob: null,
   loadedScan: null,
   reconstruction: null,
+  annotations: null,
+  selectedBoxId: null,
+  presence: null,
+  presenceError: null,
+  presenceBusy: false,
+  mlMetrics: null,
+  showDistances: true,
   viewMode: 'both',
   viewYaw: -0.65,
   viewPitch: 0.48,
@@ -47,6 +54,7 @@ function switchTab(name) {
     section.classList.toggle('active', section.id === `tab-${name}`);
   }
   if (name === 'cloud') { drawCloud(); drawTopDown(); }
+  if (name === 'presence') { renderPresence(); drawPresenceTrend(); }
 }
 
 async function refreshScans() {
@@ -61,15 +69,22 @@ async function refreshScans() {
 
 async function refreshHealth() {
   try {
-    const data = await api('/api/mapping/health');
+    const response = await fetch('/api/mapping/health', { cache: 'no-store' });
+    const data = await response.json();
     state.health = data;
     state.scans = data.scans || [];
     state.calibration = data.calibration || {};
+    state.mlMetrics = data.ml_metrics || state.mlMetrics;
+    if (data.presence) state.presence = data.presence;
+    state.presenceError = data.ok === false ? (data.error || 'ESP offline') : null;
     renderHealth();
+    renderPresence();
     renderScans();
     renderCalibration();
   } catch (error) {
     setText('summary', `ESP32 belum terhubung: ${error.message}`);
+    state.presenceError = error.message;
+    renderPresence();
     await refreshScans();
   }
 }
@@ -202,6 +217,179 @@ async function refreshCalibration() {
     renderCalibration();
   } catch (error) {
     setText('cal-latest', `Kalibrasi belum tersedia: ${error.message}`);
+  }
+}
+
+function renderPresence() {
+  const presence = state.presence;
+  const ml = state.mlMetrics || state.health?.ml_metrics || {};
+  const alert = state.health?.esp?.hlk_alert || {};
+  if (!presence) {
+    setText('presence-summary', state.presenceError ? 'ESP offline' : 'Menunggu data HLK…');
+    setText('presence-detail', state.presenceError || 'Belum ada data presence.');
+    setText('presence-class', '—');
+    setText('presence-confidence', '—');
+    setText('presence-distance', '—');
+    setText('presence-reason', '—');
+    badge('presence-state', '—');
+    badge('presence-energy', '—');
+  } else {
+    const confidence = Math.max(0, Math.min(1, Number(presence.confidence) || 0));
+    setText('presence-summary', `${String(presence.class || 'empty').toUpperCase()} · ${Math.round(confidence * 100)}%`);
+    setText('presence-detail', `state ${presence.state} · ${presence.reason} · konfirmasi ${presence.confirm_frames}/${presence.confirm_required} frame · hold ${presence.hold_s}s`);
+    setText('presence-class', String(presence.class || 'empty'));
+    setText('presence-confidence', `${Math.round(confidence * 100)}%`);
+    setText('presence-distance', presence.distance_cm != null ? `${Number(presence.distance_cm).toFixed(1)} cm` : '—');
+    badge('presence-state', presence.state);
+    badge('presence-energy', presence.energy != null ? `energy ${presence.energy}` : 'energy —');
+    setText('presence-reason', `Rule: ${presence.rule}. Model: ${presence.model}.`);
+    if (state.presenceError) setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
+  }
+  if (alert.enabled != null) {
+    setText('actuator-summary', `${alert.enabled ? 'ON' : 'OFF'} · ${alert.state || 'idle'}`);
+    setText('actuator-detail', `mute ${alert.mute_reason || '—'} · count ${alert.count ?? 0} · last ${alert.last_distance_cm ?? '—'} cm / energy ${alert.last_energy ?? '—'} · range ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm`);
+  } else {
+    setText('actuator-summary', 'ESP offline');
+    setText('actuator-detail', state.presenceError || 'Status aktuator belum tersedia.');
+  }
+  const accuracy = ml.final_val_accuracy != null
+    ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '—';
+  const classes = Array.isArray(ml.classes) && ml.classes.length
+    ? ml.classes.join(' / ') : 'binary empty / human';
+  setText('model-summary', `${classes} · val ${accuracy}`);
+  setText('model-detail', `${ml.frames ?? '—'} frame · ${ml.windows ?? '—'} window · ${ml.tflite_bytes ?? '—'} byte TFLite · holdout ${ml.holdout_sessions?.length ?? 0} sesi`);
+  renderModelComparison(ml);
+  drawPresenceTrend();
+}
+
+function renderModelComparison(ml) {
+  const container = $('model-comparison');
+  if (!container) return;
+  container.replaceChildren();
+  const rule = ml.rule_baseline || {};
+  const rows = [
+    ['Rule max(moving_energy)>0',
+      rule.val_accuracy != null ? `${(Number(rule.val_accuracy) * 100).toFixed(1)}%` : '100.0%',
+      'Baseline pada split yang sama; bukan model DL.'],
+    ['DL 1D CNN binary',
+      ml.final_val_accuracy != null ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '82.7%',
+      'empty recall 91.0%, human recall 77.2%; belum deployed.'],
+  ];
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const label of ['Metode', 'Validasi', 'Catatan']) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    head.append(th);
+  }
+  table.append(head);
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    for (const value of row) {
+      const td = document.createElement('td');
+      td.textContent = value;
+      tr.append(td);
+    }
+    table.append(tr);
+  }
+  container.append(table);
+  if (Array.isArray(ml.val_confusion_matrix)) {
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = `Confusion matrix DL [[${ml.val_confusion_matrix.map(row => row.join(', ')).join('], [')}]] — baris empty/human.`;
+    container.append(note);
+  }
+  if (ml.conclusion) {
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = ml.conclusion;
+    container.append(note);
+  }
+}
+
+function drawPresenceTrend() {
+  const canvas = $('presence-trend');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width, height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const history = state.presence?.history || [];
+  if (history.length < 2) {
+    ctx.fillStyle = '#9fb1c7';
+    ctx.font = '14px system-ui';
+    ctx.fillText('Belum ada riwayat HLK. Nyalakan board dan buka tab ini.', 20, 34);
+    return;
+  }
+  const pad = { left: 46, right: 52, top: 18, bottom: 30 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const maxEnergy = 255;
+  const maxDistance = Math.max(200, ...history.map(item => Number(item.distance_cm) || 0));
+  ctx.strokeStyle = '#1a2a3d';
+  ctx.lineWidth = 1;
+  for (let index = 0; index <= 4; index++) {
+    const y = pad.top + plotH * index / 4;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+  }
+  const xAt = (index) => pad.left + plotW * index / Math.max(1, history.length - 1);
+  const yEnergy = (value) => pad.top + plotH * (1 - Math.max(0, Math.min(maxEnergy, value)) / maxEnergy);
+  const yDistance = (value) => pad.top + plotH * (1 - Math.max(0, Math.min(maxDistance, value)) / maxDistance);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#59e0ff';
+  ctx.beginPath();
+  history.forEach((item, index) => {
+    const x = xAt(index), y = yEnergy(Number(item.energy) || 0);
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.strokeStyle = '#ffb45c';
+  ctx.beginPath();
+  history.forEach((item, index) => {
+    const x = xAt(index), y = yDistance(Number(item.distance_cm) || 0);
+    index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  const stateColor = (value) => value === 'present' ? '#6bff9c'
+    : (value === 'holding' || value === 'confirming') ? '#ffe06b' : '#5a6b80';
+  history.forEach((item, index) => {
+    const x = xAt(index), y = height - pad.bottom + 8;
+    ctx.fillStyle = stateColor(item.state);
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.fillStyle = '#9fb1c7';
+  ctx.font = '11px system-ui';
+  ctx.fillText('energy', pad.left, 12);
+  ctx.fillStyle = '#59e0ff';
+  ctx.fillText('0–255', pad.left + 44, 12);
+  ctx.fillStyle = '#ffb45c';
+  ctx.fillText(`jarak 0–${Math.round(maxDistance)} cm`, width - pad.right - 120, 12);
+  ctx.fillStyle = '#9fb1c7';
+  ctx.fillText('frame terakhir →', width - pad.right - 90, height - 8);
+}
+
+async function refreshPresence() {
+  if (state.presenceBusy) return;
+  state.presenceBusy = true;
+  try {
+    const response = await fetch('/api/mapping/presence', { cache: 'no-store' });
+    const data = await response.json();
+    if (data.presence) state.presence = data.presence;
+    state.presenceError = data.ok === false ? (data.error || 'ESP offline') : null;
+    if (data.hlk_alert) {
+      if (!state.health) state.health = {};
+      if (!state.health.esp) state.health.esp = {};
+      state.health.esp.hlk_alert = data.hlk_alert;
+    }
+    renderPresence();
+    if (document.getElementById('tab-cloud')?.classList.contains('active')) {
+      drawCloud();
+      drawTopDown();
+    }
+  } catch (error) {
+    state.presenceError = error.message;
+    renderPresence();
+  } finally {
+    state.presenceBusy = false;
   }
 }
 
@@ -346,19 +534,228 @@ async function loadPoints(scanId) {
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
     let reconstruction = null;
+    let annotations = { labels: {}, hidden: [], merges: [] };
     try {
       const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct`);
       reconstruction = rec.reconstruction;
+      annotations = rec.annotations || annotations;
     } catch (error) {
       reconstruction = null;
     }
     state.reconstruction = reconstruction;
+    state.annotations = annotations;
+    state.selectedBoxId = null;
     const blocks = reconstruction?.boxes?.length ?? 0;
-    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · ${blocks} estimated blocks`);
+    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} hidden`);
+    renderBoxControls();
     drawCloud();
     drawTopDown();
   } catch (error) {
     setText('cloud-stats', `Gagal memuat point cloud: ${error.message}`);
+  }
+}
+
+function boxColor(box) {
+  const palette = {
+    wall: [80, 150, 230],
+    wall_edge: [130, 200, 255],
+    fan: [255, 190, 80],
+    bed: [170, 140, 255],
+    wardrobe: [205, 130, 255],
+    chair: [255, 150, 120],
+    table: [255, 170, 90],
+    mount: [150, 150, 150],
+    object: [70, 210, 150],
+  };
+  return palette[box.label] || palette.object;
+}
+
+function boxName(box) {
+  return `${box.label}${box.label_source === 'manual' ? '*' : ''}`;
+}
+
+function boxDistance(box) {
+  const value = (box.label === 'wall' || box.label === 'wall_edge')
+    ? box.nearest_m : box.distance_m;
+  return Number(value);
+}
+
+function formatMeters(value) {
+  return Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} m` : '—';
+}
+
+function currentBoxes() {
+  return state.reconstruction?.boxes || [];
+}
+
+function annotationsClone() {
+  const source = state.annotations || {};
+  return JSON.parse(JSON.stringify({
+    labels: source.labels || {},
+    hidden: source.hidden || [],
+    merges: source.merges || [],
+  }));
+}
+
+function renderBoxControls() {
+  const select = $('box-select');
+  const merge = $('box-merge');
+  if (!select || !merge) return;
+  const boxes = currentBoxes();
+  const previous = state.selectedBoxId || select.value;
+  select.replaceChildren();
+  merge.replaceChildren();
+  if (!boxes.length) {
+    for (const element of [select, merge]) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Tidak ada blok';
+      element.append(option);
+    }
+    setText('annotation-status', 'Tidak ada blok untuk dianotasi.');
+    renderBlockList();
+    return;
+  }
+  boxes.forEach((box, index) => {
+    const text = `${index + 1}. ${boxName(box)} · ${formatMeters(boxDistance(box))} · `
+      + `${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} m`;
+    const option = document.createElement('option');
+    option.value = box.id;
+    option.textContent = text;
+    select.append(option);
+    const mergeOption = document.createElement('option');
+    mergeOption.value = box.id;
+    mergeOption.textContent = text;
+    merge.append(mergeOption);
+  });
+  if (previous && boxes.some(box => box.id === previous)) select.value = previous;
+  state.selectedBoxId = select.value;
+  const mergeCandidate = boxes.find(box => box.id !== select.value);
+  merge.value = mergeCandidate ? mergeCandidate.id : '';
+  syncBoxLabel();
+  const annotations = state.annotations || {};
+  const count = Object.keys(annotations.labels || {}).length
+    + (annotations.hidden || []).length + (annotations.merges || []).length;
+  setText('annotation-status', count ? `${count} anotasi manual aktif.` : 'Belum ada anotasi manual.');
+  renderBlockList();
+}
+
+function renderBlockList() {
+  const container = $('block-list');
+  if (!container) return;
+  container.replaceChildren();
+  const boxes = currentBoxes();
+  if (!boxes.length) {
+    container.textContent = 'Tidak ada blok untuk ditampilkan.';
+    return;
+  }
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const label of ['#', 'Warna', 'Label', 'Jarak', 'Ukuran', 'Tinggi', 'Titik', 'Sumber']) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    head.append(th);
+  }
+  table.append(head);
+  boxes.forEach((box, index) => {
+    const row = document.createElement('tr');
+    const number = document.createElement('td');
+    number.textContent = index + 1;
+    row.append(number);
+    const swatchCell = document.createElement('td');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    const color = boxColor(box);
+    swatch.style.background = `rgb(${color[0]},${color[1]},${color[2]})`;
+    swatchCell.append(swatch);
+    row.append(swatchCell);
+    for (const value of [
+      boxName(box),
+      formatMeters(boxDistance(box)),
+      `${Number(box.length_m).toFixed(2)}×${Number(box.width_m).toFixed(2)} m`,
+      `${Number(box.z_top_m).toFixed(2)} m`,
+      box.points,
+      box.label_source === 'manual' ? 'manual' : 'auto',
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = value ?? '—';
+      row.append(cell);
+    }
+    table.append(row);
+  });
+  container.append(table);
+}
+
+function syncBoxLabel() {
+  const box = currentBoxes().find(item => item.id === $('box-select').value);
+  if (box) $('box-label').value = box.label;
+}
+
+async function saveAnnotations(annotations, message) {
+  if (!state.loadedScan) return;
+  const data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ annotations }),
+  });
+  state.annotations = data.annotations || annotations;
+  state.reconstruction = data.reconstruction;
+  state.selectedBoxId = null;
+  renderBoxControls();
+  drawCloud();
+  drawTopDown();
+  const blocks = data.reconstruction?.boxes?.length ?? 0;
+  setText('cloud-stats', `${state.loadedScan} · ${state.points.length} points · ${blocks} estimated blocks · mount ${data.reconstruction?.mount_points ?? '—'} hidden`);
+  setText('annotation-status', message || 'Anotasi disimpan.');
+}
+
+async function applyBoxLabel() {
+  const box = currentBoxes().find(item => item.id === $('box-select').value);
+  if (!box) return;
+  const next = annotationsClone();
+  next.labels[box.id] = $('box-label').value;
+  try {
+    await saveAnnotations(next, `Label ${box.label} → ${$('box-label').value}.`);
+  } catch (error) {
+    setText('annotation-status', `Gagal menyimpan label: ${error.message}`);
+  }
+}
+
+async function hideSelectedBox() {
+  const box = currentBoxes().find(item => item.id === $('box-select').value);
+  if (!box) return;
+  const next = annotationsClone();
+  next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
+  delete next.labels[box.id];
+  try {
+    await saveAnnotations(next, `Blok ${box.label} disembunyikan.`);
+  } catch (error) {
+    setText('annotation-status', `Gagal menyembunyikan blok: ${error.message}`);
+  }
+}
+
+async function mergeSelectedBoxes() {
+  const first = $('box-select').value;
+  const second = $('box-merge').value;
+  if (!first || !second || first === second) {
+    setText('annotation-status', 'Pilih dua blok berbeda untuk digabung.');
+    return;
+  }
+  const next = annotationsClone();
+  next.merges = [...(next.merges || []), [first, second]];
+  next.hidden = (next.hidden || []).filter(id => id !== first && id !== second);
+  try {
+    await saveAnnotations(next, 'Dua blok digabung menjadi satu bounding box.');
+  } catch (error) {
+    setText('annotation-status', `Gagal menggabung blok: ${error.message}`);
+  }
+}
+
+async function resetAnnotations() {
+  try {
+    await saveAnnotations({ labels: {}, hidden: [], merges: [] }, 'Anotasi direset.');
+  } catch (error) {
+    setText('annotation-status', `Gagal reset anotasi: ${error.message}`);
   }
 }
 
@@ -430,9 +827,9 @@ function boxCorners(box) {
 function drawBoxes3D(ctx, width, height, radius) {
   const boxes = state.reconstruction?.boxes || [];
   const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
-  for (const box of boxes) {
+  for (const [boxIndex, box] of boxes.entries()) {
     const projected = boxCorners(box).map(point => projectPoint(point, width, height, radius));
-    const color = box.label === 'wall' ? [80, 150, 230] : [70, 210, 150];
+    const color = boxColor(box);
     const ordered = faces.map(indices => ({
       indices,
       depth: indices.reduce((sum, index) => sum + projected[index].depth, 0) / indices.length,
@@ -445,16 +842,108 @@ function drawBoxes3D(ctx, width, height, radius) {
       ctx.fill();
       ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.9)`;
       ctx.lineWidth = box.label === 'wall' ? 1.6 : 1.2;
+      if (box.label === 'wall_edge') ctx.setLineDash([5, 3]);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
     const top = projectPoint({
       x_mm: Number(box.cx_m) * 1000, y_mm: Number(box.cy_m) * 1000,
       z_mm: (Number(box.z_top_m) + 0.08) * 1000,
     }, width, height, radius);
-    ctx.font = '12px system-ui';
-    ctx.fillStyle = box.label === 'wall' ? '#9cc8ff' : '#9cf0c1';
-    ctx.fillText(`${box.label} ${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} m`, top.x + 4, top.y - 4);
+    const distance = state.showDistances ? ` · ${formatMeters(boxDistance(box))}` : '';
+    const dimensions = `${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} m`;
+    if (state.selectedBoxId === box.id) {
+      const text = `${boxName(box)} ${dimensions}${distance}`;
+      ctx.font = '12px system-ui';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(10,17,28,0.85)';
+      ctx.strokeText(text, top.x + 12, top.y - 4);
+      ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+      ctx.fillText(text, top.x + 12, top.y - 4);
+    } else {
+      ctx.beginPath();
+      ctx.arc(top.x, top.y, 9, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
+      ctx.fill();
+      ctx.fillStyle = '#0a111c';
+      ctx.font = 'bold 10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(boxIndex + 1), top.x, top.y);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
   }
+}
+
+function drawTag(ctx, x, y, text, color) {
+  ctx.font = '11px system-ui';
+  const width = ctx.measureText(text).width + 8;
+  ctx.fillStyle = 'rgba(10,17,28,0.80)';
+  ctx.fillRect(x - width / 2, y - 9, width, 17);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawOccludedWedges(ctx, toScreen, origin, extent, occluded, fovLimit) {
+  for (const [start, end] of occluded || []) {
+    if (!Number.isFinite(Number(start)) || !Number.isFinite(Number(end))) continue;
+    const a0 = Number(start) * Math.PI / 180;
+    const a1 = Number(end) * Math.PI / 180;
+    const p1 = toScreen(Math.cos(a0) * extent, Math.sin(a0) * extent);
+    const p2 = toScreen(Math.cos(a1) * extent, Math.sin(a1) * extent);
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,80,80,0.10)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,110,110,0.30)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const mid = (a0 + a1) / 2;
+    const label = toScreen(Math.cos(mid) * extent * 0.82, Math.sin(mid) * extent * 0.82);
+    ctx.fillStyle = 'rgba(255,150,150,0.72)';
+    ctx.font = '10px system-ui';
+    ctx.fillText('no data', label.x - 18, label.y);
+  }
+}
+
+function drawHumanTopDown(ctx, toScreen, origin, scale) {
+  const presence = state.presence;
+  if (!presence || !['present', 'holding'].includes(presence.state)) return;
+  const distance = Number(presence.distance_cm) / 100;
+  if (!Number.isFinite(distance) || distance <= 0) return;
+  const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
+  const point = toScreen(distance * Math.cos(yaw), distance * Math.sin(yaw));
+  const size = 0.5 * scale;
+  const color = presence.class === 'non-human'
+    ? [255, 170, 70]
+    : (presence.state === 'holding' ? [255, 210, 90] : [90, 255, 170]);
+  ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.14)`;
+  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 3]);
+  ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+  ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.65)`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(origin.x, origin.y);
+  ctx.lineTo(point.x, point.y);
+  ctx.stroke();
+  const label = `${String(presence.class || 'human').toUpperCase()} ${distance.toFixed(2)} m · `
+    + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
+  drawTag(ctx, point.x, point.y - size / 2 - 12, label,
+    `rgb(${color[0]},${color[1]},${color[2]})`);
 }
 
 function drawTopDown() {
@@ -464,9 +953,12 @@ function drawTopDown() {
   const width = canvas.width, height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null);
-  const boxes = state.reconstruction?.boxes || [];
+  const boxes = currentBoxes();
+  const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
-  const hlkRadius = hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0;
+  const hlkRadius = presence?.distance_cm
+    ? Number(presence.distance_cm) / 100
+    : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
   let extent = 1.0;
   for (const point of points) extent = Math.max(extent, Math.abs(Number(point.x_mm)) / 1000, Math.abs(Number(point.y_mm)) / 1000);
   for (const box of boxes) {
@@ -485,7 +977,10 @@ function drawTopDown() {
     ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
   }
   const origin = toScreen(0, 0);
-  const fov = 60 * Math.PI / 180;
+  const fovLimit = Number(state.reconstruction?.fov_limit_deg || 60);
+  drawOccludedWedges(ctx, toScreen, origin, extent,
+    state.reconstruction?.occluded_deg || [], fovLimit);
+  const fov = fovLimit * Math.PI / 180;
   ctx.strokeStyle = 'rgba(120,180,255,0.45)';
   ctx.setLineDash([5, 5]);
   for (const angle of [-fov, fov]) {
@@ -493,6 +988,32 @@ function drawTopDown() {
     ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   }
   ctx.setLineDash([]);
+  if (state.showDistances) {
+    for (const [boxIndex, box] of boxes.entries()) {
+      const color = boxColor(box);
+      let anchor;
+      if (box.label === 'wall' || box.label === 'wall_edge') {
+        const corners = boxCorners(box).slice(0, 4)
+          .map(point => ({ x: Number(point.x_mm) / 1000, y: Number(point.y_mm) / 1000 }));
+        const nearest = corners.reduce((best, point) =>
+          Math.hypot(point.x, point.y) < Math.hypot(best.x, best.y) ? point : best, corners[0]);
+        anchor = toScreen(nearest.x, nearest.y);
+      } else {
+        anchor = toScreen(Number(box.cx_m), Number(box.cy_m));
+      }
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.32)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(anchor.x, anchor.y); ctx.stroke();
+      ctx.setLineDash([]);
+      const mid = {
+        x: origin.x + (anchor.x - origin.x) * 0.62,
+        y: origin.y + (anchor.y - origin.y) * 0.62 + (boxIndex % 2 === 0 ? -8 : 8),
+      };
+      drawTag(ctx, mid.x, mid.y, `#${boxIndex + 1} ${formatMeters(boxDistance(box))}`,
+        `rgb(${color[0]},${color[1]},${color[2]})`);
+    }
+  }
   if (state.viewMode !== 'blocks') {
     for (const point of points) {
       const screen = toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
@@ -501,9 +1022,9 @@ function drawTopDown() {
     }
   }
   if (state.viewMode !== 'points') {
-    for (const box of boxes) {
+    for (const [boxIndex, box] of boxes.entries()) {
       const corners = boxCorners(box).slice(0, 4).map(point => toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000));
-      const color = box.label === 'wall' ? [80, 150, 230] : [70, 210, 150];
+      const color = boxColor(box);
       ctx.beginPath(); ctx.moveTo(corners[0].x, corners[0].y);
       for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
       ctx.closePath();
@@ -511,13 +1032,34 @@ function drawTopDown() {
       ctx.fill();
       ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
       ctx.lineWidth = box.label === 'wall' ? 2.2 : 1.6;
+      if (box.label === 'wall_edge') ctx.setLineDash([5, 3]);
       ctx.stroke();
+      ctx.setLineDash([]);
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
-      ctx.font = '12px system-ui';
-      ctx.fillStyle = box.label === 'wall' ? '#9cc8ff' : '#9cf0c1';
-      ctx.fillText(box.label, label.x + 4, label.y - 4);
+      if (box.label === 'wall' || box.label === 'wall_edge') {
+        ctx.beginPath();
+        ctx.arc(label.x, label.y, 9, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
+        ctx.fill();
+        ctx.fillStyle = '#0a111c';
+        ctx.font = 'bold 10px system-ui';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(boxIndex + 1), label.x, label.y);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
+      } else {
+        const text = `#${boxIndex + 1} ${boxName(box)}`;
+        ctx.font = '12px system-ui';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(10,17,28,0.85)';
+        ctx.strokeText(text, label.x + 4, label.y - 4);
+        ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+        ctx.fillText(text, label.x + 4, label.y - 4);
+      }
     }
   }
+  drawHumanTopDown(ctx, toScreen, origin, scale);
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(origin.x, origin.y, 4, 0, Math.PI * 2); ctx.fill();
   ctx.font = '12px system-ui';
@@ -529,17 +1071,70 @@ function drawTopDown() {
   ctx.strokeStyle = '#e6edf6'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y); ctx.lineTo(barStart.x + scale, barStart.y); ctx.stroke();
   ctx.fillStyle = '#e6edf6'; ctx.font = '12px system-ui'; ctx.fillText('1 m', barStart.x + scale / 2 - 12, barStart.y - 6);
-  if (hlkRadius > 0) {
+  if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
     const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
     const screen = toScreen(hlkRadius * Math.cos(yaw), hlkRadius * Math.sin(yaw));
-    ctx.strokeStyle = 'rgba(255,80,200,0.9)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(screen.x, screen.y); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,80,200,0.25)';
-    ctx.strokeStyle = 'rgba(255,120,220,0.95)';
-    ctx.beginPath(); ctx.arc(screen.x, screen.y, 8 + Math.min(18, Number(hlk.energy || 0) / 6), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#ff9be0'; ctx.font = '12px system-ui';
+    ctx.fillStyle = 'rgba(255,80,200,0.28)';
+    ctx.strokeStyle = 'rgba(255,120,220,0.85)';
+    ctx.beginPath(); ctx.arc(screen.x, screen.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff9be0'; ctx.font = '11px system-ui';
     ctx.fillText(`HLK ${hlkRadius.toFixed(2)} m`, screen.x + 6, screen.y - 6);
   }
+}
+
+function drawHuman3D(ctx, width, height, radius) {
+  const presence = state.presence;
+  if (!presence || !['present', 'holding'].includes(presence.state)) return;
+  const distance = Number(presence.distance_cm) / 100;
+  if (!Number.isFinite(distance) || distance <= 0) return;
+  const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
+  const cx = distance * Math.cos(yaw);
+  const cy = distance * Math.sin(yaw);
+  const radiusM = 0.24, heightM = 1.70, segments = 18;
+  const bottom = [], top = [];
+  for (let index = 0; index < segments; index++) {
+    const angle = index / segments * Math.PI * 2;
+    const x = (cx + radiusM * Math.cos(angle)) * 1000;
+    const y = (cy + radiusM * Math.sin(angle)) * 1000;
+    bottom.push(projectPoint({ x_mm: x, y_mm: y, z_mm: 0 }, width, height, radius));
+    top.push(projectPoint({ x_mm: x, y_mm: y, z_mm: heightM * 1000 }, width, height, radius));
+  }
+  const color = presence.class === 'non-human'
+    ? [255, 170, 70]
+    : (presence.state === 'holding' ? [255, 210, 90] : [90, 255, 170]);
+  ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.12)`;
+  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.55)`;
+  ctx.lineWidth = 1.2;
+  for (let index = 0; index < segments; index++) {
+    const next = (index + 1) % segments;
+    ctx.beginPath();
+    ctx.moveTo(bottom[index].x, bottom[index].y);
+    ctx.lineTo(bottom[next].x, bottom[next].y);
+    ctx.lineTo(top[next].x, top[next].y);
+    ctx.lineTo(top[index].x, top[index].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  top.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.28)`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  const labelPoint = projectPoint({
+    x_mm: cx * 1000, y_mm: cy * 1000, z_mm: (heightM + 0.15) * 1000,
+  }, width, height, radius);
+  const text = `${String(presence.class || 'human').toUpperCase()} ${distance.toFixed(2)} m · `
+    + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
+  ctx.font = '12px system-ui';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(10,17,28,0.85)';
+  ctx.strokeText(text, labelPoint.x + 6, labelPoint.y - 4);
+  ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+  ctx.fillText(text, labelPoint.x + 6, labelPoint.y - 4);
 }
 
 function drawCloud() {
@@ -549,9 +1144,12 @@ function drawCloud() {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null);
-  const boxes = state.reconstruction?.boxes || [];
+  const boxes = currentBoxes();
+  const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
-  const hlkRadius = hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0;
+  const hlkRadius = presence?.distance_cm
+    ? Number(presence.distance_cm) / 100
+    : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
   const boxExtents = boxes.flatMap(box => boxCorners(box).map(p => Math.max(
     Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000));
   const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
@@ -574,7 +1172,8 @@ function drawCloud() {
     }
   }
   if (state.viewMode !== 'points') drawBoxes3D(ctx, width, height, maxRadius);
-  if (hlkRadius > 0) {
+  drawHuman3D(ctx, width, height, maxRadius);
+  if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
     const yawDeg = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0);
     const yaw = yawDeg * Math.PI / 180;
     const marker = projectPoint({
@@ -582,7 +1181,7 @@ function drawCloud() {
       y_mm: hlkRadius * 1000 * Math.sin(yaw),
       z_mm: 0,
     }, width, height, maxRadius);
-    const markerRadius = 8 + Math.min(18, Number(hlk.energy || 0) / 6);
+    const markerRadius = 8 + Math.min(18, Number(hlk?.energy || 0) / 6);
     ctx.fillStyle = 'rgba(255,80,200,0.22)';
     ctx.strokeStyle = 'rgba(255,120,220,0.95)';
     ctx.lineWidth = 2;
@@ -592,7 +1191,7 @@ function drawCloud() {
     ctx.stroke();
     ctx.fillStyle = '#ffb8e8';
     ctx.font = '12px system-ui';
-    ctx.fillText(`HLK ${hlk.distance_cm} cm`, marker.x + markerRadius + 4, marker.y - 4);
+    ctx.fillText(`HLK ${hlk?.distance_cm ?? '—'} cm`, marker.x + markerRadius + 4, marker.y - 4);
   }
   if (!points.length && !boxes.length) {
     ctx.fillStyle = '#9fb1c7';
@@ -658,6 +1257,20 @@ $('reload-points').addEventListener('click', () => loadPoints($('scan-select').v
 $('view-both').addEventListener('click', () => { state.viewMode = 'both'; drawCloud(); drawTopDown(); });
 $('view-blocks').addEventListener('click', () => { state.viewMode = 'blocks'; drawCloud(); drawTopDown(); });
 $('view-points').addEventListener('click', () => { state.viewMode = 'points'; drawCloud(); drawTopDown(); });
+$('toggle-distances').addEventListener('click', () => {
+  state.showDistances = !state.showDistances;
+  $('toggle-distances').classList.toggle('active', state.showDistances);
+  drawCloud();
+  drawTopDown();
+});
+$('box-select').addEventListener('change', () => {
+  state.selectedBoxId = $('box-select').value;
+  syncBoxLabel();
+});
+$('apply-label').addEventListener('click', applyBoxLabel);
+$('hide-box').addEventListener('click', hideSelectedBox);
+$('merge-boxes').addEventListener('click', mergeSelectedBoxes);
+$('reset-annotations').addEventListener('click', resetAnnotations);
 $('scan-select').addEventListener('change', () => loadPoints($('scan-select').value));
 $('rotate-left').addEventListener('click', () => { state.viewYaw -= 0.2; drawCloud(); });
 $('rotate-right').addEventListener('click', () => { state.viewYaw += 0.2; drawCloud(); });
@@ -676,6 +1289,7 @@ bindCanvas();
   await refreshScanStatus();
   await refreshCalibration();
   await refreshMlStatus();
+  await refreshPresence();
   const latest = (state.scans || []).find(scan => !scan.error && (scan.points || 0) > 0) || (state.scans || [])[0];
   if (latest) {
     $('scan-select').value = latest.scan_id;
@@ -683,6 +1297,7 @@ bindCanvas();
   }
   setInterval(refreshScans, 3000);
   setInterval(refreshHealth, 2000);
+  setInterval(refreshPresence, 1500);
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);
 })();

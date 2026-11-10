@@ -22,8 +22,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from calibrate import capture
-from common import CALIBRATION, RESEARCH, SCANS, read_json, utc_iso, utc_stamp, write_json
+from common import CALIBRATION, RESEARCH, ROOT, SCANS, read_json, utc_iso, utc_stamp, write_json
 from esp_client import EspClient
+from presence import PresenceTracker
 from reconstruct import reconstruct_points
 from scan import ScanConfig, run_scan
 
@@ -50,6 +51,8 @@ ML_JOB = {
     "thread": None,
     "stop_event": None,
 }
+PRESENCE_LOCK = threading.Lock()
+PRESENCE = PresenceTracker()
 
 
 def _public_job():
@@ -138,6 +141,76 @@ def _stop_ml():
     return {"ok": True, "message": "stop_requested"}
 
 
+def _ml_metrics():
+    path = RESEARCH / "ml" / "model-empty-human" / "metrics.json"
+    metrics = read_json(path, {}) or {}
+    summaries = sorted((ROOT / "analysis" / "mapping").glob("ml-training-*/summary.json"),
+                       reverse=True)
+    summary = read_json(summaries[0], {}) if summaries else {}
+    if summary:
+        metrics["rule_baseline"] = summary.get("rule_baseline", {})
+        metrics["dataset"] = summary.get("dataset", {})
+        metrics["conclusion"] = summary.get("conclusion")
+    return metrics
+
+
+def _scan_directory(scan_id):
+    if not scan_id or Path(scan_id).name != scan_id or "/" in scan_id or "\\" in scan_id:
+        raise ValueError("invalid scan id")
+    directory = SCANS / scan_id
+    if not directory.is_dir():
+        raise ValueError("scan not found")
+    return directory
+
+
+def _clean_annotations(payload):
+    payload = payload or {}
+    labels = payload.get("labels") or {}
+    if not isinstance(labels, dict):
+        raise ValueError("labels must be an object")
+    clean_labels = {str(key)[:200]: str(value)[:24]
+                    for key, value in labels.items() if value}
+    hidden = payload.get("hidden") or []
+    if not isinstance(hidden, list):
+        raise ValueError("hidden must be a list")
+    clean_hidden = [str(item)[:200] for item in hidden][:500]
+    merges = payload.get("merges") or []
+    if not isinstance(merges, list):
+        raise ValueError("merges must be a list")
+    clean_merges = []
+    for pair in merges[:200]:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            clean_merges.append([str(pair[0])[:200], str(pair[1])[:200]])
+    return {"labels": clean_labels, "hidden": clean_hidden, "merges": clean_merges}
+
+
+def _load_annotations(scan_id):
+    return _clean_annotations(read_json(_scan_directory(scan_id) / "annotations.json", {}) or {})
+
+
+def _save_annotations(scan_id, payload):
+    annotations = _clean_annotations(payload)
+    write_json(_scan_directory(scan_id) / "annotations.json", annotations)
+    return annotations
+
+
+def _presence_from_status(status):
+    sensors = status.get("sensors") or {}
+    hlk = dict(sensors.get("hlk") or {})
+    last = (status.get("hlk") or {}).get("last_reading") or {}
+    for key in ("moving_energy", "stationary_energy",
+                "moving_distance_cm", "stationary_distance_cm"):
+        if hlk.get(key) is None and last.get(key) is not None:
+            hlk[key] = last[key]
+    scan_mode = bool((status.get("scan") or {}).get("mode"))
+    with PRESENCE_LOCK:
+        presence = PRESENCE.update(hlk, scanning=scan_mode)
+    return {"presence": presence,
+            "hlk_alert": status.get("hlk_alert"),
+            "scan_mode": scan_mode,
+            "mode": status.get("mode")}
+
+
 def _list_scans():
     items = []
     if not SCANS.exists():
@@ -160,9 +233,7 @@ def _list_scans():
 
 
 def _points(scan_id):
-    if not scan_id or Path(scan_id).name != scan_id or "/" in scan_id or "\\" in scan_id:
-        raise ValueError("invalid scan id")
-    directory = SCANS / scan_id
+    directory = _scan_directory(scan_id)
     path = directory / "points.csv"
     if not path.is_file():
         raise ValueError("scan not found")
@@ -288,6 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/mapping/health":
                 try:
                     status = EspClient().status(timeout=4.0)
+                    presence = _presence_from_status(status)
                     esp = {
                         "version": status.get("version"),
                         "mode": status.get("mode"),
@@ -296,14 +368,31 @@ class Handler(BaseHTTPRequestHandler):
                         "actuators": status.get("actuators"),
                         "scan": status.get("scan"),
                         "hlk_alert": status.get("hlk_alert"),
+                        "hlk": status.get("hlk"),
                     }
                     return self._send(200, {"ok": True, "esp": esp,
+                                            "presence": presence["presence"],
                                             "scans": _list_scans(),
+                                            "ml_metrics": _ml_metrics(),
                                             "calibration": read_json(CALIBRATION, {}) or {}})
                 except Exception as exc:
+                    with PRESENCE_LOCK:
+                        presence = PRESENCE.snapshot()
                     return self._send(200, {"ok": False, "error": str(exc),
+                                            "presence": presence,
                                             "scans": _list_scans(),
+                                            "ml_metrics": _ml_metrics(),
                                             "calibration": read_json(CALIBRATION, {}) or {}})
+            if path == "/api/mapping/presence":
+                try:
+                    status = EspClient().status(timeout=4.0)
+                    payload = _presence_from_status(status)
+                    return self._send(200, {"ok": True, **payload})
+                except Exception as exc:
+                    with PRESENCE_LOCK:
+                        presence = PRESENCE.snapshot()
+                    return self._send(200, {"ok": False, "error": str(exc),
+                                            "presence": presence})
             if path == "/api/mapping/status":
                 return self._send(200, {"ok": True, "status": EspClient().status()})
             if path == "/api/mapping/scans":
@@ -314,8 +403,15 @@ class Handler(BaseHTTPRequestHandler):
                                         "points": _points(scan_id)})
             if path.startswith("/api/mapping/scans/") and path.endswith("/reconstruct"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/reconstruct")].strip("/")
+                annotations = _load_annotations(scan_id)
+                reconstruction = reconstruct_points(_points(scan_id), annotations=annotations)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
-                                        "reconstruction": reconstruct_points(_points(scan_id))})
+                                        "annotations": annotations,
+                                        "reconstruction": reconstruction})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/annotations"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/annotations")].strip("/")
+                return self._send(200, {"ok": True, "scan_id": scan_id,
+                                        "annotations": _load_annotations(scan_id)})
             if path == "/api/mapping/scan/status":
                 return self._send(200, {"ok": True, "job": _public_job()})
             if path == "/api/mapping/ml/status":
@@ -339,6 +435,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not command:
                     raise ValueError("command required")
                 return self._send(200, {"ok": True, "result": EspClient().command(command)})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/annotations"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/annotations")].strip("/")
+                annotations = _save_annotations(scan_id, body.get("annotations", body))
+                reconstruction = reconstruct_points(_points(scan_id), annotations=annotations)
+                return self._send(200, {"ok": True, "scan_id": scan_id,
+                                        "annotations": annotations,
+                                        "reconstruction": reconstruction})
             if path == "/api/mapping/scan/start":
                 _start_scan(body)
                 return self._send(202, {"ok": True, "job": _public_job()})

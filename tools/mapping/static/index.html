@@ -12,6 +12,7 @@
   <button data-tab="scan">Scan</button>
   <button data-tab="calibration">Calibration</button>
   <button data-tab="cloud">Point Cloud 3D</button>
+  <button data-tab="presence">AI / Presence</button>
   <button data-tab="dataset">Dataset</button>
 </div>
 
@@ -78,6 +79,7 @@
       <button id="view-both" class="alt">Points + Blocks</button>
       <button id="view-blocks" class="alt">Blocks</button>
       <button id="view-points" class="alt">Points</button>
+      <button id="toggle-distances" class="alt active">Jarak</button>
       <button id="rotate-left" class="alt">⟲</button><button id="rotate-right" class="alt">⟳</button>
       <button id="pitch-up" class="alt">↑</button><button id="pitch-down" class="alt">↓</button>
       <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
@@ -88,7 +90,62 @@
       <div><h3>Top-down 2D</h3><canvas id="topdown" width="1000" height="620"></canvas></div>
     </div>
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
-    <p id="cloud-legend" class="note">Cyan = ToF, oranye = HC, blok biru = dinding estimasi, blok hijau = objek estimasi, magenta = presence HLK. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
+    <div id="block-list" class="note"></div>
+    <p id="cloud-legend" class="note">Cyan = ToF, oranye = HC, biru = dinding estimasi, biru muda putus-putus = wall edge, hijau = objek, magenta = presence HLK, silinder hijau = human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor merah = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
+    <div class="row annotation-row">
+      <label class="note">Blok</label><select id="box-select"></select>
+      <label class="note">Label</label>
+      <select id="box-label">
+        <option value="wall">wall</option>
+        <option value="wall_edge">wall_edge</option>
+        <option value="fan">fan</option>
+        <option value="bed">bed</option>
+        <option value="wardrobe">wardrobe</option>
+        <option value="chair">chair</option>
+        <option value="table">table</option>
+        <option value="object">object</option>
+        <option value="mount">mount</option>
+      </select>
+      <button id="apply-label">Terapkan label</button>
+      <button id="hide-box" class="danger">Sembunyikan</button>
+      <button id="reset-annotations" class="alt">Reset anotasi</button>
+    </div>
+    <div class="row annotation-row">
+      <label class="note">Gabung dengan</label><select id="box-merge"></select>
+      <button id="merge-boxes" class="alt">Gabung 2 blok</button>
+      <span id="annotation-status" class="note"></span>
+    </div>
+    <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu.</p>
+  </section>
+</section>
+
+<section id="tab-presence" class="tab">
+  <div class="grid">
+    <section class="card"><h2>Prediksi presence (rule)</h2>
+      <div id="presence-summary" class="big">—</div>
+      <p id="presence-detail" class="note">Menunggu data HLK…</p>
+      <div class="sensor"><div><div class="muted">Class</div><div id="presence-class" class="big">—</div></div><span id="presence-state" class="badge">—</span></div>
+      <div class="sensor"><div><div class="muted">Confidence</div><div id="presence-confidence" class="big">—</div></div><span class="badge">rule</span></div>
+      <div class="sensor"><div><div class="muted">Jarak HLK</div><div id="presence-distance" class="big">—</div></div><span id="presence-energy" class="badge">—</span></div>
+      <p id="presence-reason" class="note">—</p>
+    </section>
+    <section class="card"><h2>Aktuator dari prediksi</h2>
+      <div id="actuator-summary" class="big">—</div>
+      <p id="actuator-detail" class="note">—</p>
+      <p class="note">Buzzer proximity dikendalikan rule HLK (energy + jarak + konfirmasi 3 frame). Saat scan/gerakan, buzzer di-mute. Ini aktuator otomatis dari prediksi rule, bukan dari DL.</p>
+    </section>
+    <section class="card"><h2>Model DL</h2>
+      <div id="model-summary" class="big">—</div>
+      <p id="model-detail" class="note">—</p>
+      <p class="note">Model binary empty/human belum dipakai sebagai detektor utama karena rule lebih akurat pada data validasi. Panel ini menampilkan metrik model dan status deploy secara jujur.</p>
+    </section>
+  </div>
+  <section class="card"><h2>Tren energi &amp; jarak HLK</h2>
+    <canvas id="presence-trend" width="1100" height="220"></canvas>
+    <p class="note">Garis cyan = energy (0–255), garis oranye = jarak (cm). Titik hijau = frame present, kuning = confirming/holding, abu = empty.</p>
+  </section>
+  <section class="card"><h2>Perbandingan rule vs DL</h2>
+    <div id="model-comparison" class="note">—</div>
   </section>
 </section>
 
