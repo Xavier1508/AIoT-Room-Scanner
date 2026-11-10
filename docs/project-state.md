@@ -369,23 +369,26 @@ fallback.
   `analysis/device/tof-near-reflector-20261110T115547Z/` and
   `research/mapping/calibration.json`.
 - **Block sidebar + prior editor (2026-11-10):** the Point Cloud 3D tab has a
-  right-hand sidebar with **Daftar/Edit** tabs. Daftar groups blocks by label
-  with global numbering and a filter; Edit contains the prior editor (add,
-  convert auto box to prior, delete, 2D drag mode, 5/10 cm nudge, X/Y/Z nudge,
-  rotation, numeric fields, `Z>=0`, save). The selected box gets a white dashed
-  outline/handles and `SELECTED` tag in 2D and a white edge loop in 3D.
-  Overlap selection prefers non-wall/smaller boxes (door vs wall) and cycles on
-  repeated clicks; the sidebar row selects the exact box. Axis ticks (0.5 m 2D,
-  1 m 3D) and a Skala sumbu toggle were added. **Dataset export:** per-run CSV
-  under `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
+  **floating right-hand sidebar** (fixed overlay, not a grid column) with
+  **Daftar/Edit** tabs. It is closed by default; a `Blok / Prior (N)` button
+  opens it and the `×` button closes it, so the 3D/2D canvases keep the full
+  card width. Daftar groups blocks by label with global numbering and a filter;
+  Edit contains the prior editor (add, convert auto box to prior, delete, 2D
+  drag mode, 5/10 cm nudge, X/Y/Z nudge, rotation, numeric fields, `Z>=0`,
+  save). The selected box gets a white dashed outline/handles and `SELECTED`
+  tag in 2D and a white edge loop in 3D. Overlap selection prefers
+  non-wall/smaller boxes (door vs wall) and cycles on repeated clicks; the
+  sidebar row selects the exact box. Axis ticks (0.5 m 2D, 1 m 3D) and a Skala
+  sumbu toggle were added. **Dataset export:** per-run CSV under
+  `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
   `objects.csv`, `manifest.json/csv`, `annotations.json`, `README.txt` and
   `dataset/index.csv`; points include timestamps, raw sensors, XYZ, point/object/
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
   presence. Tests: 87 C++ + 52 Python pass. Evidence:
-  `analysis/mapping/dashboard-20261110T124935Z/sidebar-editor.png` and
-  `dataset-export-ui.png`.
+  `analysis/mapping/dashboard-20261110T124935Z/sidebar-floating-closed.png` and
+  `sidebar-floating-open.png`.
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
@@ -422,7 +425,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **100 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **102 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -458,7 +461,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   94 = ToF near-reflector diagnosis and 0.7.3 obstruction firmware;
   95 = full ToF scan reconstruction summary; 96 = final dashboard screenshot;
   97 = 3D object export table; 98 = 3D object export manifest;
-  99 = block sidebar/prior editor screenshot; 100 = dataset CSV export UI.
+  99 = block sidebar/prior editor screenshot; 100 = dataset CSV export UI;
+  101 = floating sidebar closed (full map); 102 = floating sidebar open (overlay).
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

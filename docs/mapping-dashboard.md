@@ -337,8 +337,11 @@ held-out session.
 
 ## Prior editor, block sidebar and dataset export
 
-The **Point Cloud 3D** tab now uses a right-hand **block sidebar** so the map
-stays visible while editing:
+The **Point Cloud 3D** tab uses a **floating right-hand block sidebar** (a
+fixed overlay, not a layout column) so the 3D/2D canvases keep the full card
+width. It is closed by default; the floating `Blok / Prior (N)` button opens it
+and the `×` button closes it. The panel overlays the right side of the map
+without resizing it, and clicking a block opens the panel on the **Edit** tab.
 
 - **Daftar / Edit tabs** keep the block list and the editor separate; clicking a
   block switches to **Edit** and shows its controls without scrolling the page.
@@ -349,8 +352,8 @@ stays visible while editing:
 - **Selection outline:** the selected box gets a white dashed outline, corner
   handles and a `SELECTED #n label` tag in 2D; the 3D view gets a white dashed
   edge loop.
-- **Overlap selection:** prior/manual boxes and smaller footprints win over
-  walls, so a door embedded in a wall can be clicked directly. Clicking the same
+- **Overlap selection:** non-wall boxes and smaller footprints win over wall
+  surfaces, so a door embedded in a wall can be clicked directly. Clicking the same
   spot again cycles through overlapping boxes. The sidebar stack always selects
   the exact box by row.
 - **Edit** contains: add prior, convert an auto box to an editable prior, delete
