@@ -1,12 +1,13 @@
 # Project state
 
-Updated: 2026-11-09. USB bring-up, SSID discovery, LAN dashboard access, real
+Updated: 2026-11-10. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
 `0.7.1-scan60-safe` supports a ±60° room scan. The final dense scan has
-247/247 points (219 valid, 50 ToF + 169 HC), and the dashboard renders a
-top-down 2D map plus 6 estimated solid blocks (one wall + five objects).
-ToF remains unreliable; scans use HC fallback and the watchdog keeps the board
-responsive.
+247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
+top-down 2D map and 3D isometric view with split wall segments, `wall_edge`
+fragments, occluded sectors, distance leaders, a numbered block list, manual
+label/hide/merge annotations and a rule-based human capsule. ToF remains
+unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -38,7 +39,7 @@ responsive.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 35 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 42 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -286,11 +287,32 @@ responsive.
   stepper released after scan. Evidence:
   `analysis/mapping/scan-success-60-20261109T210900Z/`.
 - **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
-  top-down grid, clusters them, fits oriented rectangles and extrudes estimated
-  boxes. The dense scan produced **6 estimated blocks** (one 3.28 m wall +
-  five objects). The dashboard shows 3D isometric and top-down 2D side by side
-  with Points/Blocks/Both toggles. Screenshot:
-  `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`.
+  top-down grid, clusters them, splits a thick wall cluster at its largest
+  along-wall gap, fits oriented rectangles and extrudes estimated boxes. The
+  dense scan produced **6 estimated blocks** (two wall segments, two
+  `wall_edge`, the fan, one small object). The dashboard shows 3D isometric and
+  top-down 2D side by side with Points/Blocks/Both and Jarak toggles.
+  Screenshot: `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`.
+- **Near-field / mount guard:** returns closer than **40 cm** are excluded;
+  low returns below the sensor plane inside **75 cm** and below-floor returns
+  are also removed. This eliminates the table/mount corners that previously
+  produced blocks hugging the sensor. The fan at ~0.88 m is retained and
+  manually labelled `fan`.
+- **Distance and annotation UI:** each block has `distance_m`/`nearest_m`;
+  top-down draws dashed leaders with `#n 2.27 m` tags and the 3D view shows the
+  selected block's distance. A numbered block table lists distance, size,
+  height, points and auto/manual source. Manual label, hide, merge and reset are
+  stored per scan in `annotations.json` and applied by `/reconstruct`.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/room-distance-blocks-v3.png`.
+- **Rule presence + human marker:** `presence.py` requires valid HLK,
+  `target_state>0`, `energy>=40`, 30–600 cm and 3 confirmation frames, with a
+  6 s hold. The AI/Presence tab shows class, confidence, distance, energy,
+  actuator status, a live energy/distance trend and rule-vs-DL metrics. The 3D
+  view draws a 1.7 m human capsule; the top-down view draws a highlighted box,
+  leader and live distance. Scan mode suppresses the marker. This is the rule
+  baseline; DL is not deployed. UI check screenshots:
+  `analysis/mapping/dashboard-20261110Tpresence/human-capsule-ui-check-v2.png`
+  and `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`.
 - A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
   servo retry now checks the observed target and retries an expired nudge only
   when it did not move. The 10°/25 µs scan then completed 247/247.
@@ -303,13 +325,15 @@ responsive.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the dashboard/3D deliverable is complete: ±60° room
-scan, top-down map, 3D isometric, and estimated solid blocks. Remaining work is
-optional tuning (fine scan/object labels), ToF hardware reliability, and the
-harder DL targets (human vs non-human or activity) once a second held-out
-session exists. Keep the rule-based movement/presence baseline for the demo;
-the 82.7% binary DL model and its TFLite export remain a pipeline baseline, not
-the primary detector.
+**Current next action:** the software-only visualization layer is complete:
+±60° room scan, split wall segments, occluded sectors, distance leaders,
+numbered block table, manual annotations, rule-based human capsule and the
+AI/Presence panel. Remaining work needs hardware/data: install and verify the
+new ToF, run a fine 5°/25 µs ±60° scan, record a non-human session, train the
+3-class `empty`/`human`/`non-human` model and evaluate it on a true held-out
+session. Only deploy DL if it beats the rule; until then keep the rule-based
+movement/presence baseline for the demo. The 82.7% binary DL model and its
+TFLite export remain a pipeline baseline, not the primary detector.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -329,7 +353,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **86 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **88 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -354,7 +378,9 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   delay test; 81 = ToF motion stall with servo detached during sampling;
   82 = 0.6.1 ToF watchdog OTA; 83 = 0.6.1 validation/coarse ToF scans;
   84 = binary empty/human training and rule-baseline comparison;
-  85 = 0.7.1 scan60-safe OTA; 86 = 60-degree room scans and solid-block viewer.
+  85 = 0.7.1 scan60-safe OTA; 86 = 60-degree room scans and solid-block viewer;
+  87 = software-only wall split/mount guard/distance/annotations/rule presence;
+  88 = final room view screenshot with distances and block table.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

@@ -25,7 +25,7 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**35 Python tests** passed for image headers, local-address validation,
+**42 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
 generation, scan config bounds and OpenAPI contract consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
@@ -76,6 +76,8 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W31 | Lulus pipeline - binary empty/human training, rule baseline wins | 2,234 empty frames (0% moving-energy positives) + 3,342 human frames (93.9% positive) produced 1,387 windows. The 1D CNN reached 82.7% validation accuracy (empty recall 91.0%, human recall 77.2%, confusion `[[101,10],[38,129]]`). A rule `max(moving_energy)>0` reached 100% on the same split. The binary task is rule-separable; the DL model is retained as a pipeline baseline, not deployed. Evidence: `analysis/mapping/ml-training-20261109T193000Z/`, `research/mapping/ml/model-empty-human/`. |
 | W32 | Lulus - 0.7.1 scan60-safe after hard-reset hang | `0.7.0-scan60` added a ToF XSHUT hard reset but hung the main loop when the ToF was truly faulted. `0.7.1-scan60-safe` removes the hard reset from the main loop, keeps yaw ±60° (684 half-steps), and preserves the suspend/recover watchdog. OTA reported `reset_reason=3`, `brownout=false`, `tof_hard_resets=0`; board stayed responsive. Evidence: `analysis/device/ota-scan60-safe-20261109T210859Z/`. |
 | W33 | Lulus - 60-degree room scans and solid-block viewer | Coarse `20261109T203919Z` completed 130/130 (109 valid, 21 ToF + 88 HC); dense `20261109T205833Z` completed 247/247 (219 valid, 50 ToF + 169 HC) across yaw ±60° at 770 mm sensor height. The reconstruction produced 6 estimated boxes (one 3.28 m wall + five objects); the dashboard shows top-down 2D and 3D solid blocks. A 5°/50 µs attempt failed at 40/250 with `expired_no_action`; the PC servo retry now handles expired nudges, and the 10°/25 µs scan completed. Evidence: `analysis/mapping/scan-success-60-20261109T210900Z/`, screenshot `analysis/mapping/dashboard-20261109T210800Z/final-room-blocks.png`. |
+| W34 | Lulus - software-only wall split, mount guard, distances and annotations | `reconstruct.py` now removes returns <40 cm, low table/mount returns <75 cm, and below-floor points; splits a thick wall cluster at its largest along-wall gap; labels `wall_edge`; and reports occluded sectors, `distance_m` and `nearest_m`. The dense scan yields two wall segments, two `wall_edge`, the fan and one small object. The dashboard adds numbered block badges, dashed distance leaders, a block table, and manual label/hide/merge/reset stored in `annotations.json`. Python tests increased to 42 and passed; JS syntax passed. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/room-distance-blocks-v3.png`. |
+| W35 | Lulus UI check - rule presence and human marker | `presence.py` implements valid-HLK + target + energy>=40 + 30–600 cm + 3-frame confirmation with a 6 s hold; scan mode suppresses it. Unit tests cover confirmation, hold, scan suppression, threshold/range and bounded history. The AI/Presence tab shows class/confidence/distance/energy, actuator status, rule-vs-DL metrics and a live trend; the 3D/top-down views draw a human capsule/highlight with live distance. The UI was checked with an injected present frame while the board was offline; this is a UI check, not a live detection claim. Screenshots: `analysis/mapping/dashboard-20261110Tpresence/human-capsule-ui-check-v2.png`, `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -139,6 +141,7 @@ Evidence directories (gitignored, retain locally):
 - `analysis/device/ota-scan60-safe-20261109T210859Z/`
 - `analysis/mapping/scan-success-60-20261109T210900Z/`
 - `analysis/mapping/dashboard-20261109T210800Z/`
+- `analysis/mapping/dashboard-20261110Tpresence/`
 - `research/mapping/scans/20261109T203919Z/`
 - `research/mapping/scans/20261109T205833Z/`
 - `analysis/device/ota-tof-watchdog-20261109T181258Z/`
@@ -161,7 +164,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
-Research CLI verified 86 stored evidence artifacts with zero integrity failures.
+Research CLI verified 88 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.

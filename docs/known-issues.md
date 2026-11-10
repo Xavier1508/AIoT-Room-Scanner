@@ -108,10 +108,27 @@ retries an expired nudge only if the servo did not move. A 10°/25 µs scan then
 completed 247/247. This is a PC-side mitigation, not a firmware queue fix.
 
 **Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
-one fixed viewpoint. Near-mount returns are removed, points are clustered,
+one fixed viewpoint. Returns <40 cm are removed; low table/mount returns below
+the sensor plane inside 75 cm and below-floor returns are also removed. Points
+are clustered, a thick wall cluster is split at its largest along-wall gap,
 rectangles are fitted and extruded to the observed top. Hidden sides are
-inferred; it is not a full mesh. The dense scan produced one wall and five
-object blocks.
+inferred; it is not a full mesh. The dense scan now yields two wall segments,
+two `wall_edge`, the fan and one small object. Wall thickness still reflects
+the HC beam/measurement spread, so a wall block can look thicker than the real
+wall. The right side of the room is partly occluded by the mount/table; the
+red top-down sectors mark areas with too few returns.
+
+**Manual annotations are per scan:** labels/hide/merge are stored in
+`research/mapping/scans/<id>/annotations.json`. If the reconstruction
+parameters change, box ids can change and an old annotation may no longer
+match. Reset annotations after a parameter change. The fan label is manual.
+
+**Live human marker is rule-based:** the 3D capsule/top-down highlight appears
+only after 3 confirmed HLK frames with `energy>=40` and 30–600 cm. It is
+suppressed during scan mode and holds for 6 s after the target disappears. It
+is not a trained human/non-human classifier and can be triggered by other
+moving targets. The DL model is not deployed; non-human live markers wait for
+the 3-class model and a true held-out session.
 
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%

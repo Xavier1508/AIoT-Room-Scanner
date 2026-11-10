@@ -148,16 +148,70 @@ viewer consistently.
 The **Point Cloud 3D** tab shows two views side by side:
 
 - **3D isometric:** cyan ToF points, orange HC points, blue estimated wall
-  blocks, green estimated object blocks, magenta HLK presence arc.
-- **Top-down 2D:** the same points/blocks on a north-up floor plan with a
-  0.5 m grid, sensor origin, ±60° FOV wedge, scale bar and HLK ray.
+  blocks, light-blue dashed `wall_edge` fragments, green estimated objects,
+  magenta HLK presence dot and a green human capsule when presence is confirmed.
+- **Top-down 2D:** the same points/blocks on a floor plan with a 0.5 m grid,
+  sensor origin, ±60° FOV wedge, scale bar, red occluded sectors, numbered
+  blocks, dashed distance leaders and a highlighted human box.
 
-`reconstruct.py` removes near-mount returns, clusters points in the x/y plane,
-fits an oriented rectangle, and extrudes it from the floor to the observed top.
-The blocks are **estimated** from one fixed viewpoint; hidden sides are
-inferred. Use the Points/Blocks/Both buttons to switch. The dense 0.7.1 scan
-produced six blocks (one wall + five objects). This is a 2.5D reconstruction,
-not a full mesh or a trained model.
+`reconstruct.py` removes near-field returns, clusters points in the x/y plane,
+splits a thick wall cluster at its largest along-wall gap, fits oriented
+rectangles and extrudes them from the floor to the observed top. The blocks are
+**estimated** from one fixed viewpoint; hidden sides are inferred.
+
+**Near-field / mount guard:** returns closer than **40 cm** from the sensor
+centre are excluded. Low returns below the sensor plane inside **75 cm** are
+also treated as the table/arm edge that the downward servo sweep hits; this is
+what caused the earlier blocks that appeared to hug the sensor. Below-floor
+returns (`z < -5 cm`) are discarded too. The dense 0.7.1 scan now yields six
+blocks (two wall segments, two `wall_edge`, the fan, one small object) instead
+of one thick wall plus near-field artefacts.
+
+**Distance annotations:** every block carries `distance_m` (centre) and
+`nearest_m` (closest footprint corner). The top-down view draws a dashed
+leader from the sensor origin with a `#n 2.27 m` tag; the 3D view shows the
+distance in the selected block label. The **Jarak** button toggles all distance
+leaders/tags so the map does not become too busy.
+
+**Block list and manual annotation:** the table below the canvases lists each
+block's number, colour, label, distance, size, height, point count and whether
+the label is automatic or manual. Use the block selectors to:
+
+- apply a label (`wall`, `wall_edge`, `fan`, `bed`, `wardrobe`, `chair`,
+  `table`, `object`, `mount`),
+- hide a false block,
+- merge two blocks into one bounding box,
+- reset all annotations.
+
+Annotations are stored per scan in
+`research/mapping/scans/<id>/annotations.json` and are applied by the
+`/reconstruct` endpoint. The fan block is labelled `fan` manually in the
+current dense scan.
+
+**Human marker:** the **AI / Presence** tab polls the HLK rule at ~1.5 s. When
+the rule confirms a target for 3 frames (valid HLK, `target_state>0`,
+`energy>=40`, 30–600 cm), the 3D view draws a 1.7 m capsule at the HLK
+distance/yaw and the top-down view draws a highlighted box plus a leader with
+the live distance and confidence. The marker is suppressed during scan mode
+and shown as `holding` for a few seconds after the target disappears. The
+class is rule-based `human`; a future DL `non-human` prediction uses the same
+marker in orange.
+
+## Presence and AI panel
+
+The **AI / Presence** tab shows:
+
+- rule prediction (`empty`/`human`), confidence, distance, energy, reason and
+  confirmation progress,
+- actuator status from the HLK proximity buzzer (enabled/state/mute/count/
+  last distance and energy),
+- DL model metrics and a rule-vs-DL comparison table,
+- a live energy/distance trend with per-frame state dots.
+
+This is deliberately honest: the live prediction is the **rule baseline**.
+The binary DL model is not deployed because it scored 82.7% validation versus
+100% for `max(moving_energy)>0` on the same split. The panel is the integration
+point for the future 3-class `empty`/`human`/`non-human` model.
 
 ## Deep learning boundary
 
@@ -202,6 +256,7 @@ held-out session.
 ## Endpoints
 
 - `GET /api/mapping/health`
+- `GET /api/mapping/presence`
 - `GET /api/mapping/status`
 - `POST /api/mapping/command`
 - `POST /api/mapping/scan/start`
@@ -210,6 +265,8 @@ held-out session.
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
 - `GET /api/mapping/scans/{id}/reconstruct`
+- `GET /api/mapping/scans/{id}/annotations`
+- `POST /api/mapping/scans/{id}/annotations`
 - `GET /api/mapping/calibration`
 - `POST /api/mapping/ml/start`
 - `POST /api/mapping/ml/stop`
