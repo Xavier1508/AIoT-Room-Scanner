@@ -79,6 +79,7 @@
       <button id="view-both" class="alt">Points + Blocks</button>
       <button id="view-blocks" class="alt">Blocks</button>
       <button id="view-points" class="alt">Points</button>
+      <button id="view-top" class="alt">Top 3D</button>
       <button id="toggle-distances" class="alt active">Jarak</button>
       <button id="toggle-prior" class="alt active">Prior</button>
       <button id="rotate-left" class="alt">⟲</button><button id="rotate-right" class="alt">⟳</button>
@@ -110,6 +111,7 @@
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
     <div id="block-list" class="note"></div>
     <p id="cloud-legend" class="note">Cyan = ToF, oranye = HC, biru = dinding estimasi, biru muda putus-putus = wall edge, hijau = objek, magenta = presence HLK, silinder hijau = human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor merah = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
+    <p class="note"><b>Sumbu:</b> X = horizontal (kanan), Y = vertikal denah (atas), Z = tinggi. <b>Scan:</b> mulai −60° di sisi kursi → kipas → kasur/lemari → +60°, searah jarum jam.</p>
     <div class="row annotation-row">
       <label class="note">Blok</label><select id="box-select"></select>
       <label class="note">Label</label>

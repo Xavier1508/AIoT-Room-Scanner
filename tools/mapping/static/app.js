@@ -1274,6 +1274,13 @@ function drawTopDown() {
     ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   }
   ctx.setLineDash([]);
+  const scanStart = toScreen(Math.cos(-fov) * extent * 0.82, Math.sin(-fov) * extent * 0.82);
+  const scanEnd = toScreen(Math.cos(fov) * extent * 0.82, Math.sin(fov) * extent * 0.82);
+  ctx.fillStyle = 'rgba(150,200,255,0.9)';
+  ctx.font = '12px system-ui';
+  ctx.fillText('start −60° (kursi)', scanStart.x - 24, scanStart.y - 8);
+  ctx.fillText('end +60° (kasur/lemari)', scanEnd.x + 4, scanEnd.y - 8);
+  ctx.fillText('scan searah jarum jam', origin.x + 8, origin.y + 20);
   drawRoomOutline2D(ctx, toScreen);
   if (state.showDistances) {
     for (const [boxIndex, box] of boxes.entries()) {
@@ -1824,6 +1831,14 @@ $('reload-points').addEventListener('click', () => loadPoints($('scan-select').v
 $('view-both').addEventListener('click', () => { state.viewMode = 'both'; drawCloud(); drawTopDown(); });
 $('view-blocks').addEventListener('click', () => { state.viewMode = 'blocks'; drawCloud(); drawTopDown(); });
 $('view-points').addEventListener('click', () => { state.viewMode = 'points'; drawCloud(); drawTopDown(); });
+$('view-top').addEventListener('click', () => {
+  state.viewYaw = 0;
+  state.viewPitch = 1.15;
+  state.zoom = 1.4;
+  state.viewPanX = 0;
+  state.viewPanY = 0;
+  drawCloud();
+});
 $('toggle-distances').addEventListener('click', () => {
   state.showDistances = !state.showDistances;
   $('toggle-distances').classList.toggle('active', state.showDistances);
