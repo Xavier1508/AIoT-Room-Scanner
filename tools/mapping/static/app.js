@@ -851,7 +851,10 @@ function selectBoxById(id, switchTab = true) {
   syncBoxLabel();
   syncPriorFields();
   renderBlockList();
-  if (switchTab) setSidebarTab('edit');
+  if (switchTab) {
+    setSidebarTab('edit');
+    setSidebarOpen(true);
+  }
   drawCloud();
   drawTopDown();
 }
@@ -865,6 +868,20 @@ function setSidebarTab(name) {
   });
 }
 
+function setSidebarOpen(open) {
+  const sidebar = $('block-sidebar');
+  const toggle = $('block-sidebar-toggle');
+  if (!sidebar || !toggle) return;
+  sidebar.hidden = !open;
+  toggle.hidden = open;
+  toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  try {
+    localStorage.setItem('mapping.sidebarOpen', open ? '1' : '0');
+  } catch (error) {
+    // localStorage can be blocked; the in-memory state still works.
+  }
+}
+
 function renderBlockList() {
   const container = $('block-stack');
   if (!container) return;
@@ -872,6 +889,8 @@ function renderBlockList() {
   const boxes = currentBoxes();
   const count = $('block-count');
   if (count) count.textContent = String(boxes.length);
+  const toggle = $('block-sidebar-toggle');
+  if (toggle) toggle.textContent = `Blok / Prior (${boxes.length})`;
   renderSelectedSummary();
   if (!boxes.length) {
     container.textContent = 'Tidak ada blok untuk ditampilkan.';
@@ -2365,6 +2384,8 @@ $('block-filter').addEventListener('input', renderBlockList);
 document.querySelectorAll('[data-sidebar-tab]').forEach(button => {
   button.addEventListener('click', () => setSidebarTab(button.dataset.sidebarTab));
 });
+$('block-sidebar-toggle').addEventListener('click', () => setSidebarOpen(true));
+$('block-sidebar-close').addEventListener('click', () => setSidebarOpen(false));
 $('apply-point-label').addEventListener('click', applyPointLabel);
 $('clear-selection').addEventListener('click', clearSelection);
 $('create-box').addEventListener('click', createBoxFromSelection);
@@ -2518,6 +2539,11 @@ function bindTopDown() {
 
 bindCanvas();
 bindTopDown();
+try {
+  setSidebarOpen(localStorage.getItem('mapping.sidebarOpen') === '1');
+} catch (error) {
+  setSidebarOpen(false);
+}
 renderLabelSuggestions();
 updateSelectionStatus();
 

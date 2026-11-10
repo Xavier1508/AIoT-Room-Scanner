@@ -137,10 +137,12 @@
         </details>
         <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Prior dashed tidak dihitung sebagai data training.</p>
       </div>
-      <aside class="block-sidebar">
+      <button id="block-sidebar-toggle" class="sidebar-toggle" type="button" aria-expanded="false">Blok / Prior</button>
+      <aside class="block-sidebar" id="block-sidebar" hidden>
         <div class="sidebar-head">
           <h3>Blok</h3>
           <span id="block-count" class="badge">0</span>
+          <button id="block-sidebar-close" class="sidebar-close" type="button" aria-label="Tutup sidebar">×</button>
         </div>
         <div id="selected-summary" class="selected-summary">Belum ada blok dipilih.</div>
         <div class="sidebar-tabs">

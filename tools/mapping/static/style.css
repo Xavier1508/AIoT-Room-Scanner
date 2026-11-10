@@ -209,3 +209,37 @@ footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #26384e; }
   font-weight: 700;
   border-bottom: 3px solid #7fc4ff;
 }
+
+/* Floating block sidebar: it overlays the map instead of shrinking it. */
+.map-layout { display: block; }
+.map-main { width: 100%; }
+.map-main .map-grid { grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); }
+.block-sidebar {
+  position: fixed;
+  top: 92px;
+  right: 16px;
+  bottom: 16px;
+  width: min(390px, calc(100vw - 24px));
+  max-height: none;
+  z-index: 1200;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.block-sidebar[hidden] { display: none; }
+.sidebar-toggle {
+  position: fixed;
+  top: 96px;
+  right: 16px;
+  z-index: 1200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.sidebar-toggle[hidden] { display: none; }
+.sidebar-close {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: #9fb1c7;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.sidebar-close:hover { color: #ffffff; }
