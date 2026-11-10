@@ -107,6 +107,12 @@ firmware's 500 ms expiry. The PC `servo_to` now checks the observed target and
 retries an expired nudge only if the servo did not move. A 10°/25 µs scan then
 completed 247/247. This is a PC-side mitigation, not a firmware queue fix.
 
+**3D projection flip fixed:** the old 3D projection used `center + y2`, so +Y
+was drawn downward and the 3D view looked vertically flipped relative to the
+2D plan. The projection now uses `center - y2`, with +X right, +Y up and +Z up;
+the default camera is isometric (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4).
+The 2D top-down and 3D isometric now share the same plan orientation.
+
 **Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
 one fixed viewpoint. Returns <40 cm are removed; low table/mount returns below
 the sensor plane inside 75 cm and below-floor returns are also removed. A small
@@ -121,26 +127,29 @@ while `width_observed_m` keeps the full HC beam spread.
 
 **Room prior is an estimate, not measured data:** the prior room is
 2.70×2.20 m (5.94 m²), bathroom 1.50×1.50 m (2.25 m²), desk niche ~0.40 m²,
-total 8.59 m². Prior bed 2.00×1.20×0.57 m and wardrobe 0.70×0.60×2.00 m are
-dashed and toggleable. They are based on photos/user measurements and are
-stored per scan, not hard-coded. Do not treat prior boxes as measured evidence
-or include them in training until confirmed. The measured wall/wardrobe block
-is not the 70 cm wardrobe; the actual wardrobe is near the sensor/right side
-and is represented by the prior box.
+total 8.59 m². The plan frame is sensor at the left wall, +X right, +Y up.
+Prior bed 2.00×1.20×0.57 m is bottom-right with its long axis along the bottom
+wall; wardrobe 0.70×0.60×2.00 m is bottom-left (front ~0.85 m); chair/desk are
+top-left; WC door is left, exit door right. They are dashed and toggleable,
+based on photos/user measurements and stored per scan, not hard-coded. Do not
+treat prior boxes as measured evidence or include them in training until
+confirmed. The measured wall/wardrobe block is not the 70 cm wardrobe; the
+actual wardrobe is the bottom-left prior.
 
 **Yaw scale is provisional:** the commanded yaw is larger than the effective
-mechanical yaw. The user-tuned default is **0.76**, giving an effective FOV of
-about ±45.6°, not ±60°. At 0.76 the wall panels merge; 0.77–0.80 separates
-them. The Yaw scale input (0.50–1.00) re-projects points/blocks live, and
-manual labels are remapped to the nearest box. Confirm the scale against a
-known target before treating the map as calibrated.
+mechanical yaw. The user-tuned default is **0.76** plus **map rotation 10.7°**
+to make the measured right wall vertical; effective FOV is about ±45.6°, not
+±60°. At 0.76 the wall panels merge; 0.77–0.80 separates them. The Yaw scale and
+Rotasi inputs re-project points/blocks live, and manual labels are remapped to
+the nearest box. Confirm the values against a known target before treating the
+map as calibrated.
 
 **Bed and wardrobe:** the tall right-side measured block is not the 70 cm
-wardrobe; it is the back wall/corner. The actual wardrobe is near the
-sensor/right side (prior front face ~0.85 m), and the bed is represented by a
-prior box against the back wall. Confirm the prior placement visually before
-labelling them as measured. A new ToF/fine scan is needed for measured points
-on the low bed and the near-sensor wardrobe.
+wardrobe; it is the right wall/corner. The actual wardrobe is the bottom-left
+prior (front ~0.85 m), and the bed is the bottom-right prior with its long axis
+along the bottom wall. Confirm the prior placement visually before labelling
+them as measured. A new ToF/fine scan is needed for measured points on the low
+bed and the bottom-left wardrobe.
 
 **Manual annotations are per scan:** labels/hide/merge, point labels, label
 catalog, manual/prior boxes and the room outline are stored in

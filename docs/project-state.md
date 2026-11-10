@@ -5,12 +5,13 @@ application OTA, sensor health and the PC mapping dashboard are verified.
 `0.7.1-scan60-safe` supports a ±60° commanded room scan. The final dense scan
 has 247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
 full-width top-down 2D map and 3D isometric view with yaw calibration (default
-**0.76**, effective FOV ±45.6°), a per-scan room prior, straight block panels,
-occluded sectors, distance leaders, a numbered block list, custom labels,
-box/point selection, manual box creation, 2D pan/zoom and a rule-based human
-capsule. The visible map has a measured wall, the `fan`, a prior bed and a
-prior wardrobe; the table-edge block `#6` is hidden. ToF remains unreliable;
-scans use HC fallback and the watchdog keeps the board responsive.
+**0.76**), map rotation **10.7°** (right wall vertical), a per-scan room prior,
+straight block panels, occluded sectors, distance leaders, a numbered block
+list, custom labels, box/point selection, manual box creation, 2D pan/zoom and
+a rule-based human capsule. The visible map follows the plan: sensor on the
+left wall, wardrobe bottom-left, bed bottom-right, chair/desk top-left, WC door
+left and exit door right; the table-edge block `#6` is hidden. ToF remains
+unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -42,7 +43,7 @@ scans use HC fallback and the watchdog keeps the board responsive.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 44 Python tests passed**; dashboard JS
+- Portable tests: **74 C++ assertions + 45 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -291,24 +292,31 @@ scans use HC fallback and the watchdog keeps the board responsive.
   `analysis/mapping/scan-success-60-20261109T210900Z/`.
 - **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
   top-down grid, clusters them, splits a thick wall cluster at its largest
-  along-wall gap, fits oriented rectangles and extrudes estimated boxes. The
-  dense scan at yaw scale 0.76 shows the measured wall and fan, plus dashed
-  **prior** bed/wardrobe boxes and a prior room outline. The table-edge block
+  along-wall gap, fits oriented rectangles and extrudes estimated boxes. At
+  yaw 0.76 + map rotation 10.7° the measured right wall is vertical. The plan
+  frame has the sensor on the left wall, wardrobe bottom-left, bed bottom-right,
+  chair/desk top-left, WC door left and exit door right. The table-edge block
   `#6` is classified `mount` and hidden. The dashboard shows 3D isometric and
   top-down 2D side by side with Points/Blocks/Both, Jarak and Prior toggles.
-  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/prior-room-overlay.png`.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`.
+- **3D projection fix:** the old projection put +Y downward (`center + y2`),
+  making the 3D view vertically flipped relative to the 2D plan. The projection
+  now uses +X right, +Y up and +Z up (`center - y2`), with an isometric default
+  (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4).
 - **Yaw calibration + responsive layout:** the commanded yaw is larger than the
   effective mechanical yaw; the user-tuned default is **yaw scale 0.76**
-  (effective FOV ±45.6°). At 0.76 the wall panels merge; 0.77–0.80 separates
-  them. The Yaw scale input (0.50–1.00) re-projects points/blocks live and
-  remaps manual labels. The page uses the full desktop width, the map grid is
-  responsive, and 2D pan/zoom plus label scaling (1–1.6×) keep numbers readable.
-  This is provisional until a known-target calibration is measured.
+  (effective FOV ±45.6°) plus **map rotation 10.7°** to make the measured right
+  wall vertical. At 0.76 the wall panels merge; 0.77–0.80 separates them. The
+  Yaw scale and Rotasi inputs re-project points/blocks live and remap manual
+  labels. The page uses the full desktop width, the map grid is responsive, and
+  2D pan/zoom plus label scaling (1–1.6×) keep numbers readable. This is
+  provisional until a known-target calibration is measured.
 - **Room prior + area:** per-scan prior from photos/measurements:
   2.70×2.20 m bedroom = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche
-  0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m and wardrobe
-  0.70×0.60×2.00 m (near the sensor/right, front face ~0.85 m) are dashed and
-  toggleable. They are per-scan data, not hard-coded, and are excluded from
+  0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m at bottom-right (long
+  axis along the bottom wall), wardrobe 0.70×0.60×2.00 m at bottom-left (front
+  face ~0.85 m), chair/desk at top-left, WC door left and exit door right. They
+  are dashed, toggleable, per-scan data, not hard-coded, and excluded from
   training until confirmed.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
@@ -379,7 +387,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **91 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **92 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -409,7 +417,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   88 = final room view screenshot with distances and block table;
   89 = final robust wall-thickness display screenshot;
   90 = yaw calibration, mount removal, full-width layout and 2D zoom;
-  91 = room prior, selection/labels and 3D object export.
+  91 = room prior, selection/labels and 3D object export;
+  92 = 3D projection flip fix, map rotation and plan-aligned prior.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

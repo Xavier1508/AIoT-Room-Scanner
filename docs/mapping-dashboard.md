@@ -160,14 +160,19 @@ splits a thick wall cluster at its largest along-wall gap, fits oriented
 rectangles and extrudes them from the floor to the observed top. The blocks are
 **estimated** from one fixed viewpoint; hidden sides are inferred.
 
-**Yaw calibration:** the commanded yaw is larger than the effective mechanical
-yaw. The dense scan is currently viewed at **yaw scale 0.76** (user-tuned;
-effective FOV ±45.6°). At 0.76 the wall panels merge into one long wall; at
-0.77–0.80 the two surfaces separate again. The **Yaw scale** input (0.50–1.00)
-re-projects points and blocks live; manual labels are remapped to the nearest
-box. The chosen value is kept in browser localStorage and in the room metadata
-when annotations are saved. This is a provisional calibration, not a measured
-servo curve.
+**Yaw calibration and map rotation:** the commanded yaw is larger than the
+effective mechanical yaw. The dense scan is viewed at **yaw scale 0.76**
+(user-tuned; effective FOV ±45.6°) and **map rotation 10.7°**, which makes the
+measured right wall vertical and aligns the map with the plan. The **Yaw scale**
+and **Rotasi** inputs re-project points/blocks live; manual labels are remapped
+to the nearest box. The chosen values are kept in browser localStorage and in
+the room metadata when annotations are saved. This is provisional, not a
+measured servo curve.
+
+**3D projection:** the 3D view now uses +X right, +Y up and +Z up, matching the
+2D plan. The previous projection put +Y downward, which made the 3D view look
+vertically flipped. The default camera is an isometric view (`viewYaw -0.65`,
+`viewPitch 0.55`) with the same room orientation as the plan.
 
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
@@ -177,17 +182,22 @@ returns (`z < -5 cm`) are discarded too. A small thin tall cluster close to the
 scanner is classified `mount` and hidden as a box. At yaw 0.76 the measured map
 shows a wall and the fan; the former table-edge block `#6` is gone.
 
-**Room prior overlay (per scan, optional):** the photos and measurements give a
-consistent room model:
+**Room prior overlay (per scan, optional):** the photos and plan give a
+consistent room model. The plan frame is **sensor at the left wall (0,0),
++X right, +Y up**:
 
-- bedroom rectangle **2.70 × 2.20 m = 5.94 m²**
+- bedroom rectangle **2.70 × 2.20 m = 5.94 m²** (outline y −1.45…+0.75)
 - bathroom **1.50 × 1.50 m = 2.25 m²** (excluded from the bedroom map)
 - desk niche **≈0.40 m²**
 - total **8.59 m²** (matches the 8.6 m² figure)
-- bed **2.00 × 1.20 × 0.57 m** against the back wall
-- wardrobe **0.70 × 0.60 × 2.00 m** near the sensor/right side, front face
-  about **0.85 m** from the rack (consistent with the 75–80 cm measurement)
-- sensor rack on the desk edge at **77 cm**, looking toward the bed/exit door
+- bed **2.00 × 1.20 × 0.57 m** at bottom-right, long axis along the bottom
+  wall, pillows at the right/top corner
+- wardrobe **0.70 × 0.60 × 2.00 m** at bottom-left, front face ~0.85 m from
+  the rack
+- chair **0.45 × 0.45 × 0.45 m** at top-left; desk niche marker outside the
+  top wall (desk is recessed, not flanking the room)
+- WC door on the **left wall**, exit door on the **right wall**
+- sensor rack on the desk edge at **77 cm**, looking right across the room
 
 The prior is drawn as dashed boxes/outline (`bed (prior)`, `wardrobe (prior)`,
 `prior room 2.7×2.2 m`) and can be toggled with **Prior**. It is stored per

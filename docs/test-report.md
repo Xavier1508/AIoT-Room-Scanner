@@ -25,7 +25,7 @@ assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
 plus the new fine-jog/scan-mode/HLK-alert command and limit checks.
-**44 Python tests** passed for image headers, local-address validation,
+**45 Python tests** passed for image headers, local-address validation,
 serial framing, SSID-byte/display/menu handling, scan yaw/tilt target
 generation, scan config bounds and OpenAPI contract consistency.
 Dashboard JavaScript syntax and the PC mapping app's Python syntax passed.
@@ -80,6 +80,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W35 | Lulus UI check - rule presence and human marker | `presence.py` implements valid-HLK + target + energy>=40 + 30–600 cm + 3-frame confirmation with a 6 s hold; scan mode suppresses it. Unit tests cover confirmation, hold, scan suppression, threshold/range and bounded history. The AI/Presence tab shows class/confidence/distance/energy, actuator status, rule-vs-DL metrics and a live trend; the 3D/top-down views draw a human capsule/highlight with live distance. The UI was checked with an injected present frame while the board was offline; this is a UI check, not a live detection claim. Screenshots: `analysis/mapping/dashboard-20261110Tpresence/human-capsule-ui-check-v2.png`, `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`. |
 | W36 | Lulus UI/reconstruction - yaw scale, full-width layout, 2D zoom and mount removal | The dense scan's wall thickness is minimised around yaw scale **0.85** (effective FOV ±51°); the Yaw scale input re-projects points/blocks live and remaps manual labels. The table-edge block `#6` is classified `mount` and hidden; the tall right-side block is manually labelled `wardrobe`, and the fan remains at ~0.88 m. The page uses the full desktop width, the map grid is responsive, 2D supports drag-pan and wheel/button zoom, and labels scale up to 1.6× without shrinking below base size. Tests increased to 44 and passed; JS syntax passed. Screenshots: `analysis/mapping/dashboard-20261110Tpresence/final-fullwidth-yaw085-v2.png`, `analysis/mapping/dashboard-20261110Tpresence/topdown-zoom.png`, `analysis/mapping/dashboard-20261110Tpresence/fullwidth-1920.png`. |
 | W37 | Lulus UI/data - room prior, selection/labels and 3D object export | User-tuned yaw **0.76** (effective FOV ±45.6°). Per-scan room prior: bedroom 2.70×2.20 m = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche 0.40 m², total 8.59 m²; prior bed 2.00×1.20×0.57 m and wardrobe 0.70×0.60×2.00 m are dashed/toggleable. The measured wall and fan remain; the former `#6` table edge is hidden. Right-drag orbit/pan, left-drag box selection, box click, custom labels, point labels by `point_index`, and create-box-from-selection were exercised: 31 fan points selected and labelled. `export_pointcloud.py` wrote `fan.csv`, `fan.npz`, `objects.csv` and `manifest.json`. Prior boxes are explicitly not measured/training data. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/prior-room-overlay.png`. |
+| W38 | Lulus UI/reconstruction - plan orientation, 3D flip fix and map rotation | The 3D projection sign was corrected (`center - y2`), so +X is right, +Y up and +Z up, matching the 2D plan. Map rotation **10.7°** makes the measured right wall vertical. Priors were re-authored to the user plan: sensor left wall, wardrobe bottom-left, bed bottom-right (2.0 m along bottom wall), chair/desk top-left, WC door left, exit door right; room 2.70×2.20 m, bathroom 1.50×1.50 m, niche 0.40 m², total 8.59 m². Prior distances: wardrobe 0.85 m, bed 0.74 m, chair 0.36 m, desk 0.76 m. Tests increased to 45 and passed. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -166,7 +167,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
-Research CLI verified 91 stored evidence artifacts with zero integrity failures.
+Research CLI verified 92 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.
