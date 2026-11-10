@@ -40,13 +40,20 @@ def _read_points(scan_id: str):
         return list(csv.DictReader(handle))
 
 
-def export_scan(scan_id: str, output_root: Path, yaw_scale: float = 0.76) -> dict:
+def export_scan(scan_id: str, output_root: Path, yaw_scale: float = 0.76,
+                map_rotation_deg: float = 10.7) -> dict:
     scan_dir = SCANS / scan_id
     annotations = read_json(scan_dir / "annotations.json", {}) or {}
     saved_yaw = (annotations.get("room") or {}).get("yaw_scale")
     if saved_yaw:
         try:
             yaw_scale = max(0.50, min(1.00, float(saved_yaw)))
+        except (TypeError, ValueError):
+            pass
+    saved_rotation = (annotations.get("room") or {}).get("map_rotation_deg")
+    if saved_rotation is not None:
+        try:
+            map_rotation_deg = max(-45.0, min(45.0, float(saved_rotation)))
         except (TypeError, ValueError):
             pass
     rows = _read_points(scan_id)
@@ -63,6 +70,7 @@ def export_scan(scan_id: str, output_root: Path, yaw_scale: float = 0.76) -> dic
     manifest = {
         "scan_id": scan_id,
         "yaw_scale": yaw_scale,
+        "map_rotation_deg": map_rotation_deg,
         "point_labels": {},
         "objects": [],
     }
@@ -97,7 +105,9 @@ def export_scan(scan_id: str, output_root: Path, yaw_scale: float = 0.76) -> dic
             "npz": _relative(npz_path),
         }
 
-    reconstruction = reconstruct_points(rows, yaw_scale=yaw_scale, annotations=annotations)
+    reconstruction = reconstruct_points(rows, yaw_scale=yaw_scale,
+                                         map_rotation_deg=map_rotation_deg,
+                                         annotations=annotations)
     objects_path = target / "objects.csv"
     object_fields = ["label", "source", "label_source", "distance_m", "nearest_m",
                      "length_m", "width_m", "z_top_m", "points", "cx_m", "cy_m", "angle_deg"]
@@ -126,6 +136,7 @@ def main() -> int:
     parser.add_argument("--scan", default="", help="scan id; omit to export all scans")
     parser.add_argument("--output", default=str(RESEARCH / "ml" / "pointcloud"))
     parser.add_argument("--yaw-scale", type=float, default=0.76)
+    parser.add_argument("--map-rotation", type=float, default=10.7)
     args = parser.parse_args()
     output = Path(args.output)
     scan_ids = [args.scan] if args.scan else sorted(
@@ -135,7 +146,7 @@ def main() -> int:
     results = []
     for scan_id in scan_ids:
         try:
-            results.append(export_scan(scan_id, output, args.yaw_scale))
+            results.append(export_scan(scan_id, output, args.yaw_scale, args.map_rotation))
         except Exception as exc:  # keep exporting the remaining scans
             print(f"{scan_id}: failed: {exc}")
     print(json.dumps({"exported": [item["scan_id"] for item in results]}, indent=2))

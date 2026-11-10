@@ -242,7 +242,8 @@ def _clean_annotations(payload):
     clean_room = {}
     if isinstance(room, dict):
         for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
-                    "bedroom_m2", "total_m2", "reference_scale", "yaw_scale"):
+                    "bedroom_m2", "total_m2", "reference_scale", "yaw_scale",
+                    "map_rotation_deg"):
             if key in room:
                 try:
                     clean_room[key] = round(float(room[key]), 3)
@@ -487,9 +488,15 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     yaw_scale = 0.76
                 yaw_scale = max(0.50, min(1.00, yaw_scale))
+                try:
+                    map_rotation = float(params.get("map_rotation", ["10.7"])[0])
+                except (TypeError, ValueError):
+                    map_rotation = 10.7
+                map_rotation = max(-45.0, min(45.0, map_rotation))
                 annotations = _load_annotations(scan_id)
                 reconstruction = reconstruct_points(
-                    _points(scan_id), yaw_scale=yaw_scale, annotations=annotations)
+                    _points(scan_id), yaw_scale=yaw_scale,
+                    map_rotation_deg=map_rotation, annotations=annotations)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
@@ -527,9 +534,15 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     yaw_scale = 0.76
                 yaw_scale = max(0.50, min(1.00, yaw_scale))
+                try:
+                    map_rotation = float(body.get("map_rotation", 10.7))
+                except (TypeError, ValueError):
+                    map_rotation = 10.7
+                map_rotation = max(-45.0, min(45.0, map_rotation))
                 annotations = _save_annotations(scan_id, body.get("annotations", body))
                 reconstruction = reconstruct_points(
-                    _points(scan_id), yaw_scale=yaw_scale, annotations=annotations)
+                    _points(scan_id), yaw_scale=yaw_scale,
+                    map_rotation_deg=map_rotation, annotations=annotations)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})

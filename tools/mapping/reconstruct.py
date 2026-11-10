@@ -356,11 +356,17 @@ def apply_annotations(result, annotations):
 def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
                        near_field_m=0.40, mount_guard_m=0.75,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
-                       yaw_scale=0.76, annotations=None):
+                       yaw_scale=0.76, map_rotation_deg=10.7,
+                       annotations=None):
     try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):
         yaw_scale = 1.0
+    try:
+        map_rotation = math.radians(float(map_rotation_deg))
+    except (TypeError, ValueError):
+        map_rotation = 0.0
+    rotation_ca, rotation_sa = math.cos(map_rotation), math.sin(map_rotation)
     effective_fov_deg = max(5.0, min(90.0, float(fov_limit_deg) * yaw_scale))
     points = []
     mount_points = 0
@@ -385,6 +391,9 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
                 y = distance * math.sin(yaw)
             except (TypeError, ValueError):
                 pass
+        if rotation_ca != 1.0 or rotation_sa != 0.0:
+            x, y = (x * rotation_ca - y * rotation_sa,
+                    x * rotation_sa + y * rotation_ca)
         # Below-floor returns are floor/arm artefacts, not room geometry.
         if z < -0.05:
             mount_points += 1
@@ -416,6 +425,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
                   "occluded_deg": [[-effective_fov_deg, effective_fov_deg]],
                   "fov_limit_deg": effective_fov_deg,
                   "yaw_scale": yaw_scale,
+                  "map_rotation_deg": round(math.degrees(map_rotation), 1),
                   "near_field_m": near_field_m,
                   "mount_guard_m": mount_guard_m,
                   "note": "No points after near-mount filtering."}
@@ -467,6 +477,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
         "occluded_deg": occluded,
         "fov_limit_deg": effective_fov_deg,
         "yaw_scale": yaw_scale,
+        "map_rotation_deg": round(math.degrees(map_rotation), 1),
         "near_field_m": near_field_m,
         "mount_guard_m": mount_guard_m,
         "note": ("Estimated boxes from one fixed viewpoint; hidden sides are inferred. "

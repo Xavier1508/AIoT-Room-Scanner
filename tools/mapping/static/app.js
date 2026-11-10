@@ -10,6 +10,17 @@ function storedYawScale() {
   }
 }
 
+function storedMapRotation() {
+  try {
+    const raw = localStorage.getItem('mapping.mapRotation');
+    if (raw === null) return 10.7;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= -45 && value <= 45 ? value : 10.7;
+  } catch (error) {
+    return 10.7;
+  }
+}
+
 const state = {
   health: null,
   scans: [],
@@ -37,13 +48,14 @@ const state = {
   mlMetrics: null,
   showDistances: true,
   yawScale: storedYawScale(),
+  mapRotation: storedMapRotation(),
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
   viewMode: 'both',
   viewYaw: -0.65,
-  viewPitch: 0.48,
-  zoom: 1.0,
+  viewPitch: 0.55,
+  zoom: 1.4,
   viewPanX: 0,
   viewPanY: 0,
 };
@@ -565,10 +577,11 @@ async function loadPoints(scanId) {
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
     $('yaw-scale').value = Number(state.yawScale).toFixed(2);
+    $('map-rotation').value = Number(state.mapRotation).toFixed(1);
     let reconstruction = null;
     let annotations = { labels: {}, hidden: [], merges: [] };
     try {
-      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}`);
+      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}`);
       reconstruction = rec.reconstruction;
       annotations = rec.annotations || annotations;
     } catch (error) {
@@ -581,7 +594,7 @@ async function loadPoints(scanId) {
     state.selectionRect = null;
     const blocks = reconstruction?.boxes?.length ?? 0;
     const mountBoxes = reconstruction?.mount_boxes ?? 0;
-    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
+    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · rotasi ${Number(reconstruction?.map_rotation_deg ?? state.mapRotation).toFixed(1)}° · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
     renderBoxControls();
     drawCloud();
     drawTopDown();
@@ -703,8 +716,8 @@ function renderRoomInfo() {
 }
 
 function boxDistance(box) {
-  const value = (box.label === 'wall' || box.label === 'wall_edge')
-    ? box.nearest_m : box.distance_m;
+  const value = (box.label === 'wall' || box.label === 'wall_edge'
+    || box.source === 'prior') ? box.nearest_m : box.distance_m;
   return Number(value);
 }
 
@@ -829,10 +842,11 @@ async function saveAnnotations(annotations, message) {
   if (!state.loadedScan) return;
   annotations.room = annotations.room || {};
   annotations.room.yaw_scale = state.yawScale;
+  annotations.room.map_rotation_deg = state.mapRotation;
   const data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ annotations, yaw_scale: state.yawScale }),
+    body: JSON.stringify({ annotations, yaw_scale: state.yawScale, map_rotation: state.mapRotation }),
   });
   state.reconstruction = data.reconstruction;
   applyAnnotationState(data.annotations || annotations);
@@ -916,12 +930,12 @@ function projectPoint(point, width, height, radius) {
   const sp = Math.sin(state.viewPitch);
   const x1 = x * cy - y * sy;
   const y1 = x * sy + y * cy;
-  const y2 = y1 * sp - z * cp;
-  const depth = y1 * cp + z * sp;
+  const y2 = y1 * sp + z * cp;
+  const depth = y1 * cp - z * sp;
   const scale = Math.min(width, height) * 0.72 * state.zoom / (2 * radius + 0.6);
   return {
     x: width / 2 + x1 * scale + Number(state.viewPanX || 0),
-    y: height / 2 + y2 * scale + Number(state.viewPanY || 0),
+    y: height / 2 - y2 * scale + Number(state.viewPanY || 0),
     depth,
   };
 }
@@ -977,33 +991,51 @@ function boxCorners(box) {
 
 function scaledPoint(point) {
   const scale = Number(state.yawScale);
-  if (!Number.isFinite(scale) || Math.abs(scale - 1) < 1e-6) return point;
+  const rotation = Number(state.mapRotation) * Math.PI / 180;
+  const rotate = Number.isFinite(rotation) && Math.abs(rotation) > 1e-9;
+  const yawScale = Number.isFinite(scale) && Math.abs(scale - 1) > 1e-6;
+  if (!yawScale && !rotate) return point;
   const x = Number(point.x_mm);
   const y = Number(point.y_mm);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return point;
   const distance = Math.hypot(x, y);
   if (!distance) return point;
-  const yaw = Math.atan2(y, x) * scale;
-  return { ...point, x_mm: distance * Math.cos(yaw), y_mm: distance * Math.sin(yaw) };
+  const yaw = Math.atan2(y, x) * (Number.isFinite(scale) ? scale : 1);
+  let rx = distance * Math.cos(yaw);
+  let ry = distance * Math.sin(yaw);
+  if (rotate) {
+    const ca = Math.cos(rotation), sa = Math.sin(rotation);
+    const nx = rx * ca - ry * sa;
+    const ny = rx * sa + ry * ca;
+    rx = nx;
+    ry = ny;
+  }
+  return { ...point, x_mm: rx, y_mm: ry };
 }
 
 function applyYawScale() {
-  const raw = Number($('yaw-scale').value);
-  const value = Math.max(0.50, Math.min(1.00, Number.isFinite(raw) ? raw : 0.76));
-  state.yawScale = value;
+  const rawYaw = Number($('yaw-scale').value);
+  const rawRotation = Number($('map-rotation').value);
+  const yaw = Math.max(0.50, Math.min(1.00, Number.isFinite(rawYaw) ? rawYaw : 0.76));
+  const rotation = Math.max(-45, Math.min(45, Number.isFinite(rawRotation) ? rawRotation : 10.7));
+  state.yawScale = yaw;
+  state.mapRotation = rotation;
   try {
-    localStorage.setItem('mapping.yawScale', value.toFixed(2));
+    localStorage.setItem('mapping.yawScale', yaw.toFixed(2));
+    localStorage.setItem('mapping.mapRotation', rotation.toFixed(1));
   } catch (error) {
     // localStorage can be unavailable in private/embedded contexts.
   }
-  $('yaw-scale').value = value.toFixed(2);
-  setText('yaw-scale-note', `${value.toFixed(2)} provisional — turunkan sampai dinding lurus.`);
+  $('yaw-scale').value = yaw.toFixed(2);
+  $('map-rotation').value = rotation.toFixed(1);
+  setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° — sesuaikan sampai dinding lurus.`);
   const scanId = state.loadedScan || $('scan-select').value;
   if (scanId) loadPoints(scanId);
 }
 
 function resetYawScale() {
   $('yaw-scale').value = '1.00';
+  $('map-rotation').value = '0.0';
   applyYawScale();
 }
 
@@ -1166,7 +1198,10 @@ function drawRoomOutline2D(ctx, toScreen) {
   ctx.setLineDash([8, 6]);
   ctx.stroke();
   ctx.setLineDash([]);
-  const first = toScreen(Number(state.roomOutline[0][0]), Number(state.roomOutline[0][1]));
+  const labelCorner = state.roomOutline.reduce((best, point) =>
+    (Number(point[0]) <= Number(best[0]) && Number(point[1]) >= Number(best[1]) ? point : best),
+  state.roomOutline[0]);
+  const first = toScreen(Number(labelCorner[0]), Number(labelCorner[1]));
   const room = state.room || {};
   const dimensions = room.width_m && room.depth_m
     ? `${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m` : 'prior';
@@ -1242,6 +1277,7 @@ function drawTopDown() {
   drawRoomOutline2D(ctx, toScreen);
   if (state.showDistances) {
     for (const [boxIndex, box] of boxes.entries()) {
+      if (box.source === 'prior') continue;
       const color = boxColor(box);
       let anchor;
       if (box.label === 'wall' || box.label === 'wall_edge') {
@@ -1294,7 +1330,7 @@ function drawTopDown() {
       ctx.stroke();
       ctx.setLineDash([]);
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
-      if (box.label === 'wall' || box.label === 'wall_edge') {
+      if (box.label === 'wall' || box.label === 'wall_edge' || box.source === 'prior') {
         ctx.beginPath();
         ctx.arc(label.x, label.y, 11 * labelScale, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
@@ -1307,7 +1343,9 @@ function drawTopDown() {
         ctx.textAlign = 'start';
         ctx.textBaseline = 'alphabetic';
       } else {
-        const text = `#${boxIndex + 1} ${boxName(box)}`;
+        const shortName = box.label === 'door-wc' ? 'WC'
+          : box.label === 'door-exit' ? 'exit' : box.label;
+        const text = `#${boxIndex + 1} ${shortName}`;
         ctx.font = `${14 * labelScale}px system-ui`;
         ctx.lineWidth = 3 * labelScale;
         ctx.strokeStyle = 'rgba(10,17,28,0.85)';
@@ -1827,8 +1865,8 @@ $('zoom-in').addEventListener('click', () => { state.zoom = Math.min(4, state.zo
 $('zoom-out').addEventListener('click', () => { state.zoom = Math.max(0.25, state.zoom / 1.2); drawCloud(); });
 $('reset-view').addEventListener('click', () => {
   state.viewYaw = -0.65;
-  state.viewPitch = 0.48;
-  state.zoom = 1.0;
+  state.viewPitch = 0.55;
+  state.zoom = 1.4;
   state.viewPanX = 0;
   state.viewPanY = 0;
   drawCloud();

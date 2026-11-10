@@ -62,6 +62,16 @@ class Reconstruction(unittest.TestCase):
         self.assertAlmostEqual(result["yaw_scale"], 0.5)
         self.assertAlmostEqual(result["fov_limit_deg"], 30.0)
 
+    def test_map_rotation_metadata(self):
+        rows = [{"x_mm": 1500, "y_mm": 0, "z_mm": 1500, "range_mm": 1500,
+                 "yaw_deg": 0}] * 8
+        result = reconstruct.reconstruct_points(
+            rows, yaw_scale=1.0, map_rotation_deg=10.0)
+        self.assertAlmostEqual(result["map_rotation_deg"], 10.0)
+        box = result["boxes"][0]
+        self.assertAlmostEqual(box["cx_m"], 1.477, places=2)
+        self.assertAlmostEqual(box["cy_m"], 0.260, places=2)
+
     def test_annotations_label_hide_merge(self):
         rows = []
         for index in range(20):

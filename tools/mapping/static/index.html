@@ -89,9 +89,11 @@
     <div class="row annotation-row">
       <label class="note">Yaw scale</label>
       <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.76">
+      <label class="note">Rotasi</label>
+      <input id="map-rotation" type="number" min="-45" max="45" step="0.1" value="10.7">
       <button id="apply-yaw-scale">Terapkan</button>
-      <button id="reset-yaw-scale" class="alt">1.00</button>
-      <span id="yaw-scale-note" class="note">0.76 provisional — turunkan sampai dinding lurus, naikkan jika terlalu sempit.</span>
+      <button id="reset-yaw-scale" class="alt">Reset kal.</button>
+      <span id="yaw-scale-note" class="note">yaw 0.76 · rotasi 10.7° — sesuaikan sampai dinding lurus.</span>
     </div>
     <div class="map-grid">
       <div><h3>3D isometrik</h3><canvas id="cloud" width="1200" height="700"></canvas></div>
