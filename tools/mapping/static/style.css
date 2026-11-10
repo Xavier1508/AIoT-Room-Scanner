@@ -17,6 +17,8 @@ h2 { font-size: 1.05rem; margin: 0 0 10px; }
 .annotation-row { align-items: center; }
 .annotation-row select { min-width: 150px; }
 #yaw-scale { width: 90px; }
+#box-label, #point-label { min-width: 190px; }
+#select-depth-min, #select-depth-max { width: 85px; }
 @media (max-width: 900px) {
   body { padding: 12px; }
   .map-grid { grid-template-columns: 1fr; }

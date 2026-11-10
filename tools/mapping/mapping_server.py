@@ -181,7 +181,85 @@ def _clean_annotations(payload):
     for pair in merges[:200]:
         if isinstance(pair, (list, tuple)) and len(pair) == 2:
             clean_merges.append([str(pair[0])[:200], str(pair[1])[:200]])
-    return {"labels": clean_labels, "hidden": clean_hidden, "merges": clean_merges}
+    point_labels = payload.get("point_labels") or {}
+    clean_point_labels = {}
+    if isinstance(point_labels, dict):
+        for label, indices in list(point_labels.items())[:100]:
+            if not isinstance(indices, list):
+                continue
+            clean_indices = []
+            for index in indices[:5000]:
+                try:
+                    clean_indices.append(int(index))
+                except (TypeError, ValueError):
+                    continue
+            clean_point_labels[str(label)[:24]] = clean_indices
+    catalog = payload.get("label_catalog") or {}
+    clean_catalog = {}
+    if isinstance(catalog, dict):
+        for label, entry in list(catalog.items())[:100]:
+            if isinstance(entry, dict):
+                clean_catalog[str(label)[:24]] = {
+                    "color": str(entry.get("color", ""))[:24]
+                }
+            else:
+                clean_catalog[str(label)[:24]] = {"color": ""}
+    manual_boxes = []
+    for item in (payload.get("manual_boxes") or [])[:100]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            length = max(0.05, min(10.0, float(item.get("length_m", 0.1))))
+            width = max(0.05, min(10.0, float(item.get("width_m", 0.1))))
+            cx = max(-20.0, min(20.0, float(item.get("cx_m", 0.0))))
+            cy = max(-20.0, min(20.0, float(item.get("cy_m", 0.0))))
+            angle = float(item.get("angle_deg", 0.0))
+            z_bottom = max(0.0, min(4.0, float(item.get("z_bottom_m", 0.0))))
+            z_top = max(z_bottom + 0.01, min(4.0, float(item.get("z_top_m", 0.5))))
+        except (TypeError, ValueError):
+            continue
+        manual_boxes.append({
+            "id": str(item.get("id") or f"manual:{len(manual_boxes)}")[:200],
+            "label": str(item.get("label", "object"))[:24],
+            "cx_m": round(cx, 3),
+            "cy_m": round(cy, 3),
+            "angle_deg": round(angle, 1),
+            "length_m": round(length, 3),
+            "width_m": round(width, 3),
+            "z_bottom_m": round(z_bottom, 3),
+            "z_top_m": round(z_top, 3),
+            "source": "prior" if item.get("source") == "prior" else "manual",
+        })
+    room_outline = []
+    for point in (payload.get("room_outline") or [])[:64]:
+        if isinstance(point, (list, tuple)) and len(point) == 2:
+            try:
+                room_outline.append([max(-20.0, min(20.0, float(point[0]))),
+                                     max(-20.0, min(20.0, float(point[1])))])
+            except (TypeError, ValueError):
+                continue
+    room = payload.get("room") or {}
+    clean_room = {}
+    if isinstance(room, dict):
+        for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
+                    "bedroom_m2", "total_m2", "reference_scale"):
+            if key in room:
+                try:
+                    clean_room[key] = round(float(room[key]), 3)
+                except (TypeError, ValueError):
+                    pass
+        if "source" in room:
+            clean_room["source"] = str(room["source"])[:40]
+    return {
+        "labels": clean_labels,
+        "hidden": clean_hidden,
+        "merges": clean_merges,
+        "point_labels": clean_point_labels,
+        "label_catalog": clean_catalog,
+        "manual_boxes": manual_boxes,
+        "room_outline": room_outline,
+        "room": clean_room,
+    }
 
 
 def _load_annotations(scan_id):
@@ -405,9 +483,9 @@ class Handler(BaseHTTPRequestHandler):
                 scan_id = path[len("/api/mapping/scans/"):-len("/reconstruct")].strip("/")
                 params = parse_qs(parsed.query)
                 try:
-                    yaw_scale = float(params.get("yaw_scale", ["0.85"])[0])
+                    yaw_scale = float(params.get("yaw_scale", ["0.76"])[0])
                 except (TypeError, ValueError):
-                    yaw_scale = 0.85
+                    yaw_scale = 0.76
                 yaw_scale = max(0.50, min(1.00, yaw_scale))
                 annotations = _load_annotations(scan_id)
                 reconstruction = reconstruct_points(
@@ -445,9 +523,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/mapping/scans/") and path.endswith("/annotations"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/annotations")].strip("/")
                 try:
-                    yaw_scale = float(body.get("yaw_scale", 0.85))
+                    yaw_scale = float(body.get("yaw_scale", 0.76))
                 except (TypeError, ValueError):
-                    yaw_scale = 0.85
+                    yaw_scale = 0.76
                 yaw_scale = max(0.50, min(1.00, yaw_scale))
                 annotations = _save_annotations(scan_id, body.get("annotations", body))
                 reconstruction = reconstruct_points(

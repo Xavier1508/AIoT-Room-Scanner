@@ -11,12 +11,23 @@ const state = {
   reconstruction: null,
   annotations: null,
   selectedBoxId: null,
+  pointLabels: {},
+  labelCatalog: {},
+  manualBoxes: [],
+  room: null,
+  roomOutline: [],
+  selectedPointIndices: [],
+  selectionRect: null,
+  selectDepthMin: -5,
+  selectDepthMax: 5,
+  selectThrough: true,
+  priorVisible: true,
   presence: null,
   presenceError: null,
   presenceBusy: false,
   mlMetrics: null,
   showDistances: true,
-  yawScale: 0.85,
+  yawScale: 0.76,
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
@@ -24,6 +35,8 @@ const state = {
   viewYaw: -0.65,
   viewPitch: 0.48,
   zoom: 1.0,
+  viewPanX: 0,
+  viewPanY: 0,
 };
 
 async function api(path, options = {}) {
@@ -553,8 +566,10 @@ async function loadPoints(scanId) {
       reconstruction = null;
     }
     state.reconstruction = reconstruction;
-    state.annotations = annotations;
+    applyAnnotationState(annotations);
     state.selectedBoxId = null;
+    state.selectedPointIndices = [];
+    state.selectionRect = null;
     const blocks = reconstruction?.boxes?.length ?? 0;
     const mountBoxes = reconstruction?.mount_boxes ?? 0;
     setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
@@ -566,7 +581,32 @@ async function loadPoints(scanId) {
   }
 }
 
-function boxColor(box) {
+function rgbToHex(rgb) {
+  return '#' + rgb.map(value => Math.max(0, Math.min(255, Math.round(value)))
+    .toString(16).padStart(2, '0')).join('');
+}
+
+function ensureLabelCatalog(annotations, label) {
+  if (!annotations.label_catalog) annotations.label_catalog = {};
+  if (!annotations.label_catalog[label]) {
+    annotations.label_catalog[label] = { color: rgbToHex(labelColor(label)) };
+  }
+}
+
+function hexToRgb(value) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(value || ''));
+  if (!match) return null;
+  const number = parseInt(match[1], 16);
+  return [(number >> 16) & 255, (number >> 8) & 255, number & 255];
+}
+
+function labelColor(label) {
+  const catalog = state.labelCatalog || {};
+  const entry = catalog[label];
+  if (entry && entry.color) {
+    const rgb = hexToRgb(entry.color);
+    if (rgb) return rgb;
+  }
   const palette = {
     wall: [80, 150, 230],
     wall_edge: [130, 200, 255],
@@ -575,14 +615,82 @@ function boxColor(box) {
     wardrobe: [205, 130, 255],
     chair: [255, 150, 120],
     table: [255, 170, 90],
+    desk: [255, 150, 90],
+    door: [150, 220, 180],
     mount: [150, 150, 150],
     object: [70, 210, 150],
   };
-  return palette[box.label] || palette.object;
+  if (palette[label]) return palette[label];
+  let hash = 0;
+  for (const character of String(label || 'object')) {
+    hash = (hash * 31 + character.charCodeAt(0)) & 0xffffffff;
+  }
+  const hue = Math.abs(hash) % 360;
+  const channel = (offset) => Math.round(128 + 100 * Math.cos((hue + offset) * Math.PI / 180));
+  return [channel(0), channel(120), channel(240)];
+}
+
+function boxColor(box) {
+  return labelColor(box.label);
 }
 
 function boxName(box) {
+  if (box.source === 'prior') return `${box.label} (prior)`;
   return `${box.label}${box.label_source === 'manual' ? '*' : ''}`;
+}
+
+function visibleBoxes() {
+  return currentBoxes().filter(box => state.priorVisible || box.source !== 'prior');
+}
+
+function applyAnnotationState(annotations) {
+  const source = annotations || {};
+  state.annotations = {
+    labels: source.labels || {},
+    hidden: source.hidden || [],
+    merges: source.merges || [],
+    point_labels: source.point_labels || {},
+    label_catalog: source.label_catalog || {},
+    manual_boxes: source.manual_boxes || [],
+    room_outline: source.room_outline || [],
+    room: source.room || {},
+  };
+  state.pointLabels = state.annotations.point_labels;
+  state.labelCatalog = state.annotations.label_catalog;
+  state.manualBoxes = state.annotations.manual_boxes;
+  state.room = state.annotations.room;
+  state.roomOutline = state.annotations.room_outline;
+  renderLabelSuggestions();
+  renderRoomInfo();
+}
+
+function renderLabelSuggestions() {
+  const datalist = $('label-suggestions');
+  if (!datalist) return;
+  datalist.replaceChildren();
+  const labels = new Set([
+    'wall', 'wall_edge', 'fan', 'bed', 'wardrobe', 'chair', 'table',
+    'desk', 'door', 'object', 'mount',
+    ...Object.keys(state.labelCatalog || {}),
+  ]);
+  for (const label of labels) {
+    const option = document.createElement('option');
+    option.value = label;
+    datalist.append(option);
+  }
+}
+
+function renderRoomInfo() {
+  const room = state.room || {};
+  if (room.width_m && room.depth_m) {
+    const bedroom = room.bedroom_m2 ?? (room.width_m * room.depth_m);
+    const total = room.total_m2 ?? (bedroom + (room.bathroom_m2 || 0) + (room.desk_niche_m2 || 0));
+    setText('room-info', `Prior: ${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m = `
+      + `${Number(bedroom).toFixed(2)} m² · kamar mandi ${Number(room.bathroom_m2 || 0).toFixed(2)} m²`
+      + ` · niche ${Number(room.desk_niche_m2 || 0).toFixed(2)} m² · total ${Number(total).toFixed(2)} m²`);
+  } else {
+    setText('room-info', 'Prior ruangan belum diisi.');
+  }
 }
 
 function boxDistance(box) {
@@ -605,6 +713,11 @@ function annotationsClone() {
     labels: source.labels || {},
     hidden: source.hidden || [],
     merges: source.merges || [],
+    point_labels: source.point_labels || {},
+    label_catalog: source.label_catalog || {},
+    manual_boxes: source.manual_boxes || [],
+    room_outline: source.room_outline || [],
+    room: source.room || {},
   }));
 }
 
@@ -686,7 +799,8 @@ function renderBlockList() {
       `${Number(box.length_m).toFixed(2)}×${Number(box.width_m).toFixed(2)} m`,
       `${Number(box.z_top_m).toFixed(2)} m`,
       box.points,
-      box.label_source === 'manual' ? 'manual' : 'auto',
+      box.source === 'prior' ? 'prior'
+        : (box.label_source === 'manual' ? 'manual' : 'auto'),
     ]) {
       const cell = document.createElement('td');
       cell.textContent = value ?? '—';
@@ -709,8 +823,8 @@ async function saveAnnotations(annotations, message) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ annotations, yaw_scale: state.yawScale }),
   });
-  state.annotations = data.annotations || annotations;
   state.reconstruction = data.reconstruction;
+  applyAnnotationState(data.annotations || annotations);
   state.selectedBoxId = null;
   renderBoxControls();
   drawCloud();
@@ -723,10 +837,16 @@ async function saveAnnotations(annotations, message) {
 async function applyBoxLabel() {
   const box = currentBoxes().find(item => item.id === $('box-select').value);
   if (!box) return;
+  const label = String($('box-label').value || '').trim();
+  if (!label) {
+    setText('annotation-status', 'Label tidak boleh kosong.');
+    return;
+  }
   const next = annotationsClone();
-  next.labels[box.id] = $('box-label').value;
+  next.labels[box.id] = label;
+  ensureLabelCatalog(next, label);
   try {
-    await saveAnnotations(next, `Label ${box.label} → ${$('box-label').value}.`);
+    await saveAnnotations(next, `Label ${box.label} → ${label}.`);
   } catch (error) {
     setText('annotation-status', `Gagal menyimpan label: ${error.message}`);
   }
@@ -763,8 +883,13 @@ async function mergeSelectedBoxes() {
 }
 
 async function resetAnnotations() {
+  const next = annotationsClone();
+  next.labels = {};
+  next.hidden = [];
+  next.merges = [];
+  next.point_labels = {};
   try {
-    await saveAnnotations({ labels: {}, hidden: [], merges: [] }, 'Anotasi direset.');
+    await saveAnnotations(next, 'Label, hide, merge, dan point label direset; prior tetap.');
   } catch (error) {
     setText('annotation-status', `Gagal reset anotasi: ${error.message}`);
   }
@@ -783,7 +908,11 @@ function projectPoint(point, width, height, radius) {
   const y2 = y1 * sp - z * cp;
   const depth = y1 * cp + z * sp;
   const scale = Math.min(width, height) * 0.72 * state.zoom / (2 * radius + 0.6);
-  return { x: width / 2 + x1 * scale, y: height / 2 + y2 * scale, depth };
+  return {
+    x: width / 2 + x1 * scale + Number(state.viewPanX || 0),
+    y: height / 2 + y2 * scale + Number(state.viewPanY || 0),
+    depth,
+  };
 }
 
 function drawGrid(ctx, width, height, radius) {
@@ -849,7 +978,7 @@ function scaledPoint(point) {
 
 function applyYawScale() {
   const raw = Number($('yaw-scale').value);
-  const value = Math.max(0.50, Math.min(1.00, Number.isFinite(raw) ? raw : 0.85));
+  const value = Math.max(0.50, Math.min(1.00, Number.isFinite(raw) ? raw : 0.76));
   state.yawScale = value;
   $('yaw-scale').value = value.toFixed(2);
   setText('yaw-scale-note', `${value.toFixed(2)} provisional — turunkan sampai dinding lurus.`);
@@ -863,12 +992,13 @@ function resetYawScale() {
 }
 
 function drawBoxes3D(ctx, width, height, radius) {
-  const boxes = state.reconstruction?.boxes || [];
+  const boxes = visibleBoxes();
   const labelScale = Math.max(1, Math.min(1.6, Number(state.zoom) || 1));
   const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
   for (const [boxIndex, box] of boxes.entries()) {
     const projected = boxCorners(box).map(point => projectPoint(point, width, height, radius));
     const color = boxColor(box);
+    const prior = box.source === 'prior';
     const ordered = faces.map(indices => ({
       indices,
       depth: indices.reduce((sum, index) => sum + projected[index].depth, 0) / indices.length,
@@ -877,11 +1007,11 @@ function drawBoxes3D(ctx, width, height, radius) {
       const [a, b, c, d] = face.indices.map(index => projected[index]);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath();
-      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.18)`;
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.08 : 0.18})`;
       ctx.fill();
-      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.9)`;
-      ctx.lineWidth = box.label === 'wall' ? 1.6 : 1.2;
-      if (box.label === 'wall_edge') ctx.setLineDash([5, 3]);
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.7 : 0.9})`;
+      ctx.lineWidth = prior ? 1.0 : (box.label === 'wall' ? 1.6 : 1.2);
+      if (prior || box.label === 'wall_edge') ctx.setLineDash([5, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -985,6 +1115,67 @@ function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
     `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
 }
 
+function selectedPointSet() {
+  return new Set((state.selectedPointIndices || []).map(Number));
+}
+
+function drawSelectionOverlay(ctx, canvasId) {
+  const rect = state.selectionRect;
+  if (!rect || rect.canvas !== canvasId) return;
+  const x = Math.min(rect.x0, rect.x1);
+  const y = Math.min(rect.y0, rect.y1);
+  const width = Math.abs(rect.x1 - rect.x0);
+  const height = Math.abs(rect.y1 - rect.y0);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(x, y, width, height);
+  ctx.setLineDash([]);
+}
+
+function drawRoomOutline2D(ctx, toScreen) {
+  if (!state.priorVisible || (state.roomOutline || []).length < 3) return;
+  ctx.beginPath();
+  state.roomOutline.forEach(([x, y], index) => {
+    const point = toScreen(Number(x), Number(y));
+    index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(120,255,200,0.04)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120,255,200,0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([8, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const first = toScreen(Number(state.roomOutline[0][0]), Number(state.roomOutline[0][1]));
+  const room = state.room || {};
+  const dimensions = room.width_m && room.depth_m
+    ? `${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m` : 'prior';
+  ctx.fillStyle = 'rgba(120,255,200,0.85)';
+  ctx.font = '12px system-ui';
+  ctx.fillText(`prior room ${dimensions}`, first.x + 6, first.y - 6);
+}
+
+function drawRoomOutline3D(ctx, width, height, radius) {
+  if (!state.priorVisible || (state.roomOutline || []).length < 3) return;
+  ctx.beginPath();
+  state.roomOutline.forEach(([x, y], index) => {
+    const point = projectPoint({
+      x_mm: Number(x) * 1000, y_mm: Number(y) * 1000, z_mm: 0,
+    }, width, height, radius);
+    index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
+  });
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(120,255,200,0.4)';
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([7, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 function drawTopDown() {
   const canvas = $('topdown');
   if (!canvas) return;
@@ -992,7 +1183,7 @@ function drawTopDown() {
   const width = canvas.width, height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null).map(scaledPoint);
-  const boxes = currentBoxes();
+  const boxes = visibleBoxes();
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
   const hlkRadius = presence?.distance_cm
@@ -1032,6 +1223,7 @@ function drawTopDown() {
     ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   }
   ctx.setLineDash([]);
+  drawRoomOutline2D(ctx, toScreen);
   if (state.showDistances) {
     for (const [boxIndex, box] of boxes.entries()) {
       const color = boxColor(box);
@@ -1059,24 +1251,30 @@ function drawTopDown() {
     }
   }
   if (state.viewMode !== 'blocks') {
+    const selected = selectedPointSet();
     for (const point of points) {
       const screen = toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
-      ctx.fillStyle = point.range_source === 'tof' ? 'rgba(80,220,255,0.85)' : 'rgba(255,170,60,0.85)';
-      ctx.beginPath(); ctx.arc(screen.x, screen.y, 2.2, 0, Math.PI * 2); ctx.fill();
+      const isSelected = selected.has(Number(point.point_index));
+      ctx.fillStyle = isSelected ? '#ffffff'
+        : (point.range_source === 'tof' ? 'rgba(80,220,255,0.85)' : 'rgba(255,170,60,0.85)');
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, isSelected ? 4.5 : 2.2, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
   if (state.viewMode !== 'points') {
     for (const [boxIndex, box] of boxes.entries()) {
       const corners = boxCorners(box).slice(0, 4).map(point => toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000));
       const color = boxColor(box);
+      const prior = box.source === 'prior';
       ctx.beginPath(); ctx.moveTo(corners[0].x, corners[0].y);
       for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
       ctx.closePath();
-      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.22)`;
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.08 : 0.22})`;
       ctx.fill();
-      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
-      ctx.lineWidth = box.label === 'wall' ? 2.2 : 1.6;
-      if (box.label === 'wall_edge') ctx.setLineDash([5, 3]);
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.75 : 0.95})`;
+      ctx.lineWidth = prior ? 1.4 : (box.label === 'wall' ? 2.2 : 1.6);
+      if (prior || box.label === 'wall_edge') ctx.setLineDash([5, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
@@ -1124,6 +1322,7 @@ function drawTopDown() {
     ctx.fillStyle = '#ff9be0'; ctx.font = '11px system-ui';
     ctx.fillText(`HLK ${hlkRadius.toFixed(2)} m`, screen.x + 6, screen.y - 6);
   }
+  drawSelectionOverlay(ctx, 'topdown');
 }
 
 function drawHuman3D(ctx, width, height, radius) {
@@ -1189,7 +1388,7 @@ function drawCloud() {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
   const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null).map(scaledPoint);
-  const boxes = currentBoxes();
+  const boxes = visibleBoxes();
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
   const hlkRadius = presence?.distance_cm
@@ -1200,7 +1399,9 @@ function drawCloud() {
   const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
     Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000), ...boxExtents);
   drawGrid(ctx, width, height, maxRadius);
+  drawRoomOutline3D(ctx, width, height, maxRadius);
   if (state.viewMode !== 'blocks') {
+    const selected = selectedPointSet();
     const projected = points.map(point => ({
       point,
       screen: projectPoint(point, width, height, maxRadius),
@@ -1210,9 +1411,10 @@ function drawCloud() {
       const base = source === 'tof' ? [80, 220, 255] : [255, 170, 60];
       const z = Number(item.point.z_mm) || 0;
       const alpha = Math.max(0.35, Math.min(1, 0.55 + z / (maxRadius * 2000)));
-      ctx.fillStyle = `rgba(${base[0]},${base[1]},${base[2]},${alpha})`;
+      const isSelected = selected.has(Number(item.point.point_index));
+      ctx.fillStyle = isSelected ? '#ffffff' : `rgba(${base[0]},${base[1]},${base[2]},${alpha})`;
       ctx.beginPath();
-      ctx.arc(item.screen.x, item.screen.y, source === 'tof' ? 2.6 : 2.2, 0, Math.PI * 2);
+      ctx.arc(item.screen.x, item.screen.y, isSelected ? 4.8 : (source === 'tof' ? 2.6 : 2.2), 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -1243,26 +1445,292 @@ function drawCloud() {
     ctx.font = '16px system-ui';
     ctx.fillText('Belum ada point cloud. Jalankan scan atau pilih scan.', 24, 36);
   }
+  drawSelectionOverlay(ctx, 'cloud');
+}
+
+function canvasPoint(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * canvas.width / rect.width,
+    y: (event.clientY - rect.top) * canvas.height / rect.height,
+  };
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const xi = polygon[index].x, yi = polygon[index].y;
+    const xj = polygon[previous].x, yj = polygon[previous].y;
+    if (((yi > point.y) !== (yj > point.y))
+        && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function topDownTransform(canvas) {
+  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null).map(scaledPoint);
+  const boxes = visibleBoxes();
+  const hlk = state.health?.esp?.sensors?.hlk;
+  const hlkRadius = state.presence?.distance_cm
+    ? Number(state.presence.distance_cm) / 100
+    : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
+  let extent = 1.0;
+  for (const point of points) {
+    extent = Math.max(extent, Math.abs(Number(point.x_mm)) / 1000,
+      Math.abs(Number(point.y_mm)) / 1000);
+  }
+  for (const box of boxes) {
+    for (const point of boxCorners(box)) {
+      extent = Math.max(extent, Math.abs(point.x_mm) / 1000, Math.abs(point.y_mm) / 1000);
+    }
+  }
+  extent = Math.max(extent, hlkRadius) * 1.15;
+  const zoom = Math.max(0.4, Math.min(8, Number(state.topZoom) || 1));
+  const scale = Math.min(canvas.width, canvas.height) * 0.42 / extent * zoom;
+  const toScreen = (x, y) => ({
+    x: canvas.width / 2 + x * scale + Number(state.topPanX || 0),
+    y: canvas.height / 2 - y * scale + Number(state.topPanY || 0),
+  });
+  return { points, boxes, extent, scale, toScreen };
+}
+
+function cloudTransform(canvas) {
+  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null).map(scaledPoint);
+  const boxes = visibleBoxes();
+  const hlk = state.health?.esp?.sensors?.hlk;
+  const hlkRadius = state.presence?.distance_cm
+    ? Number(state.presence.distance_cm) / 100
+    : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
+  const boxExtents = boxes.flatMap(box => boxCorners(box).map(p => Math.max(
+    Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000));
+  const maxRadius = Math.max(1.0, hlkRadius, ...points.map(p => Math.max(
+    Math.abs(Number(p.x_mm)), Math.abs(Number(p.y_mm)), Math.abs(Number(p.z_mm))) / 1000), ...boxExtents);
+  return { points, boxes, maxRadius };
+}
+
+function selectBoxAt(canvasId, point) {
+  const canvas = $(canvasId);
+  const boxes = visibleBoxes();
+  let hit = null;
+  if (canvasId === 'topdown') {
+    const view = topDownTransform(canvas);
+    for (const box of boxes) {
+      const polygon = boxCorners(box).slice(0, 4).map(p =>
+        view.toScreen(Number(p.x_mm) / 1000, Number(p.y_mm) / 1000));
+      if (pointInPolygon(point, polygon)) {
+        hit = box;
+        break;
+      }
+    }
+  } else {
+    const view = cloudTransform(canvas);
+    const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4],
+      [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+    for (const box of boxes) {
+      const projected = boxCorners(box).map(p =>
+        projectPoint(p, canvas.width, canvas.height, view.maxRadius));
+      const isHit = faces.some(face => pointInPolygon(point, face.map(index => projected[index])));
+      if (isHit) {
+        hit = box;
+        break;
+      }
+    }
+  }
+  if (hit) {
+    state.selectedBoxId = hit.id;
+    $('box-select').value = hit.id;
+    renderBoxControls();
+    drawCloud();
+    drawTopDown();
+  }
+  return hit;
+}
+
+function selectPointsInRect(canvasId, rect, mode = 'replace') {
+  const canvas = $(canvasId);
+  const selected = new Set(mode === 'replace' ? [] : (state.selectedPointIndices || []).map(Number));
+  const x0 = Math.min(rect.x0, rect.x1), x1 = Math.max(rect.x0, rect.x1);
+  const y0 = Math.min(rect.y0, rect.y1), y1 = Math.max(rect.y0, rect.y1);
+  if (canvasId === 'topdown') {
+    const view = topDownTransform(canvas);
+    for (const point of view.points) {
+      const screen = view.toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
+      if (screen.x < x0 || screen.x > x1 || screen.y < y0 || screen.y > y1) continue;
+      const index = Number(point.point_index);
+      if (!Number.isFinite(index)) continue;
+      if (mode === 'subtract') selected.delete(index); else selected.add(index);
+    }
+  } else {
+    const view = cloudTransform(canvas);
+    for (const point of view.points) {
+      const screen = projectPoint(point, canvas.width, canvas.height, view.maxRadius);
+      if (screen.x < x0 || screen.x > x1 || screen.y < y0 || screen.y > y1) continue;
+      if (!state.selectThrough
+          && (screen.depth < Number(state.selectDepthMin)
+              || screen.depth > Number(state.selectDepthMax))) continue;
+      const index = Number(point.point_index);
+      if (!Number.isFinite(index)) continue;
+      if (mode === 'subtract') selected.delete(index); else selected.add(index);
+    }
+  }
+  state.selectedPointIndices = Array.from(selected).sort((a, b) => a - b);
+  updateSelectionStatus();
+  drawCloud();
+  drawTopDown();
+}
+
+function updateSelectionStatus() {
+  const count = (state.selectedPointIndices || []).length;
+  setText('selection-status', `${count} titik terpilih`);
+}
+
+function clearSelection() {
+  state.selectedPointIndices = [];
+  state.selectionRect = null;
+  updateSelectionStatus();
+  drawCloud();
+  drawTopDown();
+}
+
+async function applyPointLabel() {
+  const label = String($('point-label').value || '').trim();
+  if (!label) {
+    setText('selection-status', 'Isi label titik terlebih dahulu.');
+    return;
+  }
+  const indices = (state.selectedPointIndices || []).map(Number);
+  if (!indices.length) {
+    setText('selection-status', 'Belum ada titik yang dipilih.');
+    return;
+  }
+  const next = annotationsClone();
+  if (!next.point_labels) next.point_labels = {};
+  const chosen = new Set(indices);
+  for (const key of Object.keys(next.point_labels)) {
+    next.point_labels[key] = next.point_labels[key]
+      .filter(index => !chosen.has(Number(index)));
+  }
+  next.point_labels[label] = Array.from(new Set([
+    ...(next.point_labels[label] || []).map(Number),
+    ...indices,
+  ])).sort((a, b) => a - b);
+  ensureLabelCatalog(next, label);
+  try {
+    await saveAnnotations(next, `${indices.length} titik → ${label}.`);
+    state.selectedPointIndices = [];
+    updateSelectionStatus();
+  } catch (error) {
+    setText('selection-status', `Gagal label titik: ${error.message}`);
+  }
+}
+
+async function createBoxFromSelection() {
+  const indices = new Set((state.selectedPointIndices || []).map(Number));
+  if (indices.size < 3) {
+    setText('selection-status', 'Pilih minimal 3 titik untuk membuat box.');
+    return;
+  }
+  const points = state.points
+    .filter(point => indices.has(Number(point.point_index)))
+    .map(scaledPoint);
+  if (!points.length) {
+    setText('selection-status', 'Titik terpilih tidak ditemukan.');
+    return;
+  }
+  const xs = points.map(point => Number(point.x_mm) / 1000);
+  const ys = points.map(point => Number(point.y_mm) / 1000);
+  const zs = points.map(point => Number(point.z_mm) / 1000);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const label = String($('point-label').value || $('box-label').value || 'object').trim() || 'object';
+  const next = annotationsClone();
+  if (!next.manual_boxes) next.manual_boxes = [];
+  next.manual_boxes.push({
+    id: `manual:${Date.now()}`,
+    label,
+    cx_m: (x0 + x1) / 2,
+    cy_m: (y0 + y1) / 2,
+    angle_deg: 0,
+    length_m: Math.max(0.05, x1 - x0),
+    width_m: Math.max(0.05, y1 - y0),
+    z_bottom_m: 0,
+    z_top_m: Math.max(0.05, Math.max(...zs)),
+    source: 'manual',
+  });
+  ensureLabelCatalog(next, label);
+  try {
+    await saveAnnotations(next, `Box ${label} dibuat dari ${indices.size} titik.`);
+    state.selectedPointIndices = [];
+    updateSelectionStatus();
+  } catch (error) {
+    setText('selection-status', `Gagal membuat box: ${error.message}`);
+  }
 }
 
 function bindCanvas() {
   const canvas = $('cloud');
-  let dragging = false;
+  let mode = null;
   let lastX = 0;
   let lastY = 0;
+  canvas.addEventListener('contextmenu', event => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
-    dragging = true; lastX = event.clientX; lastY = event.clientY;
+    event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
+    const point = canvasPoint(event, canvas);
+    if (event.button === 2) {
+      mode = 'orbit';
+      lastX = event.clientX; lastY = event.clientY;
+    } else if (event.button === 1) {
+      mode = 'pan';
+      lastX = event.clientX; lastY = event.clientY;
+    } else if (event.button === 0) {
+      mode = 'select';
+      state.selectionRect = { canvas: 'cloud', x0: point.x, y0: point.y, x1: point.x, y1: point.y };
+    }
   });
   canvas.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
-    state.viewYaw += (event.clientX - lastX) * 0.01;
-    state.viewPitch = Math.max(-1.2, Math.min(1.2, state.viewPitch + (event.clientY - lastY) * 0.008));
-    lastX = event.clientX; lastY = event.clientY;
+    if (!mode) return;
+    if (mode === 'orbit') {
+      state.viewYaw += (event.clientX - lastX) * 0.01;
+      state.viewPitch = Math.max(-1.2, Math.min(1.2,
+        state.viewPitch + (event.clientY - lastY) * 0.008));
+      lastX = event.clientX; lastY = event.clientY;
+      drawCloud();
+    } else if (mode === 'pan') {
+      state.viewPanX += event.clientX - lastX;
+      state.viewPanY += event.clientY - lastY;
+      lastX = event.clientX; lastY = event.clientY;
+      drawCloud();
+    } else if (mode === 'select' && state.selectionRect) {
+      const point = canvasPoint(event, canvas);
+      state.selectionRect.x1 = point.x;
+      state.selectionRect.y1 = point.y;
+      drawCloud();
+    }
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (mode === 'select' && state.selectionRect) {
+      const rect = state.selectionRect;
+      const width = Math.abs(rect.x1 - rect.x0);
+      const height = Math.abs(rect.y1 - rect.y0);
+      if (width < 4 && height < 4) {
+        selectBoxAt('cloud', { x: rect.x1, y: rect.y1 });
+      } else {
+        selectPointsInRect('cloud', rect,
+          event.shiftKey ? 'add' : (event.altKey ? 'subtract' : 'replace'));
+      }
+    }
+    mode = null;
+    state.selectionRect = null;
     drawCloud();
   });
-  canvas.addEventListener('pointerup', () => { dragging = false; });
-  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => {
+    mode = null;
+    state.selectionRect = null;
+    drawCloud();
+  });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
     state.zoom = Math.max(0.25, Math.min(4, state.zoom * (event.deltaY > 0 ? 0.9 : 1.1)));
@@ -1308,6 +1776,12 @@ $('toggle-distances').addEventListener('click', () => {
   drawCloud();
   drawTopDown();
 });
+$('toggle-prior').addEventListener('click', () => {
+  state.priorVisible = !state.priorVisible;
+  $('toggle-prior').classList.toggle('active', state.priorVisible);
+  drawCloud();
+  drawTopDown();
+});
 $('box-select').addEventListener('change', () => {
   state.selectedBoxId = $('box-select').value;
   syncBoxLabel();
@@ -1316,6 +1790,18 @@ $('apply-label').addEventListener('click', applyBoxLabel);
 $('hide-box').addEventListener('click', hideSelectedBox);
 $('merge-boxes').addEventListener('click', mergeSelectedBoxes);
 $('reset-annotations').addEventListener('click', resetAnnotations);
+$('apply-point-label').addEventListener('click', applyPointLabel);
+$('clear-selection').addEventListener('click', clearSelection);
+$('create-box').addEventListener('click', createBoxFromSelection);
+$('select-depth-min').addEventListener('input', () => {
+  state.selectDepthMin = Number($('select-depth-min').value) || -5;
+});
+$('select-depth-max').addEventListener('input', () => {
+  state.selectDepthMax = Number($('select-depth-max').value) || 5;
+});
+$('select-through').addEventListener('change', () => {
+  state.selectThrough = $('select-through').checked;
+});
 $('scan-select').addEventListener('change', () => loadPoints($('scan-select').value));
 $('rotate-left').addEventListener('click', () => { state.viewYaw -= 0.2; drawCloud(); });
 $('rotate-right').addEventListener('click', () => { state.viewYaw += 0.2; drawCloud(); });
@@ -1324,7 +1810,12 @@ $('pitch-down').addEventListener('click', () => { state.viewPitch = Math.max(-1.
 $('zoom-in').addEventListener('click', () => { state.zoom = Math.min(4, state.zoom * 1.2); drawCloud(); });
 $('zoom-out').addEventListener('click', () => { state.zoom = Math.max(0.25, state.zoom / 1.2); drawCloud(); });
 $('reset-view').addEventListener('click', () => {
-  state.viewYaw = -0.65; state.viewPitch = 0.48; state.zoom = 1.0; drawCloud();
+  state.viewYaw = -0.65;
+  state.viewPitch = 0.48;
+  state.zoom = 1.0;
+  state.viewPanX = 0;
+  state.viewPanY = 0;
+  drawCloud();
 });
 $('apply-yaw-scale').addEventListener('click', applyYawScale);
 $('reset-yaw-scale').addEventListener('click', resetYawScale);
@@ -1346,25 +1837,57 @@ $('top-reset').addEventListener('click', () => {
 function bindTopDown() {
   const canvas = $('topdown');
   if (!canvas) return;
-  let dragging = false;
+  let mode = null;
   let lastX = 0;
   let lastY = 0;
+  canvas.addEventListener('contextmenu', event => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
-    dragging = true;
-    lastX = event.clientX;
-    lastY = event.clientY;
+    event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
+    const point = canvasPoint(event, canvas);
+    if (event.button === 2) {
+      mode = 'pan';
+      lastX = event.clientX; lastY = event.clientY;
+    } else if (event.button === 0) {
+      mode = 'select';
+      state.selectionRect = { canvas: 'topdown', x0: point.x, y0: point.y, x1: point.x, y1: point.y };
+    }
   });
   canvas.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
-    state.topPanX += event.clientX - lastX;
-    state.topPanY += event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
+    if (!mode) return;
+    if (mode === 'pan') {
+      state.topPanX += event.clientX - lastX;
+      state.topPanY += event.clientY - lastY;
+      lastX = event.clientX; lastY = event.clientY;
+      drawTopDown();
+    } else if (mode === 'select' && state.selectionRect) {
+      const point = canvasPoint(event, canvas);
+      state.selectionRect.x1 = point.x;
+      state.selectionRect.y1 = point.y;
+      drawTopDown();
+    }
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (mode === 'select' && state.selectionRect) {
+      const rect = state.selectionRect;
+      const width = Math.abs(rect.x1 - rect.x0);
+      const height = Math.abs(rect.y1 - rect.y0);
+      if (width < 4 && height < 4) {
+        selectBoxAt('topdown', { x: rect.x1, y: rect.y1 });
+      } else {
+        selectPointsInRect('topdown', rect,
+          event.shiftKey ? 'add' : (event.altKey ? 'subtract' : 'replace'));
+      }
+    }
+    mode = null;
+    state.selectionRect = null;
     drawTopDown();
   });
-  canvas.addEventListener('pointerup', () => { dragging = false; });
-  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => {
+    mode = null;
+    state.selectionRect = null;
+    drawTopDown();
+  });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
@@ -1375,6 +1898,8 @@ function bindTopDown() {
 
 bindCanvas();
 bindTopDown();
+renderLabelSuggestions();
+updateSelectionStatus();
 
 (async () => {
   await refreshScans();

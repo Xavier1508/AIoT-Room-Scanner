@@ -297,20 +297,66 @@ def apply_annotations(result, annotations):
         resolved_merges.append([first, second])
     boxes.sort(key=lambda box: (box.get("label") not in WALL_LABELS,
                                 -int(box.get("points", 0))))
+    manual_boxes = []
+    existing_ids = {str(box.get("id")) for box in boxes}
+    for index, item in enumerate(annotations.get("manual_boxes") or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            box = {
+                "id": str(item.get("id") or f"manual:{index}"),
+                "label": str(item.get("label", "object"))[:24],
+                "label_source": "prior" if item.get("source") == "prior" else "manual",
+                "source": "prior" if item.get("source") == "prior" else "manual",
+                "cx_m": float(item.get("cx_m", 0.0)),
+                "cy_m": float(item.get("cy_m", 0.0)),
+                "angle_deg": float(item.get("angle_deg", 0.0)),
+                "length_m": max(0.05, float(item.get("length_m", 0.1))),
+                "width_m": max(0.05, float(item.get("width_m", 0.1))),
+                "z_bottom_m": max(0.0, float(item.get("z_bottom_m", 0.0))),
+                "z_top_m": max(0.05, float(item.get("z_top_m", 0.5))),
+                "points": int(item.get("points", 0)),
+            }
+        except (TypeError, ValueError):
+            continue
+        if box["id"] in existing_ids:
+            box["id"] = f"manual:{index}"
+        corners = _box_corners_xy(box)
+        box["distance_m"] = round(math.hypot(box["cx_m"], box["cy_m"]), 2)
+        box["nearest_m"] = round(min(math.hypot(x, y) for x, y in corners), 2)
+        existing_ids.add(box["id"])
+        manual_boxes.append(box)
+    for box in manual_boxes:
+        override = labels.get(str(box.get("id")))
+        if override:
+            box["label"] = str(override)[:24]
+            box["label_source"] = "manual"
+            resolved_labels[str(box["id"])] = str(override)[:24]
+    boxes.extend(manual_boxes)
+    boxes = [box for box in boxes if str(box.get("id")) not in hidden]
+    boxes.sort(key=lambda box: (box.get("label") not in WALL_LABELS,
+                                -int(box.get("points", 0))))
     result["boxes"] = boxes
     result["annotations"] = {
         "labels": resolved_labels,
         "hidden": sorted(hidden),
         "merges": resolved_merges,
+        "manual_boxes": manual_boxes,
+        "room_outline": annotations.get("room_outline") or [],
+        "room": annotations.get("room") or {},
+        "point_labels": annotations.get("point_labels") or {},
+        "label_catalog": annotations.get("label_catalog") or {},
     }
-    result["annotation_count"] = len(resolved_labels) + len(hidden) + len(resolved_merges)
+    result["annotation_count"] = (len(resolved_labels) + len(hidden) + len(resolved_merges)
+                                  + len(manual_boxes)
+                                  + sum(len(v) for v in (annotations.get("point_labels") or {}).values()))
     return result
 
 
 def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
                        near_field_m=0.40, mount_guard_m=0.75,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
-                       yaw_scale=0.65, annotations=None):
+                       yaw_scale=0.76, annotations=None):
     try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):

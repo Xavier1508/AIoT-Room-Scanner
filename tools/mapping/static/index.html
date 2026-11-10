@@ -80,6 +80,7 @@
       <button id="view-blocks" class="alt">Blocks</button>
       <button id="view-points" class="alt">Points</button>
       <button id="toggle-distances" class="alt active">Jarak</button>
+      <button id="toggle-prior" class="alt active">Prior</button>
       <button id="rotate-left" class="alt">⟲</button><button id="rotate-right" class="alt">⟳</button>
       <button id="pitch-up" class="alt">↑</button><button id="pitch-down" class="alt">↓</button>
       <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
@@ -87,10 +88,10 @@
     </div>
     <div class="row annotation-row">
       <label class="note">Yaw scale</label>
-      <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.85">
+      <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.76">
       <button id="apply-yaw-scale">Terapkan</button>
       <button id="reset-yaw-scale" class="alt">1.00</button>
-      <span id="yaw-scale-note" class="note">0.85 provisional — turunkan sampai dinding lurus, naikkan jika terlalu sempit.</span>
+      <span id="yaw-scale-note" class="note">0.76 provisional — turunkan sampai dinding lurus, naikkan jika terlalu sempit.</span>
     </div>
     <div class="map-grid">
       <div><h3>3D isometrik</h3><canvas id="cloud" width="1200" height="700"></canvas></div>
@@ -110,17 +111,8 @@
     <div class="row annotation-row">
       <label class="note">Blok</label><select id="box-select"></select>
       <label class="note">Label</label>
-      <select id="box-label">
-        <option value="wall">wall</option>
-        <option value="wall_edge">wall_edge</option>
-        <option value="fan">fan</option>
-        <option value="bed">bed</option>
-        <option value="wardrobe">wardrobe</option>
-        <option value="chair">chair</option>
-        <option value="table">table</option>
-        <option value="object">object</option>
-        <option value="mount">mount</option>
-      </select>
+      <input id="box-label" list="label-suggestions" value="wall" placeholder="ketik label bebas">
+      <datalist id="label-suggestions"></datalist>
       <button id="apply-label">Terapkan label</button>
       <button id="hide-box" class="danger">Sembunyikan</button>
       <button id="reset-annotations" class="alt">Reset anotasi</button>
@@ -130,7 +122,25 @@
       <button id="merge-boxes" class="alt">Gabung 2 blok</button>
       <span id="annotation-status" class="note"></span>
     </div>
-    <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Blok kecil dekat sensor yang hanya pinggiran meja/mounting otomatis disembunyikan; kasur ±57 cm belum terpisah dari area mount pada scan ini.</p>
+    <div class="row annotation-row">
+      <label class="note">Label titik</label>
+      <input id="point-label" list="label-suggestions" placeholder="bed / wardrobe / fan">
+      <button id="apply-point-label">Label titik terpilih</button>
+      <button id="clear-selection" class="alt">Clear selection</button>
+      <span id="selection-status" class="note">0 titik terpilih</span>
+    </div>
+    <div class="row annotation-row">
+      <label class="note">3D depth</label>
+      <input id="select-depth-min" type="number" value="-5" step="0.1">
+      <input id="select-depth-max" type="number" value="5" step="0.1">
+      <label class="note"><input id="select-through" type="checkbox" checked> Through (x-ray)</label>
+      <span class="note">Matikan Through untuk memakai rentang depth kamera.</span>
+    </div>
+    <div class="row annotation-row">
+      <button id="create-box" class="alt">Buat box dari selection</button>
+      <span id="room-info" class="note">Prior ruangan belum diisi.</span>
+    </div>
+    <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Blok kecil dekat sensor yang hanya pinggiran meja/mounting otomatis disembunyikan. Kasur dan lemari ditampilkan sebagai <b>prior dashed</b> (2,7×2,2 m, kasur 200×120×57, lemari 70×60×200); konfirmasi posisinya sebelum dianggap measured.</p>
   </section>
 </section>
 
