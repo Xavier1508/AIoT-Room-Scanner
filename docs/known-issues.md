@@ -94,6 +94,20 @@ I2C timeout, ToF stall suspension/recovery, and stepper release after the scan.
 Validation 30/30 and coarse 110/110 scans then stayed responsive with no new
 brownout. Keep this as a historical failure; do not run 0.6.0 scans.
 
+**ToF fixed near reflector (2026-11-10):** live sampling showed HC 111 cm while
+ToF mostly returned `wrap_target_fail` with occasional valid 13–16 cm; with a
+hand close, HC 13–22 cm and ToF 19–31 cm. The sensor is electrically alive
+(I2C 0x29, init, continuous), but its optical path sees a fixed near object at
+about 10–16 cm. This is not a 50 cm/4 m range configuration limit. An 8×8
+centered ROI (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
+`0.7.3-tof-obstruction` adds `near_reflector`/`near_count` and reports
+`health.vl53l1x=OBSTRUCTED` when ToF is valid <500 mm while HC >1000 mm for 10
+samples. Likely causes: protective film/tape on the lens, rack/desk lip in
+front of the lens, or a recessed mount. Remove the film and move the sensor
+forward until the lens is flush/proud; then recalibrate `tofOffsetMm` against
+HC. Do not use ToF for mapping while `near_reflector` is true; HC fallback is
+used.
+
 **0.7.0 ToF hard-reset hang:** `0.7.0-scan60` added an XSHUT hard reset to
 the ToF watchdog. When the ToF was truly faulted, the reset blocked the main
 loop and the board became unresponsive. `0.7.1-scan60-safe` removes the hard

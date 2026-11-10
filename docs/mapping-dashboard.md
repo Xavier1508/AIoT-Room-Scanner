@@ -104,13 +104,15 @@ validation scan completed 30/30 points and the coarse full scan completed
 stepper during the sweep can brown out again; this is a software timing
 mitigation on the existing 9 V/3 A supply, not a hardware power fix.
 
-**ToF watchdog (0.7.1):** ToF is valid at rest but remains unreliable during
-servo movement and sometimes faults at rest. `0.7.1-scan60-safe` keeps the
-0.6.1 suspend/recover watchdog, removes the XSHUT hard reset that could block
-the main loop, and exposes `tof_recoveries`/`tof_stall_suspended`. The 0.7.1
-room scans used HC fallback (169 HC vs 50 ToF in the dense scan). No ToF
-reliability claim is made; a separate servo supply/shielding or sensor
-replacement would be required.
+**ToF watchdog and near-reflector flag (0.7.3):** ToF is valid at rest but
+currently sees a fixed near object around 10–16 cm; with HC at 111 cm it mostly
+returns `wrap_target_fail`. `0.7.3-tof-obstruction` keeps the 0.6.1
+suspend/recover watchdog, removes the XSHUT hard reset from the main loop, and
+adds `near_reflector`/`near_count`. If ToF is valid <500 mm while HC >1000 mm
+for 10 samples, health becomes `OBSTRUCTED` and the dashboard shows
+`NEAR REFLECTOR`. An 8×8 ROI test produced `wrap_target_fail` and was reverted.
+The room scans use HC fallback (169 HC vs 50 ToF in the dense scan). No ToF
+reliability claim is made until the lens/rack is physically clear.
 
 Each point waits for a dwell, takes several status samples, and records median
 HC/ToF/HLK values, valid rates, ToF status, and a calibrated range. The scan is

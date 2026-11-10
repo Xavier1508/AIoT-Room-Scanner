@@ -2,16 +2,13 @@
 
 Updated: 2026-11-10. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-`0.7.1-scan60-safe` supports a ±60° commanded room scan. The final dense scan
-has 247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
-full-width top-down 2D map and 3D isometric view with yaw calibration (default
-**0.76**), map rotation **10.7°** (right wall vertical), a per-scan room prior,
-straight block panels, occluded sectors, distance leaders, a numbered block
-list, custom labels, box/point selection, manual box creation, 2D pan/zoom and
-a rule-based human capsule. The visible map follows the plan: sensor on the
-left wall, wardrobe bottom-left, bed bottom-right, chair/desk top-left, WC door
-left and exit door right; the table-edge block `#6` is hidden. ToF remains
-unreliable; scans use HC fallback and the watchdog keeps the board responsive.
+`0.7.3-tof-obstruction` is installed; it keeps the ±60° room scan and adds
+near-reflector detection. The final dense scan has 247/247 points (219 valid,
+50 ToF + 169 HC). The dashboard renders a full-width top-down 2D map and 3D
+isometric view with yaw 0.76, map rotation 10.7°, a per-scan room prior, custom
+labels, box/point selection and a rule-based human capsule. ToF is electrically
+alive but currently reports a fixed near reflector around 10–16 cm; health is
+`OBSTRUCTED` and scans use HC fallback until the lens/mount is physically clear.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -19,11 +16,14 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.7.1-scan60-safe`**, installed through real LAN OTA.
+- **Running firmware: `0.7.3-tof-obstruction`**, installed through real LAN OTA.
   Current application artifact:
-  `analysis/platformio/build-20261109T201351Z/firmware.bin`.
-  Size **837936 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
-  `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
+  `analysis/platformio/build-20261110T115036698Z/firmware.bin`.
+  Size **838144 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
+  `53b3526446dead24ff85ae95c17b59f73bd023a1d126f1b41eab1d61bdef9291`.
+  It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
+  sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
+  test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -43,7 +43,7 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **74 C++ assertions + 45 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 45 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -352,8 +352,12 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 - A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
   servo retry now checks the observed target and retries an expired nudge only
   when it did not move. The 10°/25 µs scan then completed 247/247.
-- ToF remains unreliable (stale, 508 I2C errors, 51 recoveries in the latest
-  session); the scan uses HC fallback and `0.7.1` keeps the board responsive.
+- ToF currently reports a fixed near reflector around 10–16 cm while HC sees
+  ~111 cm; `0.7.3-tof-obstruction` flags `OBSTRUCTED`/`near_reflector` and the
+  scan uses HC fallback. This is an optical/mount obstruction, not a 50 cm or
+  4 m range limit; remove lens film and move the sensor forward before ToF can
+  be used for mapping. Evidence:
+  `analysis/device/tof-near-reflector-20261110T115547Z/`.
   No ToF reliability claim is made; hardware/power investigation is deferred.
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
@@ -367,8 +371,10 @@ occluded sectors, distance leaders, numbered block table, custom labels,
 box/point selection, manual box creation, 2D pan/zoom, full-width layout,
 rule-based human capsule and the AI/Presence panel. Remaining work:
 confirm the **yaw scale 0.76** against a known target; confirm the prior
-bed/wardrobe placement; install and verify the new ToF; run a fine 5°/25 µs
-scan for more points. For DL, use the exported 3D point/object labels
+bed/wardrobe placement; clear the **ToF near reflector** (remove lens film,
+move the sensor forward of the rack lip), verify `near_reflector=false`, then
+recalibrate `tofOffsetMm` against HC and run a fine 5°/25 µs scan for more
+points. For DL, use the exported 3D point/object labels
 (`ml/pointcloud`) as the first 3D-object dataset; the HLK
 `empty`/`human`/`non-human` time-series model remains a separate later task.
 Only deploy DL if it beats the rule on a true held-out session.
@@ -391,7 +397,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **93 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **94 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -423,7 +429,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   90 = yaw calibration, mount removal, full-width layout and 2D zoom;
   91 = room prior, selection/labels and 3D object export;
   92 = 3D projection flip fix, map rotation and plan-aligned prior;
-  93 = wall/door intersection, colours, axes and scan direction.
+  93 = wall/door intersection, colours, axes and scan direction;
+  94 = ToF near-reflector diagnosis and 0.7.3 obstruction firmware.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

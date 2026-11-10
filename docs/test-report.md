@@ -20,7 +20,7 @@ had every test as Belum diuji. Original workbook is not modified in Downloads.
 | T12 | Lulus parsial - application OTA | Real LAN OTA installed 0.5.0-sequential-scan; board returned IDLE with stepper reference 0, servo detached, base 800 µs and no arms. Image SHA matched the server response. Electrical rail/current and rollback remain unmeasured/not provided. |
 | T13 | Partial handoff ready | Source, sensor health/API/dashboard, PC calibration/scan/3D viewer, reusable tools, documentation, current firmware and handoff notes exist. Real sensor bring-up and calibration capture are measured below; full scan, mapping and model data collection remain pending. |
 
-Additional actual checks: **86 portable C++ synthetic parser/safety/command/SSID-list**
+Additional actual checks: **87 portable C++ synthetic parser/safety/command/SSID-list**
 assertions passed, including corrupt/nested/partial frames, engineering frames,
 20,000 deterministic noise bytes and recovery, arm expiry/wraparound, OTA
 state lock, SSID deduplication/signal sorting/capacity and strict scan-page parsing,
@@ -82,6 +82,7 @@ Supplementary current Wi-Fi setup tests (not additional workbook T IDs):
 | W37 | Lulus UI/data - room prior, selection/labels and 3D object export | User-tuned yaw **0.76** (effective FOV ±45.6°). Per-scan room prior: bedroom 2.70×2.20 m = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche 0.40 m², total 8.59 m²; prior bed 2.00×1.20×0.57 m and wardrobe 0.70×0.60×2.00 m are dashed/toggleable. The measured wall and fan remain; the former `#6` table edge is hidden. Right-drag orbit/pan, left-drag box selection, box click, custom labels, point labels by `point_index`, and create-box-from-selection were exercised: 31 fan points selected and labelled. `export_pointcloud.py` wrote `fan.csv`, `fan.npz`, `objects.csv` and `manifest.json`. Prior boxes are explicitly not measured/training data. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/prior-room-overlay.png`. |
 | W38 | Lulus UI/reconstruction - plan orientation, 3D flip fix and map rotation | The 3D projection sign was corrected (`center - y2`), so +X is right, +Y up and +Z up, matching the 2D plan. Map rotation **10.7°** makes the measured right wall vertical. Priors were re-authored to the user plan: sensor left wall, wardrobe bottom-left, bed bottom-right (2.0 m along bottom wall), chair/desk top-left, WC door left, exit door right; room 2.70×2.20 m, bathroom 1.50×1.50 m, niche 0.40 m², total 8.59 m². Prior distances: wardrobe 0.85 m, bed 0.74 m, chair 0.36 m, desk 0.76 m. Tests increased to 45 and passed. Screenshot: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`. |
 | W39 | Lulus UI - wall/door intersection, colours, axes and scan direction | Added prior wall segments 0.12×2.2×2.4 m on left/right walls so the WC door (left, red) and exit door (right, yellow) are embedded in walls instead of floating; measured right wall touches the right wall prior. Fan is purple, desk green. The 3D projection is +X right, +Y up, +Z up; **Top 3D** gives a near-top view and the legend states X horizontal, Y vertical plan, Z height. The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise. Tests 45 pass. Screenshots: `analysis/mapping/dashboard-20261110Tpresence/plan-match-final.png`, `analysis/mapping/dashboard-20261110Tpresence/top3d-axis.png`. |
+| W40 | Lulus diagnosis - ToF fixed near reflector, ROI revert and 0.7.3 obstruction flag | `0.7.2-tof-roi8` (8×8 centered ROI) produced `wrap_target_fail` and no valid far readings, so ROI reduction was reverted. `0.7.3-tof-obstruction` adds near-reflector detection: ToF valid <500 mm while HC >1000 mm for 10 samples sets `near_reflector=true` and `health.vl53l1x=OBSTRUCTED`. Live sample: HC 111 cm, ToF mostly `wrap_target_fail` with occasional valid 13–16 cm; with hand close, HC 13–22 cm and ToF 19–31 cm. This is a fixed optical return at ~10–16 cm, not a 50 cm/4 m range limit; likely lens film/rack lip/recessed mount. Tests: 87 C++ + 45 Python pass. Evidence: `analysis/device/tof-near-reflector-20261110T115547Z/`. |
 
 Hardware result note: T05 is the first physical peripheral result. W13 confirms
 live communication/range output for HC-SR04, VL53L1X and HLK under the stated
@@ -168,7 +169,7 @@ Evidence directories (gitignored, retain locally):
 
 The current application SHA-256 is
 `36a526b600039fc148fe7012a9887da8d916556829e3a114d45eaa8086fe851c`.
-Research CLI verified 93 stored evidence artifacts with zero integrity failures.
+Research CLI verified 94 stored evidence artifacts with zero integrity failures.
 Disposable intermediate binary copies were purged after their hashes/logs were
 retained; current and verified-baseline deliverables remain. No permanent
 research evidence, audit or user data was deleted.
