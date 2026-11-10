@@ -49,6 +49,19 @@ class Reconstruction(unittest.TestCase):
         self.assertIn("wall_edge", labels)
         self.assertTrue(result["occluded_deg"])
 
+    def test_mount_box_is_hidden(self):
+        rows = [{"x_mm": 1000, "y_mm": 0, "z_mm": 1200, "range_mm": 1000}] * 8
+        result = reconstruct.reconstruct_points(rows)
+        self.assertEqual(result["boxes"], [])
+        self.assertEqual(result["mount_boxes"], 1)
+
+    def test_yaw_scale_metadata(self):
+        rows = [{"x_mm": 1000, "y_mm": 0, "z_mm": 1500, "range_mm": 1000,
+                 "yaw_deg": 0}] * 8
+        result = reconstruct.reconstruct_points(rows, yaw_scale=0.5, fov_limit_deg=60)
+        self.assertAlmostEqual(result["yaw_scale"], 0.5)
+        self.assertAlmostEqual(result["fov_limit_deg"], 30.0)
+
     def test_annotations_label_hide_merge(self):
         rows = []
         for index in range(20):

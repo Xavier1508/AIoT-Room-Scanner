@@ -19,7 +19,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from calibrate import capture
 from common import CALIBRATION, RESEARCH, ROOT, SCANS, read_json, utc_iso, utc_stamp, write_json
@@ -403,10 +403,17 @@ class Handler(BaseHTTPRequestHandler):
                                         "points": _points(scan_id)})
             if path.startswith("/api/mapping/scans/") and path.endswith("/reconstruct"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/reconstruct")].strip("/")
+                params = parse_qs(parsed.query)
+                try:
+                    yaw_scale = float(params.get("yaw_scale", ["0.85"])[0])
+                except (TypeError, ValueError):
+                    yaw_scale = 0.85
+                yaw_scale = max(0.50, min(1.00, yaw_scale))
                 annotations = _load_annotations(scan_id)
-                reconstruction = reconstruct_points(_points(scan_id), annotations=annotations)
+                reconstruction = reconstruct_points(
+                    _points(scan_id), yaw_scale=yaw_scale, annotations=annotations)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
-                                        "annotations": annotations,
+                                        "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
             if path.startswith("/api/mapping/scans/") and path.endswith("/annotations"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/annotations")].strip("/")
@@ -437,10 +444,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "result": EspClient().command(command)})
             if path.startswith("/api/mapping/scans/") and path.endswith("/annotations"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/annotations")].strip("/")
+                try:
+                    yaw_scale = float(body.get("yaw_scale", 0.85))
+                except (TypeError, ValueError):
+                    yaw_scale = 0.85
+                yaw_scale = max(0.50, min(1.00, yaw_scale))
                 annotations = _save_annotations(scan_id, body.get("annotations", body))
-                reconstruction = reconstruct_points(_points(scan_id), annotations=annotations)
+                reconstruction = reconstruct_points(
+                    _points(scan_id), yaw_scale=yaw_scale, annotations=annotations)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
-                                        "annotations": annotations,
+                                        "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
             if path == "/api/mapping/scan/start":
                 _start_scan(body)

@@ -85,9 +85,24 @@
       <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
       <button id="reset-view" class="alt">Reset</button>
     </div>
+    <div class="row annotation-row">
+      <label class="note">Yaw scale</label>
+      <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.85">
+      <button id="apply-yaw-scale">Terapkan</button>
+      <button id="reset-yaw-scale" class="alt">1.00</button>
+      <span id="yaw-scale-note" class="note">0.85 provisional — turunkan sampai dinding lurus, naikkan jika terlalu sempit.</span>
+    </div>
     <div class="map-grid">
-      <div><h3>3D isometrik</h3><canvas id="cloud" width="1000" height="620"></canvas></div>
-      <div><h3>Top-down 2D</h3><canvas id="topdown" width="1000" height="620"></canvas></div>
+      <div><h3>3D isometrik</h3><canvas id="cloud" width="1200" height="700"></canvas></div>
+      <div><h3>Top-down 2D</h3><canvas id="topdown" width="1200" height="700"></canvas>
+        <div class="row map-tools">
+          <label class="note">2D zoom</label>
+          <button id="top-zoom-in" class="alt">+</button>
+          <button id="top-zoom-out" class="alt">−</button>
+          <button id="top-reset" class="alt">Reset 2D</button>
+          <span class="note">Drag = pan · wheel = zoom</span>
+        </div>
+      </div>
     </div>
     <p id="cloud-stats" class="note">Belum ada point cloud.</p>
     <div id="block-list" class="note"></div>
@@ -115,7 +130,7 @@
       <button id="merge-boxes" class="alt">Gabung 2 blok</button>
       <span id="annotation-status" class="note"></span>
     </div>
-    <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu.</p>
+    <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Blok kecil dekat sensor yang hanya pinggiran meja/mounting otomatis disembunyikan; kasur ±57 cm belum terpisah dari area mount pada scan ini.</p>
   </section>
 </section>
 
@@ -141,7 +156,7 @@
     </section>
   </div>
   <section class="card"><h2>Tren energi &amp; jarak HLK</h2>
-    <canvas id="presence-trend" width="1100" height="220"></canvas>
+    <canvas id="presence-trend" width="1400" height="260"></canvas>
     <p class="note">Garis cyan = energy (0–255), garis oranye = jarak (cm). Titik hijau = frame present, kuning = confirming/holding, abu = empty.</p>
   </section>
   <section class="card"><h2>Perbandingan rule vs DL</h2>

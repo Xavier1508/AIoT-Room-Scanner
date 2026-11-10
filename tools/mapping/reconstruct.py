@@ -93,12 +93,18 @@ def _fit_geometry(cluster):
 def _classify(geometry):
     long_side = max(geometry["length"], geometry["width"])
     short_side = min(geometry["length"], geometry["width"])
+    distance = math.hypot(geometry["cx"], geometry["cy"])
     if long_side >= 1.8 and short_side <= 0.9 and geometry["z_top"] >= 1.2:
         return "wall"
     if geometry["z_top"] >= 1.5 and short_side <= 0.35 and long_side >= 0.15:
         return "wall_edge"
     if geometry["z_top"] >= 1.5 and short_side <= 0.60 and long_side >= 0.80:
         return "wall"
+    # A small, thin, tall cluster close to the scanner is the table/mount edge,
+    # not a room object. It is removed from the 3D map.
+    if (distance <= 1.30 and long_side <= 0.45 and short_side <= 0.16
+            and geometry["z_top"] >= 0.90):
+        return "mount"
     return "object"
 
 
@@ -221,45 +227,95 @@ def _merge_boxes(boxes):
     }
 
 
+def _parse_box_key(value):
+    parts = str(value).split("|")
+    if len(parts) < 2:
+        return None
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+
+
+def _resolve_box_id(value, boxes):
+    """Resolve an old annotation id to a current box id.
+
+    Yaw calibration changes box centroids, so a stored key may not match
+    exactly. Fall back to the nearest box within 0.8 m.
+    """
+    text = str(value)
+    if any(str(box.get("id")) == text for box in boxes):
+        return text
+    parsed = _parse_box_key(text)
+    if parsed is None:
+        return None
+    best_id = None
+    best_distance = float("inf")
+    for box in boxes:
+        distance = math.hypot(float(box.get("cx_m", 0.0)) - parsed[0],
+                              float(box.get("cy_m", 0.0)) - parsed[1])
+        if distance < best_distance:
+            best_distance = distance
+            best_id = str(box.get("id"))
+    return best_id if best_distance <= 0.80 else None
+
+
 def apply_annotations(result, annotations):
     """Apply manual label overrides, hidden boxes and pairwise merges."""
     annotations = annotations or {}
     labels = annotations.get("labels") or {}
-    hidden = {str(item) for item in (annotations.get("hidden") or [])}
-    merges = annotations.get("merges") or []
+    hidden_raw = annotations.get("hidden") or []
+    merges_raw = annotations.get("merges") or []
     boxes = [dict(box) for box in (result.get("boxes") or [])]
+    hidden = {resolved for item in hidden_raw
+              if (resolved := _resolve_box_id(item, boxes)) is not None}
     boxes = [box for box in boxes if str(box.get("id")) not in hidden]
+    resolved_labels = {}
+    for key, override in labels.items():
+        target = _resolve_box_id(key, boxes)
+        if target:
+            resolved_labels[target] = str(override)[:24]
     for box in boxes:
-        override = labels.get(str(box.get("id")))
+        override = resolved_labels.get(str(box.get("id")))
         if override:
-            box["label"] = str(override)[:24]
+            box["label"] = override
             box["label_source"] = "manual"
-    for pair in merges:
+    resolved_merges = []
+    for pair in merges_raw:
         if not isinstance(pair, (list, tuple)) or len(pair) != 2:
             continue
-        ids = [str(pair[0]), str(pair[1])]
-        selected = [box for box in boxes if str(box.get("id")) in ids]
+        first = _resolve_box_id(pair[0], boxes)
+        second = _resolve_box_id(pair[1], boxes)
+        if not first or not second or first == second:
+            continue
+        selected = [box for box in boxes if str(box.get("id")) in (first, second)]
         if len(selected) != 2:
             continue
         merged = _merge_boxes(selected)
-        boxes = [box for box in boxes if str(box.get("id")) not in ids]
+        boxes = [box for box in boxes if str(box.get("id")) not in (first, second)]
         boxes.append(merged)
+        resolved_merges.append([first, second])
     boxes.sort(key=lambda box: (box.get("label") not in WALL_LABELS,
                                 -int(box.get("points", 0))))
     result["boxes"] = boxes
     result["annotations"] = {
-        "labels": {str(key): str(value) for key, value in labels.items()},
+        "labels": resolved_labels,
         "hidden": sorted(hidden),
-        "merges": [list(pair) for pair in merges if isinstance(pair, (list, tuple)) and len(pair) == 2],
+        "merges": resolved_merges,
     }
-    result["annotation_count"] = len(labels) + len(hidden) + len(merges)
+    result["annotation_count"] = len(resolved_labels) + len(hidden) + len(resolved_merges)
     return result
 
 
 def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
                        near_field_m=0.40, mount_guard_m=0.75,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
-                       annotations=None):
+                       yaw_scale=0.65, annotations=None):
+    try:
+        yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
+    except (TypeError, ValueError):
+        yaw_scale = 1.0
+    effective_fov_deg = max(5.0, min(90.0, float(fov_limit_deg) * yaw_scale))
     points = []
     mount_points = 0
     for row in rows:
@@ -271,6 +327,18 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
             continue
         if abs(x) > 20 or abs(y) > 20 or z < -1.0 or z > 5.0:
             continue
+        # The commanded yaw is larger than the effective mechanical yaw. The
+        # dense scan's wall thickness is minimised around 0.65; keep this
+        # adjustable until a known-target calibration confirms it.
+        yaw_value = row.get("yaw_deg")
+        if yaw_scale != 1.0 and yaw_value not in (None, ""):
+            try:
+                yaw = math.radians(float(yaw_value) * yaw_scale)
+                distance = math.hypot(x, y)
+                x = distance * math.cos(yaw)
+                y = distance * math.sin(yaw)
+            except (TypeError, ValueError):
+                pass
         # Below-floor returns are floor/arm artefacts, not room geometry.
         if z < -0.05:
             mount_points += 1
@@ -297,9 +365,11 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
 
     if not points:
         result = {"cell_m": cell_m, "eps_m": eps_m, "point_count": 0,
-                  "mount_points": mount_points, "boxes": [], "grid": [],
-                  "occluded_deg": [[-fov_limit_deg, fov_limit_deg]],
-                  "fov_limit_deg": fov_limit_deg,
+                  "mount_points": mount_points, "mount_boxes": 0,
+                  "boxes": [], "grid": [],
+                  "occluded_deg": [[-effective_fov_deg, effective_fov_deg]],
+                  "fov_limit_deg": effective_fov_deg,
+                  "yaw_scale": yaw_scale,
                   "near_field_m": near_field_m,
                   "mount_guard_m": mount_guard_m,
                   "note": "No points after near-mount filtering."}
@@ -320,10 +390,19 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
             boxes.append(_box_from_cluster(part))
 
     boxes.sort(key=lambda box: (box["label"] not in WALL_LABELS, -box["points"]))
+    mount_boxes = 0
+    visible_boxes = []
+    for box in boxes:
+        if box["label"] == "mount":
+            mount_boxes += 1
+        else:
+            visible_boxes.append(box)
+    boxes = visible_boxes
     grid = [[cell[0], cell[1], len(cells[cell])] for cell in sorted(cells)]
     occluded = []
     bin_size = 10
-    for start in range(-fov_limit_deg, fov_limit_deg, bin_size):
+    fov_int = int(round(effective_fov_deg))
+    for start in range(-fov_int, fov_int, bin_size):
         count = 0
         for x, y, z, source in points:
             yaw = math.degrees(math.atan2(y, x))
@@ -336,13 +415,16 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.45, min_points=5,
         "eps_m": eps_m,
         "point_count": len(points),
         "mount_points": mount_points,
+        "mount_boxes": mount_boxes,
         "boxes": boxes,
         "grid": grid,
         "occluded_deg": occluded,
-        "fov_limit_deg": fov_limit_deg,
+        "fov_limit_deg": effective_fov_deg,
+        "yaw_scale": yaw_scale,
         "near_field_m": near_field_m,
         "mount_guard_m": mount_guard_m,
         "note": ("Estimated boxes from one fixed viewpoint; hidden sides are inferred. "
-                 "Occluded sectors have too few returns. Near-field mount returns are hidden."),
+                 "Occluded sectors have too few returns. Near-field mount returns are hidden. "
+                 "Yaw scale is provisional until a known-target calibration."),
     }
     return apply_annotations(result, annotations)

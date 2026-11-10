@@ -16,6 +16,10 @@ const state = {
   presenceBusy: false,
   mlMetrics: null,
   showDistances: true,
+  yawScale: 0.85,
+  topZoom: 1.0,
+  topPanX: 0,
+  topPanY: 0,
   viewMode: 'both',
   viewYaw: -0.65,
   viewPitch: 0.48,
@@ -538,10 +542,11 @@ async function loadPoints(scanId) {
     state.points = data.points || [];
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
+    $('yaw-scale').value = Number(state.yawScale).toFixed(2);
     let reconstruction = null;
     let annotations = { labels: {}, hidden: [], merges: [] };
     try {
-      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct`);
+      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}`);
       reconstruction = rec.reconstruction;
       annotations = rec.annotations || annotations;
     } catch (error) {
@@ -551,7 +556,8 @@ async function loadPoints(scanId) {
     state.annotations = annotations;
     state.selectedBoxId = null;
     const blocks = reconstruction?.boxes?.length ?? 0;
-    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} hidden`);
+    const mountBoxes = reconstruction?.mount_boxes ?? 0;
+    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
     renderBoxControls();
     drawCloud();
     drawTopDown();
@@ -701,7 +707,7 @@ async function saveAnnotations(annotations, message) {
   const data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ annotations }),
+    body: JSON.stringify({ annotations, yaw_scale: state.yawScale }),
   });
   state.annotations = data.annotations || annotations;
   state.reconstruction = data.reconstruction;
@@ -829,8 +835,36 @@ function boxCorners(box) {
   return corners;
 }
 
+function scaledPoint(point) {
+  const scale = Number(state.yawScale);
+  if (!Number.isFinite(scale) || Math.abs(scale - 1) < 1e-6) return point;
+  const x = Number(point.x_mm);
+  const y = Number(point.y_mm);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return point;
+  const distance = Math.hypot(x, y);
+  if (!distance) return point;
+  const yaw = Math.atan2(y, x) * scale;
+  return { ...point, x_mm: distance * Math.cos(yaw), y_mm: distance * Math.sin(yaw) };
+}
+
+function applyYawScale() {
+  const raw = Number($('yaw-scale').value);
+  const value = Math.max(0.50, Math.min(1.00, Number.isFinite(raw) ? raw : 0.85));
+  state.yawScale = value;
+  $('yaw-scale').value = value.toFixed(2);
+  setText('yaw-scale-note', `${value.toFixed(2)} provisional — turunkan sampai dinding lurus.`);
+  const scanId = state.loadedScan || $('scan-select').value;
+  if (scanId) loadPoints(scanId);
+}
+
+function resetYawScale() {
+  $('yaw-scale').value = '1.00';
+  applyYawScale();
+}
+
 function drawBoxes3D(ctx, width, height, radius) {
   const boxes = state.reconstruction?.boxes || [];
+  const labelScale = Math.max(1, Math.min(1.6, Number(state.zoom) || 1));
   const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
   for (const [boxIndex, box] of boxes.entries()) {
     const projected = boxCorners(box).map(point => projectPoint(point, width, height, radius));
@@ -859,19 +893,19 @@ function drawBoxes3D(ctx, width, height, radius) {
     const dimensions = `${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} m`;
     if (state.selectedBoxId === box.id) {
       const text = `${boxName(box)} ${dimensions}${distance}`;
-      ctx.font = '12px system-ui';
-      ctx.lineWidth = 3;
+      ctx.font = `${14 * labelScale}px system-ui`;
+      ctx.lineWidth = 3 * labelScale;
       ctx.strokeStyle = 'rgba(10,17,28,0.85)';
       ctx.strokeText(text, top.x + 12, top.y - 4);
       ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
       ctx.fillText(text, top.x + 12, top.y - 4);
     } else {
       ctx.beginPath();
-      ctx.arc(top.x, top.y, 9, 0, Math.PI * 2);
+      ctx.arc(top.x, top.y, 11 * labelScale, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
       ctx.fill();
       ctx.fillStyle = '#0a111c';
-      ctx.font = 'bold 10px system-ui';
+      ctx.font = `bold ${12 * labelScale}px system-ui`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(boxIndex + 1), top.x, top.y);
@@ -881,11 +915,11 @@ function drawBoxes3D(ctx, width, height, radius) {
   }
 }
 
-function drawTag(ctx, x, y, text, color) {
-  ctx.font = '11px system-ui';
-  const width = ctx.measureText(text).width + 8;
+function drawTag(ctx, x, y, text, color, scale = 1) {
+  ctx.font = `${12 * scale}px system-ui`;
+  const width = ctx.measureText(text).width + 9 * scale;
   ctx.fillStyle = 'rgba(10,17,28,0.80)';
-  ctx.fillRect(x - width / 2, y - 9, width, 17);
+  ctx.fillRect(x - width / 2, y - 10 * scale, width, 19 * scale);
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -921,7 +955,7 @@ function drawOccludedWedges(ctx, toScreen, origin, extent, occluded, fovLimit) {
   }
 }
 
-function drawHumanTopDown(ctx, toScreen, origin, scale) {
+function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)) return;
   const distance = Number(presence.distance_cm) / 100;
@@ -948,7 +982,7 @@ function drawHumanTopDown(ctx, toScreen, origin, scale) {
   const label = `${String(presence.class || 'human').toUpperCase()} ${distance.toFixed(2)} m · `
     + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
   drawTag(ctx, point.x, point.y - size / 2 - 12, label,
-    `rgb(${color[0]},${color[1]},${color[2]})`);
+    `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
 }
 
 function drawTopDown() {
@@ -957,7 +991,7 @@ function drawTopDown() {
   const ctx = canvas.getContext('2d');
   const width = canvas.width, height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null);
+  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null).map(scaledPoint);
   const boxes = currentBoxes();
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
@@ -970,8 +1004,13 @@ function drawTopDown() {
     for (const point of boxCorners(box)) extent = Math.max(extent, Math.abs(point.x_mm) / 1000, Math.abs(point.y_mm) / 1000);
   }
   extent = Math.max(extent, hlkRadius) * 1.15;
-  const scale = Math.min(width, height) * 0.42 / extent;
-  const toScreen = (x, y) => ({ x: width / 2 + x * scale, y: height / 2 - y * scale });
+  const zoom = Math.max(0.4, Math.min(8, Number(state.topZoom) || 1));
+  const scale = Math.min(width, height) * 0.42 / extent * zoom;
+  const toScreen = (x, y) => ({
+    x: width / 2 + x * scale + Number(state.topPanX || 0),
+    y: height / 2 - y * scale + Number(state.topPanY || 0),
+  });
+  const labelScale = Math.max(1, Math.min(1.6, zoom));
   ctx.lineWidth = 1;
   const start = -Math.ceil(extent * 2) / 2;
   for (let value = start; value <= extent; value += 0.5) {
@@ -1016,7 +1055,7 @@ function drawTopDown() {
         y: origin.y + (anchor.y - origin.y) * 0.62 + (boxIndex % 2 === 0 ? -8 : 8),
       };
       drawTag(ctx, mid.x, mid.y, `#${boxIndex + 1} ${formatMeters(boxDistance(box))}`,
-        `rgb(${color[0]},${color[1]},${color[2]})`);
+        `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
     }
   }
   if (state.viewMode !== 'blocks') {
@@ -1043,11 +1082,11 @@ function drawTopDown() {
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
       if (box.label === 'wall' || box.label === 'wall_edge') {
         ctx.beginPath();
-        ctx.arc(label.x, label.y, 9, 0, Math.PI * 2);
+        ctx.arc(label.x, label.y, 11 * labelScale, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
         ctx.fill();
         ctx.fillStyle = '#0a111c';
-        ctx.font = 'bold 10px system-ui';
+        ctx.font = `bold ${12 * labelScale}px system-ui`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(boxIndex + 1), label.x, label.y);
@@ -1055,8 +1094,8 @@ function drawTopDown() {
         ctx.textBaseline = 'alphabetic';
       } else {
         const text = `#${boxIndex + 1} ${boxName(box)}`;
-        ctx.font = '12px system-ui';
-        ctx.lineWidth = 3;
+        ctx.font = `${14 * labelScale}px system-ui`;
+        ctx.lineWidth = 3 * labelScale;
         ctx.strokeStyle = 'rgba(10,17,28,0.85)';
         ctx.strokeText(text, label.x + 4, label.y - 4);
         ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
@@ -1064,7 +1103,7 @@ function drawTopDown() {
       }
     }
   }
-  drawHumanTopDown(ctx, toScreen, origin, scale);
+  drawHumanTopDown(ctx, toScreen, origin, scale, labelScale);
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(origin.x, origin.y, 4, 0, Math.PI * 2); ctx.fill();
   ctx.font = '12px system-ui';
@@ -1107,6 +1146,7 @@ function drawHuman3D(ctx, width, height, radius) {
   const color = presence.class === 'non-human'
     ? [255, 170, 70]
     : (presence.state === 'holding' ? [255, 210, 90] : [90, 255, 170]);
+  const labelScale = Math.max(1, Math.min(1.6, Number(state.zoom) || 1));
   ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.12)`;
   ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.55)`;
   ctx.lineWidth = 1.2;
@@ -1134,8 +1174,8 @@ function drawHuman3D(ctx, width, height, radius) {
   }, width, height, radius);
   const text = `${String(presence.class || 'human').toUpperCase()} ${distance.toFixed(2)} m · `
     + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
-  ctx.font = '12px system-ui';
-  ctx.lineWidth = 3;
+  ctx.font = `${14 * labelScale}px system-ui`;
+  ctx.lineWidth = 3 * labelScale;
   ctx.strokeStyle = 'rgba(10,17,28,0.85)';
   ctx.strokeText(text, labelPoint.x + 6, labelPoint.y - 4);
   ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
@@ -1148,7 +1188,7 @@ function drawCloud() {
   const width = canvas.width;
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null);
+  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null).map(scaledPoint);
   const boxes = currentBoxes();
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
@@ -1286,7 +1326,55 @@ $('zoom-out').addEventListener('click', () => { state.zoom = Math.max(0.25, stat
 $('reset-view').addEventListener('click', () => {
   state.viewYaw = -0.65; state.viewPitch = 0.48; state.zoom = 1.0; drawCloud();
 });
+$('apply-yaw-scale').addEventListener('click', applyYawScale);
+$('reset-yaw-scale').addEventListener('click', resetYawScale);
+$('top-zoom-in').addEventListener('click', () => {
+  state.topZoom = Math.min(8, (Number(state.topZoom) || 1) * 1.2);
+  drawTopDown();
+});
+$('top-zoom-out').addEventListener('click', () => {
+  state.topZoom = Math.max(0.4, (Number(state.topZoom) || 1) / 1.2);
+  drawTopDown();
+});
+$('top-reset').addEventListener('click', () => {
+  state.topZoom = 1.0;
+  state.topPanX = 0;
+  state.topPanY = 0;
+  drawTopDown();
+});
+
+function bindTopDown() {
+  const canvas = $('topdown');
+  if (!canvas) return;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  canvas.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    state.topPanX += event.clientX - lastX;
+    state.topPanY += event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    drawTopDown();
+  });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const factor = event.deltaY > 0 ? 0.9 : 1.1;
+    state.topZoom = Math.max(0.4, Math.min(8, (Number(state.topZoom) || 1) * factor));
+    drawTopDown();
+  }, { passive: false });
+}
+
 bindCanvas();
+bindTopDown();
 
 (async () => {
   await refreshScans();
