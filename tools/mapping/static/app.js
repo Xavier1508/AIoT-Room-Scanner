@@ -1,6 +1,15 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
+function storedYawScale() {
+  try {
+    const value = Number(localStorage.getItem('mapping.yawScale'));
+    return Number.isFinite(value) && value >= 0.5 && value <= 1.0 ? value : 0.76;
+  } catch (error) {
+    return 0.76;
+  }
+}
+
 const state = {
   health: null,
   scans: [],
@@ -27,7 +36,7 @@ const state = {
   presenceBusy: false,
   mlMetrics: null,
   showDistances: true,
-  yawScale: 0.76,
+  yawScale: storedYawScale(),
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
@@ -818,6 +827,8 @@ function syncBoxLabel() {
 
 async function saveAnnotations(annotations, message) {
   if (!state.loadedScan) return;
+  annotations.room = annotations.room || {};
+  annotations.room.yaw_scale = state.yawScale;
   const data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -980,6 +991,11 @@ function applyYawScale() {
   const raw = Number($('yaw-scale').value);
   const value = Math.max(0.50, Math.min(1.00, Number.isFinite(raw) ? raw : 0.76));
   state.yawScale = value;
+  try {
+    localStorage.setItem('mapping.yawScale', value.toFixed(2));
+  } catch (error) {
+    // localStorage can be unavailable in private/embedded contexts.
+  }
   $('yaw-scale').value = value.toFixed(2);
   setText('yaw-scale-note', `${value.toFixed(2)} provisional — turunkan sampai dinding lurus.`);
   const scanId = state.loadedScan || $('scan-select').value;

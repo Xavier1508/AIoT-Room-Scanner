@@ -242,7 +242,7 @@ def _clean_annotations(payload):
     clean_room = {}
     if isinstance(room, dict):
         for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
-                    "bedroom_m2", "total_m2", "reference_scale"):
+                    "bedroom_m2", "total_m2", "reference_scale", "yaw_scale"):
             if key in room:
                 try:
                     clean_room[key] = round(float(room[key]), 3)

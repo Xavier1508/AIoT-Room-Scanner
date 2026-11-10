@@ -43,6 +43,12 @@ def _read_points(scan_id: str):
 def export_scan(scan_id: str, output_root: Path, yaw_scale: float = 0.76) -> dict:
     scan_dir = SCANS / scan_id
     annotations = read_json(scan_dir / "annotations.json", {}) or {}
+    saved_yaw = (annotations.get("room") or {}).get("yaw_scale")
+    if saved_yaw:
+        try:
+            yaw_scale = max(0.50, min(1.00, float(saved_yaw)))
+        except (TypeError, ValueError):
+            pass
     rows = _read_points(scan_id)
     by_index = {}
     for row in rows:

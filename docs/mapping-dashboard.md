@@ -165,7 +165,9 @@ yaw. The dense scan is currently viewed at **yaw scale 0.76** (user-tuned;
 effective FOV ±45.6°). At 0.76 the wall panels merge into one long wall; at
 0.77–0.80 the two surfaces separate again. The **Yaw scale** input (0.50–1.00)
 re-projects points and blocks live; manual labels are remapped to the nearest
-box. This is a provisional calibration, not a measured servo curve.
+box. The chosen value is kept in browser localStorage and in the room metadata
+when annotations are saved. This is a provisional calibration, not a measured
+servo curve.
 
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
