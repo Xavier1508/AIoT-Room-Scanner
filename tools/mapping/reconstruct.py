@@ -82,6 +82,7 @@ def _fit_geometry(cluster):
         "angle": angle,
         "length": length,
         "width": width,
+        "width_robust": max(0.10, _percentile(vs, 0.75) - _percentile(vs, 0.25)),
         "z_top": z_top,
         "points": len(cluster),
         "range_x": [min(xs), max(xs)],
@@ -143,24 +144,31 @@ def _split_wall_cluster(cluster, min_points, depth=0, max_depth=2):
 
 def _box_from_cluster(cluster):
     geometry = _fit_geometry(cluster)
+    label = _classify(geometry)
+    # HC beam spread makes a wall look 0.5 m thick. Keep the observed width in
+    # metadata but draw the wall with the robust 25-75% spread.
+    display_width = geometry["width"]
+    if label == "wall":
+        display_width = min(display_width, max(0.12, geometry["width_robust"]))
     corners = [
         (geometry["cx"] + u * math.cos(geometry["angle"]) - v * math.sin(geometry["angle"]),
          geometry["cy"] + u * math.sin(geometry["angle"]) + v * math.cos(geometry["angle"]))
-        for u, v in ((-geometry["length"] / 2, -geometry["width"] / 2),
-                     (geometry["length"] / 2, -geometry["width"] / 2),
-                     (geometry["length"] / 2, geometry["width"] / 2),
-                     (-geometry["length"] / 2, geometry["width"] / 2))
+        for u, v in ((-geometry["length"] / 2, -display_width / 2),
+                     (geometry["length"] / 2, -display_width / 2),
+                     (geometry["length"] / 2, display_width / 2),
+                     (-geometry["length"] / 2, display_width / 2))
     ]
     nearest = min(math.hypot(x, y) for x, y in corners)
     return {
         "id": _box_id(geometry),
-        "label": _classify(geometry),
+        "label": label,
         "label_source": "auto",
         "cx_m": round(geometry["cx"], 3),
         "cy_m": round(geometry["cy"], 3),
         "angle_deg": round(math.degrees(geometry["angle"]), 1),
         "length_m": round(geometry["length"], 3),
-        "width_m": round(geometry["width"], 3),
+        "width_m": round(display_width, 3),
+        "width_observed_m": round(geometry["width"], 3),
         "z_bottom_m": 0.0,
         "z_top_m": round(geometry["z_top"], 3),
         "distance_m": round(math.hypot(geometry["cx"], geometry["cy"]), 2),
