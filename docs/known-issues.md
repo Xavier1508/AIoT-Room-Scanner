@@ -113,10 +113,11 @@ the sensor plane inside 75 cm and below-floor returns are also removed. Points
 are clustered, a thick wall cluster is split at its largest along-wall gap,
 rectangles are fitted and extruded to the observed top. Hidden sides are
 inferred; it is not a full mesh. The dense scan now yields two wall segments,
-two `wall_edge`, the fan and one small object. Wall thickness still reflects
-the HC beam/measurement spread, so a wall block can look thicker than the real
-wall. The right side of the room is partly occluded by the mount/table; the
-red top-down sectors mark areas with too few returns.
+two `wall_edge`, the fan and one small object. Wall display thickness uses the
+robust 25–75% spread (about 0.25–0.28 m in the dense scan) while
+`width_observed_m` keeps the full HC beam spread (0.52–0.56 m). The right side
+of the room is partly occluded by the mount/table; the red top-down sectors
+mark areas with too few returns.
 
 **Manual annotations are per scan:** labels/hide/merge are stored in
 `research/mapping/scans/<id>/annotations.json`. If the reconstruction

@@ -171,7 +171,8 @@ of one thick wall plus near-field artefacts.
 `nearest_m` (closest footprint corner). The top-down view draws a dashed
 leader from the sensor origin with a `#n 2.27 m` tag; the 3D view shows the
 distance in the selected block label. The **Jarak** button toggles all distance
-leaders/tags so the map does not become too busy.
+leaders/tags so the map does not become too busy. Wall display thickness uses
+the robust 25–75% spread; `width_observed_m` keeps the full HC beam spread.
 
 **Block list and manual annotation:** the table below the canvases lists each
 block's number, colour, label, distance, size, height, point count and whether

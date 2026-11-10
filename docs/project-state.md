@@ -353,7 +353,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **88 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **89 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -380,7 +380,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   84 = binary empty/human training and rule-baseline comparison;
   85 = 0.7.1 scan60-safe OTA; 86 = 60-degree room scans and solid-block viewer;
   87 = software-only wall split/mount guard/distance/annotations/rule presence;
-  88 = final room view screenshot with distances and block table.
+  88 = final room view screenshot with distances and block table;
+  89 = final robust wall-thickness display screenshot.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
