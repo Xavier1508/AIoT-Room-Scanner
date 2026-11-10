@@ -161,50 +161,84 @@ rectangles and extrudes them from the floor to the observed top. The blocks are
 **estimated** from one fixed viewpoint; hidden sides are inferred.
 
 **Yaw calibration:** the commanded yaw is larger than the effective mechanical
-yaw. The dense scan's wall thickness is minimised around **yaw scale 0.85**, so
-the default is 0.85 (effective FOV ±51°, not ±60°). The **Yaw scale** input
-(0.50–1.00) re-projects points and blocks live; use it to make the wall panels
-straight, then confirm the value against a known target. This is a provisional
-calibration, not a measured servo curve.
+yaw. The dense scan is currently viewed at **yaw scale 0.76** (user-tuned;
+effective FOV ±45.6°). At 0.76 the wall panels merge into one long wall; at
+0.77–0.80 the two surfaces separate again. The **Yaw scale** input (0.50–1.00)
+re-projects points and blocks live; manual labels are remapped to the nearest
+box. This is a provisional calibration, not a measured servo curve.
 
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
 also treated as the table/arm edge that the downward servo sweep hits; this is
 what caused the earlier blocks that appeared to hug the sensor. Below-floor
 returns (`z < -5 cm`) are discarded too. A small thin tall cluster close to the
-scanner is classified `mount` and hidden as a box. With yaw scale 0.85 the
-dense scan yields three visible blocks: a wall, a manually labelled `wardrobe`
-and the `fan`; the table-edge block that was `#6` is gone. The bed (~57 cm) is
-not separable from the mount/table area with this scan and needs a new ToF/fine
-scan.
+scanner is classified `mount` and hidden as a box. At yaw 0.76 the measured map
+shows a wall and the fan; the former table-edge block `#6` is gone.
 
-**Label readability:** 3D block labels and 2D distance tags scale up to 1.6×
-with zoom and never shrink below their base size, so numbers remain readable
-when zoomed out. The page uses the full desktop width; the map grid is
-responsive (two columns on a normal desktop, one on narrow screens).
+**Room prior overlay (per scan, optional):** the photos and measurements give a
+consistent room model:
 
-**Distance annotations:** every block carries `distance_m` (centre) and
-`nearest_m` (closest footprint corner). The top-down view draws a dashed
-leader from the sensor origin with a `#n 2.27 m` tag; the 3D view shows the
-distance in the selected block label. The **Jarak** button toggles all distance
-leaders/tags so the map does not become too busy. Wall display thickness uses
-the robust 25–75% spread; `width_observed_m` keeps the full HC beam spread.
+- bedroom rectangle **2.70 × 2.20 m = 5.94 m²**
+- bathroom **1.50 × 1.50 m = 2.25 m²** (excluded from the bedroom map)
+- desk niche **≈0.40 m²**
+- total **8.59 m²** (matches the 8.6 m² figure)
+- bed **2.00 × 1.20 × 0.57 m** against the back wall
+- wardrobe **0.70 × 0.60 × 2.00 m** at the right end of the back wall
+- sensor rack on the desk edge at **77 cm**, looking toward the bed/exit door
 
-**Block list and manual annotation:** the table below the canvases lists each
-block's number, colour, label, distance, size, height, point count and whether
-the label is automatic or manual. Use the block selectors to:
+The prior is drawn as dashed boxes/outline (`bed (prior)`, `wardrobe (prior)`,
+`prior room 2.7×2.2 m`) and can be toggled with **Prior**. It is stored per
+scan in `annotations.json`, not hard-coded in the application, so the sensor
+can be reused in another room with a different prior. Prior boxes are not
+measured data and are excluded from training unless the user confirms them.
 
-- apply a label (`wall`, `wall_edge`, `fan`, `bed`, `wardrobe`, `chair`,
-  `table`, `object`, `mount`),
-- hide a false block,
-- merge two blocks into one bounding box,
-- reset all annotations.
+**Label readability and distances:** 3D block labels and 2D distance tags
+scale up to 1.6× with zoom and never shrink below their base size. The page
+uses the full desktop width; the map grid is responsive. Every block carries
+`distance_m` and `nearest_m`; the top-down view draws dashed leaders with
+`#n 2.27 m` tags, and the **Jarak** button toggles them.
+
+**Selection and manual labelling:** the map now supports Blender/Unity-style
+selection:
+
+- **3D:** right-drag orbit, middle-drag pan, wheel zoom, left-drag box select,
+  left-click box, Shift add, Alt subtract. **Through** selects all depths
+  (x-ray); turn it off to use the camera-depth min/max range.
+- **2D:** right-drag pan, wheel zoom, left-drag box select, left-click box.
+- Selected points are highlighted white; the selection count is shown.
+- **Label titik terpilih** stores point labels by stable `point_index`.
+- **Buat box dari selection** fits a manual box to the selected points.
+- Custom labels are free text with a datalist/colour catalog, not just a fixed
+  dropdown.
 
 Annotations are stored per scan in
-`research/mapping/scans/<id>/annotations.json` and are applied by the
-`/reconstruct` endpoint. The current dense scan has manual labels `fan` and
-`wardrobe`; the `wardrobe` label is a best-effort placement of the tall
-right-side block and should be confirmed against the room.
+`research/mapping/scans/<id>/annotations.json` and include labels, hidden,
+merges, point labels, label catalog, manual/prior boxes, room outline and room
+metadata. The current dense scan has a manual `fan` label, a prior bed and a
+prior wardrobe. The measured wall block is 3.06 m long because it includes the
+corner/side surface; the 2.7 m room prior is the intended rectangle.
+
+**3D object dataset:** `tools/mapping/ml/export_pointcloud.py` exports point
+labels and object boxes:
+
+```text
+research/mapping/ml/pointcloud/<scan>/
+  fan.csv / fan.npz
+  objects.csv
+  manifest.json
+```
+
+Export command (uses the TensorFlow/numpy venv):
+
+```powershell
+tools\mapping\ml\.venv\Scripts\python.exe tools/mapping/ml/export_pointcloud.py --scan 20261109T205833Z
+```
+
+Only point-labelled patches are training samples. Prior boxes with zero points
+are scene priors, not measured training data.
+
+Point labels are suitable for 3D object classification/segmentation. The HLK
+`empty`/`human`/`non-human` time-series dataset remains a separate path.
 
 **Human marker:** the **AI / Presence** tab polls the HLK rule at ~1.5 s. When
 the rule confirms a target for 3 frames (valid HLK, `target_state>0`,
@@ -282,7 +316,7 @@ held-out session.
 - `GET /api/mapping/scan/status`
 - `GET /api/mapping/scans`
 - `GET /api/mapping/scans/{id}/points`
-- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=0.85`
+- `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=0.76`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
 - `GET /api/mapping/calibration`

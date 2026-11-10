@@ -5,12 +5,12 @@ application OTA, sensor health and the PC mapping dashboard are verified.
 `0.7.1-scan60-safe` supports a ±60° commanded room scan. The final dense scan
 has 247/247 points (219 valid, 50 ToF + 169 HC). The dashboard now renders a
 full-width top-down 2D map and 3D isometric view with yaw calibration (default
-0.85, effective FOV ±51°), straight block panels, occluded sectors, distance
-leaders, a numbered block list, manual label/hide/merge annotations, 2D
-pan/zoom and a rule-based human capsule. The visible dense map has a wall, a
-manually labelled `wardrobe` and the `fan`; the table-edge block `#6` is
-hidden. ToF remains unreliable; scans use HC fallback and the watchdog keeps
-the board responsive.
+**0.76**, effective FOV ±45.6°), a per-scan room prior, straight block panels,
+occluded sectors, distance leaders, a numbered block list, custom labels,
+box/point selection, manual box creation, 2D pan/zoom and a rule-based human
+capsule. The visible map has a measured wall, the `fan`, a prior bed and a
+prior wardrobe; the table-edge block `#6` is hidden. ToF remains unreliable;
+scans use HC fallback and the watchdog keeps the board responsive.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -292,30 +292,41 @@ the board responsive.
 - **Top-down + solid-block viewer:** `reconstruct.py` projects points to a
   top-down grid, clusters them, splits a thick wall cluster at its largest
   along-wall gap, fits oriented rectangles and extrudes estimated boxes. The
-  dense scan with yaw scale 0.85 yields **3 visible blocks**: a wall, a
-  manually labelled `wardrobe` and the `fan`; the table-edge block `#6` is
-  classified `mount` and hidden. The dashboard shows 3D isometric and top-down
-  2D side by side with Points/Blocks/Both and Jarak toggles.
-  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/final-fullwidth-yaw085-v2.png`.
+  dense scan at yaw scale 0.76 shows the measured wall and fan, plus dashed
+  **prior** bed/wardrobe boxes and a prior room outline. The table-edge block
+  `#6` is classified `mount` and hidden. The dashboard shows 3D isometric and
+  top-down 2D side by side with Points/Blocks/Both, Jarak and Prior toggles.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/prior-room-overlay.png`.
 - **Yaw calibration + responsive layout:** the commanded yaw is larger than the
-  effective mechanical yaw; wall thickness is minimised around **yaw scale
-  0.85** (effective FOV ±51°). The Yaw scale input (0.50–1.00) re-projects
-  points/blocks live, and manual labels are remapped to the nearest box after a
-  scale change. The page uses the full desktop width, the map grid is
+  effective mechanical yaw; the user-tuned default is **yaw scale 0.76**
+  (effective FOV ±45.6°). At 0.76 the wall panels merge; 0.77–0.80 separates
+  them. The Yaw scale input (0.50–1.00) re-projects points/blocks live and
+  remaps manual labels. The page uses the full desktop width, the map grid is
   responsive, and 2D pan/zoom plus label scaling (1–1.6×) keep numbers readable.
-  This is provisional until a known-target yaw calibration is measured.
+  This is provisional until a known-target calibration is measured.
+- **Room prior + area:** per-scan prior from photos/measurements:
+  2.70×2.20 m bedroom = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche
+  0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m and wardrobe
+  0.70×0.60×2.00 m are dashed and toggleable. They are per-scan data, not
+  hard-coded, and are excluded from training until confirmed.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously
-  produced blocks hugging the sensor. The fan at ~0.88 m is retained and
-  manually labelled `fan`. The bed (~57 cm) is not separable from the
-  mount/table area with this scan; it needs a new ToF/fine scan.
-- **Distance and annotation UI:** each block has `distance_m`/`nearest_m`;
-  top-down draws dashed leaders with `#n 2.27 m` tags and the 3D view shows the
-  selected block's distance. A numbered block table lists distance, size,
-  height, points and auto/manual source. Manual label, hide, merge and reset are
-  stored per scan in `annotations.json` and applied by `/reconstruct`.
-  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/final-fullwidth-yaw085-v2.png`.
+  produced blocks hugging the sensor. The fan at ~0.89 m is retained and
+  manually labelled `fan`.
+- **Distance, selection and annotation UI:** each block has
+  `distance_m`/`nearest_m`; top-down draws dashed leaders with `#n` tags. The
+  block table lists distance, size, height, points and source. Right-drag
+  orbit/pan, left-drag box select, click-box, Shift/Alt add/subtract, custom
+  free-text labels with colour catalog, point labels by stable `point_index`,
+  and **Buat box dari selection** are implemented. Annotations are stored per
+  scan in `annotations.json`; point labels for the fan (31 points) were saved.
+  Screenshot: `analysis/mapping/dashboard-20261110Tpresence/prior-room-overlay.png`.
+- **3D object dataset export:** `tools/mapping/ml/export_pointcloud.py` writes
+  per-label CSV/NPZ patches, `objects.csv` and `manifest.json` under
+  `research/mapping/ml/pointcloud/<scan>/`. The dense scan exports 31 fan
+  points. This is the 3D-object DL dataset path; the HLK time-series path is
+  separate.
 - **Rule presence + human marker:** `presence.py` requires valid HLK,
   `target_state>0`, `energy>=40`, 30–600 cm and 3 confirmation frames, with a
   6 s hold. The AI/Presence tab shows class, confidence, distance, energy,
@@ -337,17 +348,17 @@ the board responsive.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the software-only visualization layer is complete:
-yaw-calibrated room scan, straight block panels, occluded sectors, distance
-leaders, numbered block table, manual annotations, 2D pan/zoom, full-width
-layout, rule-based human capsule and the AI/Presence panel. Remaining work needs
-hardware/data: confirm the **yaw scale** against a known target (0.85 is
-provisional), install and verify the new ToF, run a fine 5°/25 µs ±60° scan to
-recover the bed/wardrobe detail, record a non-human session, train the 3-class
-`empty`/`human`/`non-human` model and evaluate it on a true held-out session.
-Only deploy DL if it beats the rule; until then keep the rule-based
-movement/presence baseline for the demo. The 82.7% binary DL model and its
-TFLite export remain a pipeline baseline, not the primary detector.
+**Current next action:** the software-only visualization/labeling layer is
+complete: yaw-calibrated room scan, per-scan room prior, straight block panels,
+occluded sectors, distance leaders, numbered block table, custom labels,
+box/point selection, manual box creation, 2D pan/zoom, full-width layout,
+rule-based human capsule and the AI/Presence panel. Remaining work:
+confirm the **yaw scale 0.76** against a known target; confirm the prior
+bed/wardrobe placement; install and verify the new ToF; run a fine 5°/25 µs
+scan for more points. For DL, use the exported 3D point/object labels
+(`ml/pointcloud`) as the first 3D-object dataset; the HLK
+`empty`/`human`/`non-human` time-series model remains a separate later task.
+Only deploy DL if it beats the rule on a true held-out session.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -367,7 +378,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **90 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **91 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -396,7 +407,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   87 = software-only wall split/mount guard/distance/annotations/rule presence;
   88 = final room view screenshot with distances and block table;
   89 = final robust wall-thickness display screenshot;
-  90 = yaw calibration, mount removal, full-width layout and 2D zoom.
+  90 = yaw calibration, mount removal, full-width layout and 2D zoom;
+  91 = room prior, selection/labels and 3D object export.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

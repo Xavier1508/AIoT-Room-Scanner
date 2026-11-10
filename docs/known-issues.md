@@ -113,31 +113,48 @@ the sensor plane inside 75 cm and below-floor returns are also removed. A small
 thin tall cluster close to the scanner is classified `mount` and hidden. Points
 are clustered, a thick wall cluster is split at its largest along-wall gap,
 rectangles are fitted and extruded to the observed top. Hidden sides are
-inferred; it is not a full mesh. With yaw scale 0.85 the dense scan yields three
-visible blocks: a wall, a manually labelled `wardrobe` and the `fan`; the
-table-edge block `#6` is hidden. Wall display thickness uses the robust 25–75%
-spread (about 0.25–0.29 m) while `width_observed_m` keeps the full HC beam
-spread (0.52–0.61 m). The right side of the room is partly occluded by the
-mount/table; the red top-down sectors mark areas with too few returns.
+inferred; it is not a full mesh. At yaw scale 0.76 the measured dense map shows
+a wall and the fan; the former table-edge block `#6` is hidden. The wall block
+is 3.06 m long because it includes the corner/side surface; the intended room
+rectangle is 2.70×2.20 m. Wall display thickness uses the robust 25–75% spread
+while `width_observed_m` keeps the full HC beam spread.
+
+**Room prior is an estimate, not measured data:** the prior room is
+2.70×2.20 m (5.94 m²), bathroom 1.50×1.50 m (2.25 m²), desk niche ~0.40 m²,
+total 8.59 m². Prior bed 2.00×1.20×0.57 m and wardrobe 0.70×0.60×2.00 m are
+dashed and toggleable. They are based on photos/user measurements and are
+stored per scan, not hard-coded. Do not treat prior boxes as measured evidence
+or include them in training until confirmed. The measured wall/wardrobe block
+is not the 70 cm wardrobe; the actual wardrobe is near the sensor/right side
+and is represented by the prior box.
 
 **Yaw scale is provisional:** the commanded yaw is larger than the effective
-mechanical yaw. Wall thickness is minimised around **yaw scale 0.85**, giving an
-effective FOV of about ±51°, not ±60°. The Yaw scale input (0.50–1.00)
-re-projects points and blocks live, and manual labels are remapped to the
-nearest box. Confirm the scale against a known target before treating the map
-as calibrated; do not claim ±60° geometric coverage until then.
+mechanical yaw. The user-tuned default is **0.76**, giving an effective FOV of
+about ±45.6°, not ±60°. At 0.76 the wall panels merge; 0.77–0.80 separates
+them. The Yaw scale input (0.50–1.00) re-projects points/blocks live, and
+manual labels are remapped to the nearest box. Confirm the scale against a
+known target before treating the map as calibrated.
 
-**Bed and wardrobe:** the tall right-side block is manually labelled
-`wardrobe`; this is a best-effort placement and should be confirmed. The bed is
-about 57 cm high (20 cm below the 77 cm mounting height) and is not separable
-from the table/mount area in this scan. A new ToF/fine scan is needed to give it
-its own block. The current `fan` block at ~0.88 m is retained.
+**Bed and wardrobe:** the tall right-side measured block is not the 70 cm
+wardrobe; it is the back wall/corner. The actual wardrobe and the bed are
+represented by prior boxes. Confirm the prior placement visually before
+labelling them as measured. A new ToF/fine scan is needed for measured points
+on the low bed and the near-sensor wardrobe.
 
-**Manual annotations are per scan:** labels/hide/merge are stored in
+**Manual annotations are per scan:** labels/hide/merge, point labels, label
+catalog, manual/prior boxes and the room outline are stored in
 `research/mapping/scans/<id>/annotations.json`. Box ids change when the yaw
 scale changes; annotations are remapped to the nearest box within 0.8 m, so
 verify them after a large scale change and reset if a hide/merge maps wrongly.
-The current dense scan has manual `fan` and `wardrobe` labels.
+Point labels use the stable `point_index` from `points.csv`. The current dense
+scan has a manual `fan` box, a prior bed and a prior wardrobe, and 31 fan points
+labelled for the 3D dataset.
+
+**3D object export is not a trained model:** `ml/export_pointcloud.py` writes
+per-label CSV/NPZ patches and `objects.csv`. Prior boxes have zero measured
+points and must not be treated as training samples until confirmed. The HLK
+`empty`/`human`/`non-human` model is a separate time-series task; the 3D object
+export is for 3D classification/segmentation.
 
 **Live human marker is rule-based:** the 3D capsule/top-down highlight appears
 only after 3 confirmed HLK frames with `energy>=40` and 30–600 cm. It is
