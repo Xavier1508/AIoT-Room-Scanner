@@ -115,7 +115,7 @@ SelftestResult runSelftests() {
   check(config::servoMinPulseUs == 500 && config::servoParkPulseUs == 800 && config::servoMaxPulseUs == 1400);
   check(config::servoNudgeUs == 50 && config::servoCoarseUs == 200);
   check(config::stepperFineHalfSteps == 57 && config::servoFineUs == 25);
-  check(config::scanStepperLimitHalfSteps == 513);
+  check(config::scanStepperLimitHalfSteps == 684);
   check(config::scanServoMinPulseUs == 500 && config::scanServoMaxPulseUs == 950);
   check(config::hlkAlertMinCm == 30 && config::hlkAlertMaxCm == 75);
   check(config::hlkAlertMinIntervalMs == 150 && config::hlkAlertMaxIntervalMs == 2000);

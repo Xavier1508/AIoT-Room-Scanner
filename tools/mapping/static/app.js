@@ -155,7 +155,7 @@ function renderHealth() {
   badge('hc-health', health.hc_sr04);
   badge('tof-health', health.vl53l1x);
   badge('hlk-health', health.hlk);
-  setText('health', `Overall ${health.overall || '—'} · ToF errors ${stats.tof_i2c_errors ?? '—'} · ${stats.tof_error_rate_per_min ?? '—'}/min · responsive ${tof.responsive ? 'yes' : 'no'}`);
+  setText('health', `Overall ${health.overall || '—'} · ToF errors ${stats.tof_i2c_errors ?? '—'} · ${stats.tof_error_rate_per_min ?? '—'}/min · responsive ${tof.responsive ? 'yes' : 'no'}${tof.near_reflector ? ' · NEAR REFLECTOR (~30 cm)' : ''}`);
   setText('pose', `${actuators.servo_attached ? 'servo attached' : 'servo detached'} · ${actuators.stepper_energized ? 'stepper energized' : 'stepper off'}`);
   setText('pose-detail', `servo ${actuators.servo_target_us ?? '—'} µs · stepper ${actuators.relative_half_steps ?? '—'} hsteps · yaw ${fmt(scan.yaw_deg_nominal, '°')}`);
   setText('alert', `HLK alert ${alert.enabled ? 'ON' : 'OFF'} · ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm · ${alert.state || 'idle'} · ${alert.mute_reason || '—'} · count ${alert.count ?? 0}`);

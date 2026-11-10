@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.7.1-scan60-safe";
+constexpr char version[] = "0.7.3-tof-obstruction";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -44,6 +44,10 @@ constexpr uint8_t hlkAlertConfirmFrames = 3;
 constexpr uint32_t hlkAlertParkedStableMs = 1000;      // Re-arm only after the arm is still.
 constexpr int16_t hcOffsetMm = 0;                       // Provisional; refine in PC calibration.
 constexpr int16_t tofOffsetMm = 50;                     // ToF lens is ~5 cm ahead of HC reference.
+constexpr uint16_t tofNearReflectorMm = 500;            // Fixed near return (mount/cover) threshold.
+constexpr uint16_t tofNearReflectorHcMm = 1000;         // Only flag when HC sees farther than this.
+constexpr uint16_t tofNearReflectorClearMm = 800;       // Clear the flag when ToF sees beyond this.
+constexpr uint8_t tofNearReflectorSamples = 10;         // Consecutive samples before flagging.
 constexpr uint16_t hlkMinRangeCm = 30;
 constexpr uint32_t sensorHcIntervalMs = 250;
 constexpr uint32_t sensorHcTimeoutUs = 25000;           // Bounded to about 4.2 m acoustic range.

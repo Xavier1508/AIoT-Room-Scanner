@@ -90,6 +90,8 @@ class SensorController {
   uint32_t tofRecoveries_ = 0;
   uint32_t tofHardResets_ = 0;
   bool tofStallSuspended_ = false;
+  bool tofNearReflector_ = false;
+  uint8_t tofNearReflectorCount_ = 0;
   uint32_t startedMs_ = 0;
 
   bool hcReceived_ = false;

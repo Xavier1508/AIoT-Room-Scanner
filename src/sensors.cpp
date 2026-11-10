@@ -133,6 +133,8 @@ bool SensorController::start(uint32_t now) {
   tofContinuous_ = false;
   tofCalibrated_ = false;
   tofStallSuspended_ = false;
+  tofNearReflector_ = false;
+  tofNearReflectorCount_ = 0;
   tofDisabledUntilMs_ = 0;
   tofLastReadyMs_ = now;
   if (tofPresent_) {
@@ -157,6 +159,8 @@ bool SensorController::start(uint32_t now) {
 void SensorController::stop() {
   if (tofContinuous_) stopTofContinuous();
   tofStallSuspended_ = false;
+  tofNearReflector_ = false;
+  tofNearReflectorCount_ = 0;
   tofDisabledUntilMs_ = 0;
   running_ = false;
   digitalWrite(pins::hcTrig, LOW);
@@ -475,6 +479,17 @@ bool SensorController::readTofMeasurement(uint32_t now) {
     tofRangeMm_ = static_cast<uint16_t>((static_cast<uint32_t>(rangeRaw) * 2011 + 0x0400) / 0x0800);
     tofLastValidMs_ = now;
     ++tofValidSamples_;
+    if (tofRangeMm_ < config::tofNearReflectorMm
+        && hcLastValid_ && hcDistanceMm_ > config::tofNearReflectorHcMm) {
+      if (tofNearReflectorCount_ < 255) ++tofNearReflectorCount_;
+    } else {
+      tofNearReflectorCount_ = 0;
+      if (tofRangeMm_ > config::tofNearReflectorClearMm) tofNearReflector_ = false;
+    }
+    if (tofNearReflectorCount_ >= config::tofNearReflectorSamples) {
+      tofNearReflector_ = true;
+      lastError_ = "tof_near_reflector";
+    }
   } else {
     ++tofInvalidSamples_;
   }
@@ -537,7 +552,7 @@ String SensorController::statusJson(uint32_t now, const SensorExternalState& ext
   const bool tofStale = tofLastValidMs_ != 0 && !tofValid;
   const char* hcHealth = hcValid ? "OK" : (hcReceived_ ? "STALE" : "NO_DATA");
   const char* tofHealth = !tofPresent_ ? "ABSENT" : !tofInitialized_ ? "INIT_FAILED" :
-      !tofResponsive_ ? "FAULT" : (tofValid ? "OK" : "STALE");
+      !tofResponsive_ ? "FAULT" : (tofNearReflector_ ? "OBSTRUCTED" : (tofValid ? "OK" : "STALE"));
   const char* hlkHealth = !external.hlkEnabled ? "OFF" :
       external.hlkValid ? "OK" : (external.hlkStale ? "STALE" : "NO_DATA");
   const bool fault = strcmp(tofHealth, "ABSENT") == 0 || strcmp(tofHealth, "INIT_FAILED") == 0 ||
@@ -609,6 +624,8 @@ String SensorController::statusJson(uint32_t now, const SensorExternalState& ext
       ",\"distance_cal_mm\":" + (tofValid ? String(tofCalMm) : String("null")) +
       ",\"distance_cal_cm\":" + (tofValid ? String(tofCalMm / 10.0f, 1) : String("null")) +
       ",\"raw_status\":" + tofRawStatus_ + ",\"status\":" + quote(tofStatusName(tofRawStatus_)) +
+      ",\"near_reflector\":" + (tofNearReflector_ ? "true" : "false") +
+      ",\"near_count\":" + static_cast<int>(tofNearReflectorCount_) +
       ",\"valid_samples\":" + tofValidSamples_ + ",\"invalid_samples\":" + tofInvalidSamples_ +
       ",\"i2c_errors\":" + tofI2cErrors_ + ",\"ready_timeouts\":" + tofReadyTimeouts_ + "}" +
       ",\"hlk\":{\"enabled\":" + (external.hlkEnabled ? "true" : "false") +
