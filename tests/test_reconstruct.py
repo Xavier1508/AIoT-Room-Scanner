@@ -112,6 +112,13 @@ class Reconstruction(unittest.TestCase):
             annotations={"hidden": [obj["id"]]})
         self.assertFalse(any(box["id"] == obj["id"] for box in hidden["boxes"]))
 
+        removed = reconstruct.reconstruct_points(
+            rows, map_rotation_deg=0.0,
+            annotations={"hidden": [], "removed": [obj["id"]]})
+        self.assertFalse(any(box["id"] == obj["id"] for box in removed["boxes"]))
+        self.assertIn(obj["id"], removed["annotations"]["removed"])
+        self.assertNotIn(obj["id"], removed["annotations"]["hidden"])
+
         merged = reconstruct.reconstruct_points(
             rows, map_rotation_deg=0.0,
             annotations={"merges": [[wall["id"], obj["id"]]]})

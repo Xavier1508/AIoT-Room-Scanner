@@ -267,10 +267,14 @@ def apply_annotations(result, annotations):
     annotations = annotations or {}
     labels = annotations.get("labels") or {}
     hidden_raw = annotations.get("hidden") or []
+    removed_raw = annotations.get("removed") or []
     merges_raw = annotations.get("merges") or []
     boxes = [dict(box) for box in (result.get("boxes") or [])]
     hidden = {resolved for item in hidden_raw
               if (resolved := _resolve_box_id(item, boxes)) is not None}
+    removed = {resolved for item in removed_raw
+               if (resolved := _resolve_box_id(item, boxes)) is not None}
+    hidden.update(removed)
     boxes = [box for box in boxes if str(box.get("id")) not in hidden]
     resolved_labels = {}
     for key, override in labels.items():
@@ -341,7 +345,8 @@ def apply_annotations(result, annotations):
     result["boxes"] = boxes
     result["annotations"] = {
         "labels": resolved_labels,
-        "hidden": sorted(hidden),
+        "hidden": sorted(hidden - removed),
+        "removed": sorted(removed),
         "merges": resolved_merges,
         "manual_boxes": manual_boxes,
         "room_outline": annotations.get("room_outline") or [],
@@ -349,8 +354,8 @@ def apply_annotations(result, annotations):
         "point_labels": annotations.get("point_labels") or {},
         "label_catalog": annotations.get("label_catalog") or {},
     }
-    result["annotation_count"] = (len(resolved_labels) + len(hidden) + len(resolved_merges)
-                                  + len(manual_boxes)
+    result["annotation_count"] = (len(resolved_labels) + len(hidden)
+                                  + len(resolved_merges) + len(manual_boxes)
                                   + sum(len(v) for v in (annotations.get("point_labels") or {}).values()))
     return result
 

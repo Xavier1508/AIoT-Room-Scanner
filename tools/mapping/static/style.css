@@ -62,6 +62,7 @@ pre {
 }
 progress { width: 100%; height: 15px; }
 canvas { width: 100%; height: auto; background: #0a1019; border-radius: 10px; border: 1px solid #2d425c; touch-action: none; }
+#topdown { cursor: crosshair; }
 a { color: #95caff; }
 table { width: 100%; border-collapse: collapse; font-size: .84rem; }
 th, td { text-align: left; padding: 5px 7px; border-bottom: 1px solid #26384e; }
@@ -85,6 +86,7 @@ footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #26384e; }
 .prior-nudge-row button { min-width: 44px; }
 .prior-editor-row { align-items: center; }
 #prior-status { flex: 1; min-width: 180px; }
+#scene-status { flex: 1 1 420px; overflow-wrap: anywhere; }
 
 .map-layout {
   display: grid;
@@ -281,6 +283,7 @@ button.busy::after {
   bottom: 18px;
   z-index: 2000;
   max-width: 360px;
+  overflow-wrap: anywhere;
   padding: 10px 14px;
   border-radius: 8px;
   background: #1f3b5c;

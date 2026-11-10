@@ -97,6 +97,11 @@
       <button id="reset-yaw-scale" class="alt">Reset kal.</button>
       <span id="yaw-scale-note" class="note">yaw 0.76 · rotasi 10.7° — sesuaikan sampai dinding lurus.</span>
     </div>
+    <div class="row annotation-row">
+      <button id="undo-annotations" class="alt" type="button" disabled>Undo (Ctrl+Z)</button>
+      <button id="save-scene" type="button">Simpan 3D</button>
+      <span id="scene-status" class="note">Simpan PLY berisi titik scan + semua prior/box ke research/mapping/scenes/.</span>
+    </div>
     <div class="map-layout">
       <div class="map-main">
         <div class="map-grid">
@@ -180,15 +185,7 @@
               <button data-prior-nudge="rot-" class="alt">Rot-</button>
               <button data-prior-nudge="rot+" class="alt">Rot+</button>
             </div>
-            <div class="prior-size-grid">
-              <button data-prior-size="length-" class="alt">P-</button>
-              <button data-prior-size="length+" class="alt">P+</button>
-              <button data-prior-size="width-" class="alt">L-</button>
-              <button data-prior-size="width+" class="alt">L+</button>
-              <button data-prior-size="height-" class="alt">T-</button>
-              <button data-prior-size="height+" class="alt">T+</button>
-            </div>
-            <p class="note">Ukuran: P=panjang, L=lebar, T=tinggi. Step mengikuti pilihan 5/10 cm.</p>
+            <p class="note">Ubah angka langsung di bawah, atau drag handle putih di 2D untuk resize satu sisi (sisi lawan tetap).</p>
             <div id="prior-fields" class="prior-fields">
               <label>X <input id="prior-x" type="number" step="0.01"></label>
               <label>Y <input id="prior-y" type="number" step="0.01"></label>

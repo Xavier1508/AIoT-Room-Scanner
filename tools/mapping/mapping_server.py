@@ -28,6 +28,7 @@ from esp_client import EspClient
 from presence import PresenceTracker
 from reconstruct import reconstruct_points
 from scan import ScanConfig, run_scan
+from scene_export import export_scene
 
 STATIC = Path(__file__).with_name("static")
 JOB_LOCK = threading.Lock()
@@ -175,6 +176,10 @@ def _clean_annotations(payload):
     if not isinstance(hidden, list):
         raise ValueError("hidden must be a list")
     clean_hidden = [str(item)[:200] for item in hidden][:500]
+    removed = payload.get("removed") or []
+    if not isinstance(removed, list):
+        raise ValueError("removed must be a list")
+    clean_removed = [str(item)[:200] for item in removed][:500]
     merges = payload.get("merges") or []
     if not isinstance(merges, list):
         raise ValueError("merges must be a list")
@@ -255,6 +260,7 @@ def _clean_annotations(payload):
     return {
         "labels": clean_labels,
         "hidden": clean_hidden,
+        "removed": clean_removed,
         "merges": clean_merges,
         "point_labels": clean_point_labels,
         "label_catalog": clean_catalog,
@@ -572,6 +578,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/scene"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/scene")].strip("/")
+                _scan_directory(scan_id)
+                try:
+                    yaw_scale = float(body.get("yaw_scale", 1.0))
+                except (TypeError, ValueError):
+                    yaw_scale = 1.0
+                yaw_scale = max(0.50, min(1.00, yaw_scale))
+                try:
+                    map_rotation = float(body.get("map_rotation", 0.0))
+                except (TypeError, ValueError):
+                    map_rotation = 0.0
+                map_rotation = max(-45.0, min(45.0, map_rotation))
+                result = export_scene(scan_id, yaw_scale=yaw_scale,
+                                      map_rotation_deg=map_rotation)
+                return self._send(200, result)
             if path.startswith("/api/mapping/scans/") and path.endswith("/export"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/export")].strip("/")
                 _scan_directory(scan_id)

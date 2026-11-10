@@ -30,6 +30,8 @@ const state = {
   loadedScan: null,
   reconstruction: null,
   annotations: null,
+  undoStack: [],
+  undoLimit: 30,
   selectedBoxId: null,
   lastBoxPick: null,
   pointLabels: {},
@@ -112,6 +114,36 @@ async function withBusy(button, action, busyText = 'Memproses...') {
     button.disabled = false;
     button.classList.remove('busy');
     button.textContent = original;
+  }
+}
+
+function updateUndoButton() {
+  const button = $('undo-annotations');
+  if (!button) return;
+  const count = state.undoStack.length;
+  button.disabled = count === 0;
+  button.title = count ? `${count} langkah bisa di-undo` : 'Belum ada perubahan untuk di-undo';
+  button.textContent = count ? `Undo (${count})` : 'Undo (Ctrl+Z)';
+}
+
+async function undoLast() {
+  if (!state.undoStack.length) {
+    showToast('Belum ada perubahan yang bisa di-undo.', 'warn');
+    return;
+  }
+  const snapshot = state.undoStack.pop();
+  updateUndoButton();
+  const next = JSON.parse(snapshot);
+  try {
+    await withBusy($('undo-annotations'),
+      () => saveAnnotations(next, 'Undo berhasil. Prior, label, dan daftar hapus dipulihkan.',
+        state.selectedBoxId, { skipUndo: true }), 'Undo...');
+    updateUndoButton();
+    showToast('Undo berhasil.', 'success');
+  } catch (error) {
+    state.undoStack.push(snapshot);
+    updateUndoButton();
+    showToast(`Undo gagal: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -636,6 +668,8 @@ async function loadPoints(scanId, preserveCalibration = false) {
     }
     state.reconstruction = reconstruction;
     applyAnnotationState(annotations);
+    state.undoStack = [];
+    updateUndoButton();
     state.selectedBoxId = null;
     state.selectedPointIndices = [];
     state.selectionRect = null;
@@ -717,6 +751,7 @@ function applyAnnotationState(annotations) {
   state.annotations = {
     labels: source.labels || {},
     hidden: source.hidden || [],
+    removed: source.removed || [],
     merges: source.merges || [],
     point_labels: source.point_labels || {},
     label_catalog: source.label_catalog || {},
@@ -781,6 +816,7 @@ function annotationsClone() {
   return JSON.parse(JSON.stringify({
     labels: source.labels || {},
     hidden: source.hidden || [],
+    removed: source.removed || [],
     merges: source.merges || [],
     point_labels: source.point_labels || {},
     label_catalog: source.label_catalog || {},
@@ -983,9 +1019,19 @@ function isEditableBox(box) {
     || box.label_source === 'manual' || box.label_source === 'prior';
 }
 
-function manualBoxById(id) {
-  return (state.annotations?.manual_boxes || [])
-    .find(box => String(box.id) === String(id)) || null;
+function updatePriorFieldValues(box) {
+  const values = {
+    'prior-x': box.cx_m,
+    'prior-y': box.cy_m,
+    'prior-z0': box.z_bottom_m,
+    'prior-z1': box.z_top_m,
+    'prior-length': box.length_m,
+    'prior-width': box.width_m,
+    'prior-angle': box.angle_deg,
+  };
+  for (const [id, value] of Object.entries(values)) {
+    if ($(id)) $(id).value = Number(value ?? 0).toFixed(2);
+  }
 }
 
 function syncPriorFields() {
@@ -998,22 +1044,10 @@ function syncPriorFields() {
     return;
   }
   const editable = isEditableBox(box);
-  const values = {
-    'prior-x': box.cx_m,
-    'prior-y': box.cy_m,
-    'prior-z0': box.z_bottom_m,
-    'prior-z1': box.z_top_m,
-    'prior-length': box.length_m,
-    'prior-width': box.width_m,
-    'prior-angle': box.angle_deg,
-  };
-  for (const [id, value] of Object.entries(values)) {
-    if (!$(id)) continue;
-    $(id).value = Number(value ?? 0).toFixed(2);
-    $(id).disabled = !editable;
-  }
+  updatePriorFieldValues(box);
+  ids.forEach(id => { if ($(id)) $(id).disabled = !editable; });
   setText('prior-status', editable
-    ? `Edit ${box.label} (${box.source || 'manual'}). Drag 2D atau arrow untuk geser.`
+    ? `Edit ${box.label} (${box.source || 'manual'}). Pivot putih = pusat objek; drag handle = ubah satu sisi.`
     : `Auto box ${box.label}: klik "Jadikan prior" untuk mengedit posisi/ukuran.`);
 }
 
@@ -1058,10 +1092,11 @@ async function deletePrior() {
       await withBusy($('delete-prior'),
         () => saveAnnotations(next, `Prior ${box.label} dihapus.`), 'Menghapus...');
     } else {
-      next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
+      next.removed = Array.from(new Set([...(next.removed || []), box.id]));
+      next.hidden = (next.hidden || []).filter(id => String(id) !== String(box.id));
       delete next.labels[box.id];
       await withBusy($('delete-prior'),
-        () => saveAnnotations(next, `Blok ${box.label} disembunyikan.`), 'Menyembunyikan...');
+        () => saveAnnotations(next, `Blok ${box.label} dihapus permanen.`), 'Menghapus...');
     }
   } catch (error) {
     setText('prior-status', `Gagal menghapus: ${error.message}`);
@@ -1099,6 +1134,29 @@ async function convertToPrior() {
   } catch (error) {
     setText('prior-status', `Gagal menjadikan prior: ${error.message}`);
   }
+}
+
+async function promoteBoxToPrior(box) {
+  const next = annotationsClone();
+  next.manual_boxes = next.manual_boxes || [];
+  const id = `prior:${Date.now().toString(36)}`;
+  next.manual_boxes.push({
+    id,
+    label: box.label || 'object',
+    cx_m: Number(box.cx_m) || 0,
+    cy_m: Number(box.cy_m) || 0,
+    angle_deg: Number(box.angle_deg) || 0,
+    length_m: Number(box.length_m) || 0.6,
+    width_m: Number(box.width_m) || 0.6,
+    z_bottom_m: Number(box.z_bottom_m) || 0,
+    z_top_m: Number(box.z_top_m) || 1.0,
+    source: 'prior',
+  });
+  next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
+  next.removed = (next.removed || []).filter(item => String(item) !== String(box.id));
+  ensureLabelCatalog(next, box.label || 'object');
+  await saveAnnotations(next, `Blok ${box.label} dijadikan prior; lanjut resize.`, id);
+  return currentBoxes().find(item => String(item.id) === String(id)) || null;
 }
 
 async function applyPriorFields() {
@@ -1164,44 +1222,9 @@ async function nudgePrior(direction, button = null) {
   }
 }
 
-async function resizePrior(direction, button = null) {
-  const box = selectedBox();
-  if (!box || !isEditableBox(box)) {
-    showToast('Pilih prior/manual box dulu.', 'warn');
-    return;
-  }
-  const next = annotationsClone();
-  const manual = (next.manual_boxes || [])
-    .find(item => String(item.id) === String(box.id));
-  if (!manual) return;
-  const step = Number($('prior-step').value) || 0.1;
-  if (direction === 'length-') {
-    manual.length_m = Math.max(0.05, Number(manual.length_m || 0) - step);
-  } else if (direction === 'length+') {
-    manual.length_m = Number(manual.length_m || 0) + step;
-  } else if (direction === 'width-') {
-    manual.width_m = Math.max(0.05, Number(manual.width_m || 0) - step);
-  } else if (direction === 'width+') {
-    manual.width_m = Number(manual.width_m || 0) + step;
-  } else if (direction === 'height-') {
-    manual.z_top_m = Math.max(
-      Number(manual.z_bottom_m || 0) + 0.05,
-      Number(manual.z_top_m || 0.05) - step);
-  } else if (direction === 'height+') {
-    manual.z_top_m = Math.min(4.0, Number(manual.z_top_m || 0.05) + step);
-  }
-  try {
-    await withBusy(button,
-      () => saveAnnotations(next, 'Ukuran prior diperbarui.', box.id),
-      'Mengubah...');
-  } catch (error) {
-    setText('prior-status', `Gagal mengubah ukuran: ${error.message}`);
-    showToast(`Gagal mengubah ukuran: ${error.message}`, 'error', 4500);
-  }
-}
-
-async function saveAnnotations(annotations, message, keepSelection = null) {
+async function saveAnnotations(annotations, message, keepSelection = null, options = {}) {
   if (!state.loadedScan) return;
+  const snapshot = JSON.stringify(annotationsClone());
   annotations.room = annotations.room || {};
   annotations.room.yaw_scale = state.yawScale;
   annotations.room.map_rotation_deg = state.mapRotation;
@@ -1219,6 +1242,11 @@ async function saveAnnotations(annotations, message, keepSelection = null) {
     showToast(`Gagal menyimpan: ${error.message}`, 'error', 4500);
     throw error;
   }
+  if (!options.skipUndo) {
+    state.undoStack.push(snapshot);
+    if (state.undoStack.length > state.undoLimit) state.undoStack.shift();
+  }
+  updateUndoButton();
   state.reconstruction = data.reconstruction;
   applyAnnotationState(data.annotations || annotations);
   state.selectedBoxId = keepSelection;
@@ -1226,7 +1254,8 @@ async function saveAnnotations(annotations, message, keepSelection = null) {
   drawCloud();
   drawTopDown();
   const blocks = data.reconstruction?.boxes?.length ?? 0;
-  setText('cloud-stats', `${state.loadedScan} · ${state.points.length} points · ${blocks} estimated blocks · mount ${data.reconstruction?.mount_points ?? '-'} hidden`);
+  const removed = (data.annotations?.removed || []).length;
+  setText('cloud-stats', `${state.loadedScan} · ${state.points.length} points · ${blocks} blocks · ${removed} dihapus permanen · mount ${data.reconstruction?.mount_points ?? '-'} hidden`);
   setText('annotation-status', message || 'Anotasi disimpan.');
   showToast(message || 'Anotasi disimpan.', 'success');
 }
@@ -1280,13 +1309,17 @@ async function mergeSelectedBoxes() {
 }
 
 async function resetAnnotations() {
+  if (!window.confirm('Reset label, sembunyi sementara, merge, dan label titik? Prior dan blok yang sudah dihapus permanen tetap dipertahankan.')) {
+    return;
+  }
   const next = annotationsClone();
   next.labels = {};
   next.hidden = [];
   next.merges = [];
   next.point_labels = {};
+  next.removed = state.annotations?.removed || [];
   try {
-    await withBusy($('reset-annotations'), () => saveAnnotations(next, 'Label, hide, merge, dan point label direset; prior tetap.'), 'Reset...');
+    await withBusy($('reset-annotations'), () => saveAnnotations(next, 'Label, sembunyi, merge, dan point label direset; prior + hapus permanen tetap.'), 'Reset...');
   } catch (error) {
     setText('annotation-status', `Gagal reset anotasi: ${error.message}`);
   }
@@ -1391,6 +1424,33 @@ async function exportDataset() {
   } catch (error) {
     setText('export-status', `Gagal export: ${error.message}`);
     showToast(`Gagal export: ${error.message}`, 'error', 4500);
+  }
+}
+
+async function saveScene() {
+  if (!state.loadedScan) {
+    showToast('Pilih scan dulu.', 'warn');
+    return;
+  }
+  try {
+    setText('scene-status', 'Menyimpan scene 3D...');
+    const data = await withBusy($('save-scene'), () => api(
+      `/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yaw_scale: state.yawScale, map_rotation: state.mapRotation }),
+      }), 'Menyimpan...');
+    const sizeKb = (Number(data.bytes || 0) / 1024).toFixed(1);
+    setText('scene-status',
+      `OK ${data.file}\n`
+      + `${data.counts.points} points · ${data.counts.boxes} boxes `
+      + `(${data.counts.measured_boxes} measured / ${data.counts.prior_boxes} prior) · `
+      + `${data.counts.faces} faces · ${sizeKb} KB\n`
+      + `metadata: ${data.metadata_file}`);
+    showToast(`3D tersimpan: ${data.file}`, 'success', 6000);
+  } catch (error) {
+    setText('scene-status', `Gagal simpan 3D: ${error.message}`);
+    showToast(`Gagal simpan 3D: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -1759,6 +1819,103 @@ function drawRoomOutline3D(ctx, width, height, radius) {
   ctx.setLineDash([]);
 }
 
+function drawBoxPivot2D(ctx, box, toScreen, selected) {
+  const center = toScreen(Number(box.cx_m), Number(box.cy_m));
+  const size = selected ? 12 : 5;
+  ctx.save();
+  ctx.strokeStyle = selected ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = selected ? 2 : 1;
+  ctx.beginPath();
+  ctx.moveTo(center.x - size, center.y);
+  ctx.lineTo(center.x + size, center.y);
+  ctx.moveTo(center.x, center.y - size);
+  ctx.lineTo(center.x, center.y + size);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, selected ? 5 : 2.5, 0, Math.PI * 2);
+  ctx.stroke();
+  if (selected) {
+    const angle = Number(box.angle_deg || 0) * Math.PI / 180;
+    const tip = toScreen(Number(box.cx_m) + Math.cos(angle) * 0.32,
+      Number(box.cy_m) + Math.sin(angle) * 0.32);
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    drawTag(ctx, center.x, center.y + 22,
+      `pivot ${Number(box.cx_m).toFixed(2)}, ${Number(box.cy_m).toFixed(2)}`,
+      '#ffffff', 0.92);
+  }
+  ctx.restore();
+}
+
+function resizeHandleList(box, toScreen) {
+  const corners = boxCorners(box).slice(0, 4).map(point =>
+    toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000));
+  const cornerSigns = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const edgeSigns = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  const handles = corners.map((point, index) => ({
+    ...point,
+    su: cornerSigns[index][0],
+    sv: cornerSigns[index][1],
+    kind: 'corner',
+  }));
+  for (let index = 0; index < 4; index += 1) {
+    const a = corners[index];
+    const b = corners[(index + 1) % 4];
+    handles.push({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      su: edgeSigns[index][0],
+      sv: edgeSigns[index][1],
+      kind: 'edge',
+    });
+  }
+  return handles;
+}
+
+function handleAtPoint(box, point, toScreen) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const handle of resizeHandleList(box, toScreen)) {
+    const distance = Math.hypot(handle.x - point.x, handle.y - point.y);
+    const limit = handle.kind === 'corner' ? 13 : 11;
+    if (distance <= limit && distance < bestDistance) {
+      best = handle;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function drawResizeHandles2D(ctx, box, toScreen) {
+  const handles = resizeHandleList(box, toScreen);
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(10,17,28,0.95)';
+  for (const handle of handles) {
+    ctx.fillStyle = '#ffffff';
+    if (handle.kind === 'corner') {
+      ctx.fillRect(handle.x - 4.5, handle.y - 4.5, 9, 9);
+      ctx.strokeRect(handle.x - 4.5, handle.y - 4.5, 9, 9);
+    } else {
+      ctx.beginPath();
+      ctx.arc(handle.x, handle.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 function drawAxisTicks2D(ctx, toScreen, extent) {
   if (!state.showAxis) return;
   const step = 0.5;
@@ -1939,6 +2096,17 @@ function drawTopDown() {
         ctx.strokeText(text, label.x + 4, label.y - 4);
         ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
         ctx.fillText(text, label.x + 4, label.y - 4);
+      }
+      if (box.source === 'prior' || state.selectedBoxId === box.id) {
+        drawBoxPivot2D(ctx, box, toScreen, state.selectedBoxId === box.id);
+      }
+      if (state.selectedBoxId === box.id) {
+        drawResizeHandles2D(ctx, box, toScreen);
+        const dimension = toScreen(Number(box.cx_m),
+          Number(box.cy_m) - Number(box.width_m) / 2 - 0.16);
+        drawTag(ctx, dimension.x, dimension.y,
+          `L ${Number(box.length_m).toFixed(2)} · W ${Number(box.width_m).toFixed(2)} · ${Number(box.angle_deg).toFixed(0)}°`,
+          '#ffffff', labelScale);
       }
     }
   }
@@ -2453,15 +2621,36 @@ $('apply-label').addEventListener('click', applyBoxLabel);
 $('hide-box').addEventListener('click', hideSelectedBox);
 $('merge-boxes').addEventListener('click', mergeSelectedBoxes);
 $('reset-annotations').addEventListener('click', resetAnnotations);
+$('undo-annotations').addEventListener('click', undoLast);
+$('save-scene').addEventListener('click', saveScene);
 $('add-prior').addEventListener('click', addPrior);
 $('delete-prior').addEventListener('click', deletePrior);
 $('convert-prior').addEventListener('click', convertToPrior);
 $('apply-prior').addEventListener('click', applyPriorFields);
+['prior-x', 'prior-y', 'prior-z0', 'prior-z1', 'prior-length',
+  'prior-width', 'prior-angle'].forEach(id => {
+  $(id).addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const field = event.target;
+      applyPriorFields().finally(() => {
+        if (document.activeElement === field) field.blur();
+      });
+    }
+  });
+});
 document.querySelectorAll('[data-prior-nudge]').forEach(button => {
   button.addEventListener('click', () => nudgePrior(button.dataset.priorNudge, button));
 });
-document.querySelectorAll('[data-prior-size]').forEach(button => {
-  button.addEventListener('click', () => resizePrior(button.dataset.priorSize, button));
+window.addEventListener('keydown', event => {
+  if (!(event.ctrlKey || event.metaKey) || event.shiftKey
+      || String(event.key).toLowerCase() !== 'z') return;
+  const target = event.target;
+  if (target && (target.matches?.('input, textarea, select') || target.isContentEditable)) {
+    return;
+  }
+  event.preventDefault();
+  undoLast();
 });
 $('prior-edit-mode').addEventListener('change', () => {
   state.priorEditMode = $('prior-edit-mode').checked;
@@ -2535,9 +2724,15 @@ function bindTopDown() {
   let dragBox = null;
   let dragStart = null;
   let dragOrigin = null;
+  let resizeState = null;
   let transform = null;
+  const round3 = value => Math.round(Number(value) * 1000) / 1000;
+  const cursorForHandle = handle => {
+    if (!handle) return state.priorEditMode ? 'move' : 'crosshair';
+    return handle.kind === 'corner' ? 'nwse-resize' : 'move';
+  };
   canvas.addEventListener('contextmenu', event => event.preventDefault());
-  canvas.addEventListener('pointerdown', (event) => {
+  canvas.addEventListener('pointerdown', async (event) => {
     event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
     const point = canvasPoint(event, canvas);
@@ -2546,17 +2741,61 @@ function bindTopDown() {
       mode = 'pan';
       lastX = event.clientX; lastY = event.clientY;
     } else if (event.button === 0) {
-      if (state.priorEditMode) {
-        const box = selectedBox();
-        if (box && isEditableBox(box)) {
-          const world = transform.toWorld(point.x, point.y);
-          if (pointInBoxFootprint(box, world.x, world.y)) {
-            mode = 'move-prior';
-            dragBox = box;
-            dragStart = world;
-            dragOrigin = { cx: Number(box.cx_m), cy: Number(box.cy_m) };
+      const box = selectedBox();
+      if (box) {
+        const handle = handleAtPoint(box, point, transform.toScreen);
+        if (handle) {
+          if (!isEditableBox(box)) {
+            mode = 'promoting';
+            try {
+              const promoted = await promoteBoxToPrior(box);
+              if (!promoted) {
+                mode = null;
+                return;
+              }
+              transform = topDownTransform(canvas);
+              dragBox = promoted;
+              resizeState = {
+                su: handle.su,
+                sv: handle.sv,
+                cx: Number(promoted.cx_m),
+                cy: Number(promoted.cy_m),
+                angle: Number(promoted.angle_deg || 0) * Math.PI / 180,
+                length: Number(promoted.length_m),
+                width: Number(promoted.width_m),
+              };
+              mode = 'resize-prior';
+            } catch (error) {
+              mode = null;
+              setText('prior-status', `Gagal menjadikan prior: ${error.message}`);
+              showToast(`Gagal menjadikan prior: ${error.message}`, 'error', 4500);
+            }
+            canvas.style.cursor = cursorForHandle(handle);
             return;
           }
+          mode = 'resize-prior';
+          dragBox = box;
+          resizeState = {
+            su: handle.su,
+            sv: handle.sv,
+            cx: Number(box.cx_m),
+            cy: Number(box.cy_m),
+            angle: Number(box.angle_deg || 0) * Math.PI / 180,
+            length: Number(box.length_m),
+            width: Number(box.width_m),
+          };
+          canvas.style.cursor = cursorForHandle(handle);
+          return;
+        }
+      }
+      if (state.priorEditMode && box && isEditableBox(box)) {
+        const world = transform.toWorld(point.x, point.y);
+        if (pointInBoxFootprint(box, world.x, world.y)) {
+          mode = 'move-prior';
+          dragBox = box;
+          dragStart = world;
+          dragOrigin = { cx: Number(box.cx_m), cy: Number(box.cy_m) };
+          return;
         }
       }
       mode = 'select';
@@ -2564,32 +2803,71 @@ function bindTopDown() {
     }
   });
   canvas.addEventListener('pointermove', (event) => {
-    if (!mode) return;
+    const point = canvasPoint(event, canvas);
+    if (!mode) {
+      const box = selectedBox();
+      const handle = box
+        ? handleAtPoint(box, point, topDownTransform(canvas).toScreen) : null;
+      canvas.style.cursor = cursorForHandle(handle);
+      return;
+    }
     if (mode === 'pan') {
       state.topPanX += event.clientX - lastX;
       state.topPanY += event.clientY - lastY;
       lastX = event.clientX; lastY = event.clientY;
       drawTopDown();
-    } else if (mode === 'move-prior' && dragBox && transform) {
-      const point = canvasPoint(event, canvas);
+    } else if (mode === 'resize-prior' && dragBox && resizeState && transform) {
       const world = transform.toWorld(point.x, point.y);
-      dragBox.cx_m = dragOrigin.cx + (world.x - dragStart.x);
-      dragBox.cy_m = dragOrigin.cy + (world.y - dragStart.y);
-      const manual = manualBoxById(dragBox.id);
-      if (manual) {
-        manual.cx_m = dragBox.cx_m;
-        manual.cy_m = dragBox.cy_m;
-      }
+      const rs = resizeState;
+      const ca = Math.cos(rs.angle), sa = Math.sin(rs.angle);
+      const du = (world.x - rs.cx) * ca + (world.y - rs.cy) * sa;
+      const dv = -(world.x - rs.cx) * sa + (world.y - rs.cy) * ca;
+      const minSize = 0.05;
+      let u0 = -rs.length / 2, u1 = rs.length / 2;
+      let v0 = -rs.width / 2, v1 = rs.width / 2;
+      if (rs.su > 0) u1 = Math.max(u0 + minSize, du);
+      else if (rs.su < 0) u0 = Math.min(u1 - minSize, du);
+      if (rs.sv > 0) v1 = Math.max(v0 + minSize, dv);
+      else if (rs.sv < 0) v0 = Math.min(v1 - minSize, dv);
+      const uc = (u0 + u1) / 2;
+      const vc = (v0 + v1) / 2;
+      dragBox.length_m = round3(Math.max(minSize, u1 - u0));
+      dragBox.width_m = round3(Math.max(minSize, v1 - v0));
+      dragBox.cx_m = round3(rs.cx + uc * ca - vc * sa);
+      dragBox.cy_m = round3(rs.cy + uc * sa + vc * ca);
+      updatePriorFieldValues(dragBox);
+      drawTopDown();
+    } else if (mode === 'move-prior' && dragBox && transform) {
+      const world = transform.toWorld(point.x, point.y);
+      dragBox.cx_m = round3(dragOrigin.cx + (world.x - dragStart.x));
+      dragBox.cy_m = round3(dragOrigin.cy + (world.y - dragStart.y));
+      updatePriorFieldValues(dragBox);
       drawTopDown();
     } else if (mode === 'select' && state.selectionRect) {
-      const point = canvasPoint(event, canvas);
       state.selectionRect.x1 = point.x;
       state.selectionRect.y1 = point.y;
       drawTopDown();
     }
   });
   canvas.addEventListener('pointerup', (event) => {
-    if (mode === 'move-prior' && dragBox) {
+    if (mode === 'resize-prior' && dragBox) {
+      const next = annotationsClone();
+      const manual = (next.manual_boxes || [])
+        .find(item => String(item.id) === String(dragBox.id));
+      if (manual) {
+        manual.cx_m = dragBox.cx_m;
+        manual.cy_m = dragBox.cy_m;
+        manual.length_m = dragBox.length_m;
+        manual.width_m = dragBox.width_m;
+      }
+      const boxId = dragBox.id;
+      dragBox = null;
+      resizeState = null;
+      saveAnnotations(next, 'Ukuran prior diubah; sisi lawan tetap.', boxId).catch(error => {
+        setText('prior-status', `Gagal menyimpan resize: ${error.message}`);
+        showToast(`Gagal menyimpan resize: ${error.message}`, 'error', 4500);
+      });
+    } else if (mode === 'move-prior' && dragBox) {
       const next = annotationsClone();
       const manual = (next.manual_boxes || [])
         .find(item => String(item.id) === String(dragBox.id));
@@ -2617,11 +2895,15 @@ function bindTopDown() {
     }
     mode = null;
     state.selectionRect = null;
+    canvas.style.cursor = state.priorEditMode ? 'move' : 'crosshair';
     drawTopDown();
   });
   canvas.addEventListener('pointercancel', () => {
     mode = null;
     dragBox = null;
+    dragStart = null;
+    dragOrigin = null;
+    resizeState = null;
     state.selectionRect = null;
     drawTopDown();
   });
@@ -2642,6 +2924,7 @@ try {
 }
 renderLabelSuggestions();
 updateSelectionStatus();
+updateUndoButton();
 
 (async () => {
   await refreshScans();
