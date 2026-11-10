@@ -302,7 +302,9 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
 - **3D projection fix:** the old projection put +Y downward (`center + y2`),
   making the 3D view vertically flipped relative to the 2D plan. The projection
   now uses +X right, +Y up and +Z up (`center - y2`), with an isometric default
-  (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4).
+  (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4). **Top 3D** switches to a
+  near-top view; the legend states X horizontal, Y vertical plan, Z height.
+  The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise.
 - **Yaw calibration + responsive layout:** the commanded yaw is larger than the
   effective mechanical yaw; the user-tuned default is **yaw scale 0.76**
   (effective FOV ±45.6°) plus **map rotation 10.7°** to make the measured right
@@ -315,7 +317,9 @@ unreliable; scans use HC fallback and the watchdog keeps the board responsive.
   2.70×2.20 m bedroom = 5.94 m², bathroom 1.50×1.50 = 2.25 m², desk niche
   0.40 m², total 8.59 m². Prior bed 2.00×1.20×0.57 m at bottom-right (long
   axis along the bottom wall), wardrobe 0.70×0.60×2.00 m at bottom-left (front
-  face ~0.85 m), chair/desk at top-left, WC door left and exit door right. They
+  face ~0.85 m), chair/desk at top-left, WC door left and exit door right.
+  Prior wall segments 0.12×2.2×2.4 m on the left/right walls embed the doors;
+  UI colours are fan purple, desk green, WC door red, exit door yellow. They
   are dashed, toggleable, per-scan data, not hard-coded, and excluded from
   training until confirmed.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
@@ -387,7 +391,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **92 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **93 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -418,7 +422,8 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   89 = final robust wall-thickness display screenshot;
   90 = yaw calibration, mount removal, full-width layout and 2D zoom;
   91 = room prior, selection/labels and 3D object export;
-  92 = 3D projection flip fix, map rotation and plan-aligned prior.
+  92 = 3D projection flip fix, map rotation and plan-aligned prior;
+  93 = wall/door intersection, colours, axes and scan direction.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.

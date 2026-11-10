@@ -169,10 +169,18 @@ to the nearest box. The chosen values are kept in browser localStorage and in
 the room metadata when annotations are saved. This is provisional, not a
 measured servo curve.
 
-**3D projection:** the 3D view now uses +X right, +Y up and +Z up, matching the
-2D plan. The previous projection put +Y downward, which made the 3D view look
-vertically flipped. The default camera is an isometric view (`viewYaw -0.65`,
-`viewPitch 0.55`) with the same room orientation as the plan.
+**3D projection and axes:** the 3D view now uses +X right, +Y up and +Z up,
+matching the 2D plan. The previous projection put +Y downward, which made the
+3D view look vertically flipped. The default camera is an isometric view
+(`viewYaw -0.65`, `viewPitch 0.55`); the **Top 3D** button switches to a
+near-top view with X horizontal, Y vertical (plan) and Z height. The legend
+below the map states the axis convention.
+
+**Scan direction:** the scan is labelled from **−60° on the chair side** →
+fan → bed/wardrobe → **+60°**, clockwise. The top-down view draws the FOV
+boundaries and `start −60° (kursi)` / `end +60° (kasur/lemari)` labels. The
+commanded sweep is ±60°; the displayed effective FOV is ±45.6° at yaw scale
+0.76.
 
 **Near-field / mount guard:** returns closer than **40 cm** from the sensor
 centre are excluded. Low returns below the sensor plane inside **75 cm** are
@@ -197,6 +205,10 @@ consistent room model. The plan frame is **sensor at the left wall (0,0),
 - chair **0.45 × 0.45 × 0.45 m** at top-left; desk niche marker outside the
   top wall (desk is recessed, not flanking the room)
 - WC door on the **left wall**, exit door on the **right wall**
+- prior wall segments **0.12 × 2.2 × 2.4 m** on the left/right walls, so each
+  door is embedded in a wall instead of floating in front of it
+- UI colours: fan **purple**, desk **green**, WC door **red**, exit door
+  **yellow**
 - sensor rack on the desk edge at **77 cm**, looking right across the room
 
 The prior is drawn as dashed boxes/outline (`bed (prior)`, `wardrobe (prior)`,

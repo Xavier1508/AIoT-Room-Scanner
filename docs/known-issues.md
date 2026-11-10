@@ -113,6 +113,17 @@ was drawn downward and the 3D view looked vertically flipped relative to the
 the default camera is isometric (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4).
 The 2D top-down and 3D isometric now share the same plan orientation.
 
+**Doors and wall segments:** the WC door is on the left wall (red) and the
+exit door on the right wall (yellow). Prior wall segments
+0.12×2.2×2.4 m are added on both sides so each door is embedded in a wall
+instead of floating in front of the measured wall. The measured right wall
+still sits slightly inside the 2.7 m room rectangle; the wall prior fills the
+gap so the door and wall touch. The fan is purple, the desk green.
+
+**Scan direction:** the commanded sweep is labelled −60° (chair side) → fan →
+bed/wardrobe → +60°, clockwise. The effective FOV at yaw 0.76 is ±45.6°; the
+top-down view draws the start/end labels and the clockwise note.
+
 **Estimated solid blocks:** the top-down/blocks viewer is a 2.5D estimate from
 one fixed viewpoint. Returns <40 cm are removed; low table/mount returns below
 the sensor plane inside 75 cm and below-floor returns are also removed. A small
