@@ -88,6 +88,33 @@ function setText(id, text) {
   $(id).textContent = text;
 }
 
+let toastTimer = null;
+function showToast(message, type = 'info', ms = 2600) {
+  const toast = $('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.className = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.className = 'toast';
+  }, ms);
+}
+
+async function withBusy(button, action, busyText = 'Memproses...') {
+  if (!button) return action();
+  const original = button.textContent;
+  button.disabled = true;
+  button.classList.add('busy');
+  button.textContent = busyText;
+  try {
+    return await action();
+  } finally {
+    button.disabled = false;
+    button.classList.remove('busy');
+    button.textContent = original;
+  }
+}
+
 function switchTab(name) {
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.classList.toggle('active', button.dataset.tab === name);
@@ -1008,7 +1035,7 @@ async function addPrior() {
   });
   ensureLabelCatalog(next, 'prior');
   try {
-    await saveAnnotations(next, 'Prior baru ditambahkan. Geser dengan drag/arrow.', id);
+    await withBusy($('add-prior'), () => saveAnnotations(next, 'Prior baru ditambahkan. Geser dengan drag/arrow.', id), 'Menambah...');
   } catch (error) {
     setText('prior-status', `Gagal menambah prior: ${error.message}`);
   }
@@ -1016,17 +1043,29 @@ async function addPrior() {
 
 async function deletePrior() {
   const box = selectedBox();
-  if (!box || !isEditableBox(box)) {
-    setText('prior-status', 'Pilih prior/manual box dulu (auto box pakai Sembunyikan).');
+  if (!box) {
+    showToast('Pilih blok dulu.', 'warn');
     return;
   }
   const next = annotationsClone();
-  next.manual_boxes = (next.manual_boxes || [])
-    .filter(item => String(item.id) !== String(box.id));
   try {
-    await saveAnnotations(next, `Prior ${box.label} dihapus.`);
+    if (isEditableBox(box)) {
+      if (!window.confirm(`Hapus prior "${box.label}"?`)) return;
+      next.manual_boxes = (next.manual_boxes || [])
+        .filter(item => String(item.id) !== String(box.id));
+      delete next.labels[box.id];
+      next.hidden = (next.hidden || []).filter(id => String(id) !== String(box.id));
+      await withBusy($('delete-prior'),
+        () => saveAnnotations(next, `Prior ${box.label} dihapus.`), 'Menghapus...');
+    } else {
+      next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
+      delete next.labels[box.id];
+      await withBusy($('delete-prior'),
+        () => saveAnnotations(next, `Blok ${box.label} disembunyikan.`), 'Menyembunyikan...');
+    }
   } catch (error) {
-    setText('prior-status', `Gagal menghapus prior: ${error.message}`);
+    setText('prior-status', `Gagal menghapus: ${error.message}`);
+    showToast(`Gagal menghapus: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -1055,8 +1094,8 @@ async function convertToPrior() {
   next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
   ensureLabelCatalog(next, box.label || 'object');
   try {
-    await saveAnnotations(next,
-      `Blok ${box.label} dijadikan prior editable; auto box disembunyikan.`, id);
+    await withBusy($('convert-prior'), () => saveAnnotations(next,
+      `Blok ${box.label} dijadikan prior editable; auto box disembunyikan.`, id), 'Mengubah...');
   } catch (error) {
     setText('prior-status', `Gagal menjadikan prior: ${error.message}`);
   }
@@ -1084,15 +1123,16 @@ async function applyPriorFields() {
     angle_deg: Number($('prior-angle').value) || 0,
   });
   try {
-    await saveAnnotations(next, 'Prior disimpan.', box.id);
+    await withBusy($('apply-prior'), () => saveAnnotations(next, 'Prior disimpan.', box.id), 'Menyimpan...');
   } catch (error) {
     setText('prior-status', `Gagal menyimpan prior: ${error.message}`);
   }
 }
 
-async function nudgePrior(direction) {
+async function nudgePrior(direction, button = null) {
   const box = selectedBox();
   if (!box || !isEditableBox(box)) {
+    showToast('Pilih prior/manual box dulu.', 'warn');
     setText('prior-status', 'Pilih prior/manual box dulu.');
     return;
   }
@@ -1115,9 +1155,48 @@ async function nudgePrior(direction) {
   if (direction === 'rot-') manual.angle_deg = Number(manual.angle_deg || 0) - 5;
   if (direction === 'rot+') manual.angle_deg = Number(manual.angle_deg || 0) + 5;
   try {
-    await saveAnnotations(next, 'Prior digeser.', box.id);
+    await withBusy(button,
+      () => saveAnnotations(next, 'Prior digeser.', box.id),
+      'Menggeser...');
   } catch (error) {
     setText('prior-status', `Gagal menggeser prior: ${error.message}`);
+    showToast(`Gagal menggeser: ${error.message}`, 'error', 4500);
+  }
+}
+
+async function resizePrior(direction, button = null) {
+  const box = selectedBox();
+  if (!box || !isEditableBox(box)) {
+    showToast('Pilih prior/manual box dulu.', 'warn');
+    return;
+  }
+  const next = annotationsClone();
+  const manual = (next.manual_boxes || [])
+    .find(item => String(item.id) === String(box.id));
+  if (!manual) return;
+  const step = Number($('prior-step').value) || 0.1;
+  if (direction === 'length-') {
+    manual.length_m = Math.max(0.05, Number(manual.length_m || 0) - step);
+  } else if (direction === 'length+') {
+    manual.length_m = Number(manual.length_m || 0) + step;
+  } else if (direction === 'width-') {
+    manual.width_m = Math.max(0.05, Number(manual.width_m || 0) - step);
+  } else if (direction === 'width+') {
+    manual.width_m = Number(manual.width_m || 0) + step;
+  } else if (direction === 'height-') {
+    manual.z_top_m = Math.max(
+      Number(manual.z_bottom_m || 0) + 0.05,
+      Number(manual.z_top_m || 0.05) - step);
+  } else if (direction === 'height+') {
+    manual.z_top_m = Math.min(4.0, Number(manual.z_top_m || 0.05) + step);
+  }
+  try {
+    await withBusy(button,
+      () => saveAnnotations(next, 'Ukuran prior diperbarui.', box.id),
+      'Mengubah...');
+  } catch (error) {
+    setText('prior-status', `Gagal mengubah ukuran: ${error.message}`);
+    showToast(`Gagal mengubah ukuran: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -1126,11 +1205,20 @@ async function saveAnnotations(annotations, message, keepSelection = null) {
   annotations.room = annotations.room || {};
   annotations.room.yaw_scale = state.yawScale;
   annotations.room.map_rotation_deg = state.mapRotation;
-  const data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ annotations, yaw_scale: state.yawScale, map_rotation: state.mapRotation }),
-  });
+  setText('annotation-status', 'Menyimpan...');
+  showToast('Menyimpan anotasi...', 'info', 8000);
+  let data;
+  try {
+    data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annotations, yaw_scale: state.yawScale, map_rotation: state.mapRotation }),
+    });
+  } catch (error) {
+    setText('annotation-status', `Gagal menyimpan: ${error.message}`);
+    showToast(`Gagal menyimpan: ${error.message}`, 'error', 4500);
+    throw error;
+  }
   state.reconstruction = data.reconstruction;
   applyAnnotationState(data.annotations || annotations);
   state.selectedBoxId = keepSelection;
@@ -1138,8 +1226,9 @@ async function saveAnnotations(annotations, message, keepSelection = null) {
   drawCloud();
   drawTopDown();
   const blocks = data.reconstruction?.boxes?.length ?? 0;
-  setText('cloud-stats', `${state.loadedScan} · ${state.points.length} points · ${blocks} estimated blocks · mount ${data.reconstruction?.mount_points ?? '—'} hidden`);
+  setText('cloud-stats', `${state.loadedScan} · ${state.points.length} points · ${blocks} estimated blocks · mount ${data.reconstruction?.mount_points ?? '-'} hidden`);
   setText('annotation-status', message || 'Anotasi disimpan.');
+  showToast(message || 'Anotasi disimpan.', 'success');
 }
 
 async function applyBoxLabel() {
@@ -1154,7 +1243,7 @@ async function applyBoxLabel() {
   next.labels[box.id] = label;
   ensureLabelCatalog(next, label);
   try {
-    await saveAnnotations(next, `Label ${box.label} → ${label}.`);
+    await withBusy($('apply-label'), () => saveAnnotations(next, `Label ${box.label} -> ${label}.`), 'Menyimpan...');
   } catch (error) {
     setText('annotation-status', `Gagal menyimpan label: ${error.message}`);
   }
@@ -1167,7 +1256,7 @@ async function hideSelectedBox() {
   next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
   delete next.labels[box.id];
   try {
-    await saveAnnotations(next, `Blok ${box.label} disembunyikan.`);
+    await withBusy($('hide-box'), () => saveAnnotations(next, `Blok ${box.label} disembunyikan.`), 'Menyembunyikan...');
   } catch (error) {
     setText('annotation-status', `Gagal menyembunyikan blok: ${error.message}`);
   }
@@ -1184,7 +1273,7 @@ async function mergeSelectedBoxes() {
   next.merges = [...(next.merges || []), [first, second]];
   next.hidden = (next.hidden || []).filter(id => id !== first && id !== second);
   try {
-    await saveAnnotations(next, 'Dua blok digabung menjadi satu bounding box.');
+    await withBusy($('merge-boxes'), () => saveAnnotations(next, 'Dua blok digabung menjadi satu bounding box.'), 'Menggabung...');
   } catch (error) {
     setText('annotation-status', `Gagal menggabung blok: ${error.message}`);
   }
@@ -1197,7 +1286,7 @@ async function resetAnnotations() {
   next.merges = [];
   next.point_labels = {};
   try {
-    await saveAnnotations(next, 'Label, hide, merge, dan point label direset; prior tetap.');
+    await withBusy($('reset-annotations'), () => saveAnnotations(next, 'Label, hide, merge, dan point label direset; prior tetap.'), 'Reset...');
   } catch (error) {
     setText('annotation-status', `Gagal reset anotasi: ${error.message}`);
   }
@@ -1287,33 +1376,37 @@ async function exportDataset() {
   };
   try {
     setText('export-status', 'Mengekspor CSV...');
-    const data = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/export`, {
+    const data = await withBusy($('export-run'), () => api(`/api/mapping/scans/${encodeURIComponent(scanId)}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+    }), 'Export...');
     setText('export-status',
       `OK ${data.folder}\n`
       + `points ${data.counts.points_total} (valid ${data.counts.points_valid}, ToF ${data.counts.tof_points}, HC ${data.counts.hc_points})\n`
       + `boxes ${data.counts.boxes_total} (measured ${data.counts.measured_boxes}, prior ${data.counts.prior_boxes})\n`
       + `clean=${data.clean} · run_label=${data.run_label || '-'}`);
+    showToast(`Export selesai: ${data.folder}`, 'success', 4200);
     await refreshDatasetIndex();
   } catch (error) {
     setText('export-status', `Gagal export: ${error.message}`);
+    showToast(`Gagal export: ${error.message}`, 'error', 4500);
   }
 }
 
 async function clearPresence() {
   try {
-    await api('/api/mapping/presence/reset', {
+    await withBusy($('presence-clear'), () => api('/api/mapping/presence/reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
-    });
+    }), 'Reset...');
     await refreshPresence();
     setText('presence-detail', 'Presence di-reset manual.');
+    showToast('Presence di-reset manual.', 'success');
   } catch (error) {
     setText('presence-detail', `Gagal reset presence: ${error.message}`);
+    showToast(`Gagal reset presence: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -2365,7 +2458,10 @@ $('delete-prior').addEventListener('click', deletePrior);
 $('convert-prior').addEventListener('click', convertToPrior);
 $('apply-prior').addEventListener('click', applyPriorFields);
 document.querySelectorAll('[data-prior-nudge]').forEach(button => {
-  button.addEventListener('click', () => nudgePrior(button.dataset.priorNudge));
+  button.addEventListener('click', () => nudgePrior(button.dataset.priorNudge, button));
+});
+document.querySelectorAll('[data-prior-size]').forEach(button => {
+  button.addEventListener('click', () => resizePrior(button.dataset.priorSize, button));
 });
 $('prior-edit-mode').addEventListener('change', () => {
   state.priorEditMode = $('prior-edit-mode').checked;
@@ -2566,3 +2662,4 @@ updateSelectionStatus();
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);
 })();
+

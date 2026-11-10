@@ -441,6 +441,9 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_file():
             raise FileNotFoundError(relative)
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        if content_type.startswith("text/") or content_type in (
+                "application/javascript", "application/json"):
+            content_type += "; charset=utf-8"
         self._send(200, target.read_bytes(), content_type)
 
     def do_GET(self):
