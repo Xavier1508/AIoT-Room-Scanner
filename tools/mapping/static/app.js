@@ -55,6 +55,8 @@ const state = {
   showDistances: true,
   yawScale: storedYawScale(),
   mapRotation: storedMapRotation(),
+  mirrorY: true,
+  mirrorCenter: 0,
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
@@ -650,17 +652,27 @@ async function loadPoints(scanId, preserveCalibration = false) {
       if (Number.isFinite(yaw)) state.yawScale = Math.max(0.50, Math.min(1.00, yaw));
       if (Number.isFinite(rotation)) state.mapRotation = Math.max(-45, Math.min(45, rotation));
     }
+    const roomMeta = preAnnotations?.room || {};
+    const rawMirror = roomMeta.mirror_y;
+    state.mirrorY = rawMirror === undefined || rawMirror === null
+      ? true : Boolean(Number(rawMirror));
+    state.mirrorCenter = mirrorCenterFromOutline(preAnnotations?.room_outline);
+    if (!Number.isFinite(state.mirrorCenter) || state.mirrorCenter === 0) {
+      const storedCenter = Number(roomMeta.mirror_center_m);
+      if (Number.isFinite(storedCenter)) state.mirrorCenter = storedCenter;
+    }
+    syncMirrorButton();
     const data = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/points`);
     state.points = data.points || [];
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
     $('yaw-scale').value = Number(state.yawScale).toFixed(2);
     $('map-rotation').value = Number(state.mapRotation).toFixed(1);
-    setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° — sesuaikan sampai dinding lurus.`);
+    setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
     let reconstruction = null;
     let annotations = preAnnotations || { labels: {}, hidden: [], merges: [] };
     try {
-      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}`);
+      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}&mirror_y=${state.mirrorY ? 1 : 0}&mirror_center=${Number(state.mirrorCenter).toFixed(3)}`);
       reconstruction = rec.reconstruction;
       annotations = rec.annotations || annotations;
     } catch (error) {
@@ -764,6 +776,17 @@ function applyAnnotationState(annotations) {
   state.manualBoxes = state.annotations.manual_boxes;
   state.room = state.annotations.room;
   state.roomOutline = state.annotations.room_outline;
+  if (state.room.mirror_y !== undefined && state.room.mirror_y !== null) {
+    state.mirrorY = Boolean(Number(state.room.mirror_y));
+  }
+  const outlineCenter = mirrorCenterFromOutline(state.roomOutline);
+  if (Number.isFinite(outlineCenter) && outlineCenter !== 0) {
+    state.mirrorCenter = outlineCenter;
+  } else {
+    const storedCenter = Number(state.room.mirror_center_m);
+    if (Number.isFinite(storedCenter)) state.mirrorCenter = storedCenter;
+  }
+  syncMirrorButton();
   renderLabelSuggestions();
   renderRoomInfo();
 }
@@ -1228,6 +1251,8 @@ async function saveAnnotations(annotations, message, keepSelection = null, optio
   annotations.room = annotations.room || {};
   annotations.room.yaw_scale = state.yawScale;
   annotations.room.map_rotation_deg = state.mapRotation;
+  annotations.room.mirror_y = state.mirrorY ? 1 : 0;
+  annotations.room.mirror_center_m = state.mirrorCenter;
   setText('annotation-status', 'Menyimpan...');
   showToast('Menyimpan anotasi...', 'info', 8000);
   let data;
@@ -1235,7 +1260,9 @@ async function saveAnnotations(annotations, message, keepSelection = null, optio
     data = await api(`/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/annotations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ annotations, yaw_scale: state.yawScale, map_rotation: state.mapRotation }),
+      body: JSON.stringify({ annotations, yaw_scale: state.yawScale,
+        map_rotation: state.mapRotation, mirror_y: state.mirrorY ? 1 : 0,
+        mirror_center_m: state.mirrorCenter }),
     });
   } catch (error) {
     setText('annotation-status', `Gagal menyimpan: ${error.message}`);
@@ -1589,6 +1616,47 @@ function scaledPoint(point) {
   return { ...point, x_mm: rx, y_mm: ry };
 }
 
+function mirrorCenterFromOutline(outline) {
+  const ys = (outline || [])
+    .filter(point => Array.isArray(point) && point.length >= 2)
+    .map(point => Number(point[1]))
+    .filter(value => Number.isFinite(value));
+  if (!ys.length) return 0;
+  return (Math.min(...ys) + Math.max(...ys)) / 2;
+}
+
+function syncMirrorButton() {
+  const button = $('toggle-mirror-y');
+  if (!button) return;
+  button.classList.toggle('active', state.mirrorY);
+  button.textContent = state.mirrorY ? 'Mirror Y: ON' : 'Mirror Y: OFF';
+  button.title = state.mirrorY
+    ? 'Hasil scan dibalik vertikal terhadap prior. Klik untuk mematikan.'
+    : 'Hasil scan mengikuti arah sensor. Klik untuk membalik vertikal.';
+}
+
+async function toggleMirrorY() {
+  if (!state.loadedScan) return;
+  const previous = state.mirrorY;
+  state.mirrorY = !state.mirrorY;
+  syncMirrorButton();
+  const next = annotationsClone();
+  next.room = next.room || {};
+  next.room.mirror_y = state.mirrorY ? 1 : 0;
+  next.room.mirror_center_m = state.mirrorCenter;
+  try {
+    await withBusy($('toggle-mirror-y'),
+      () => saveAnnotations(next,
+        `Mirror Y ${state.mirrorY ? 'aktif' : 'nonaktif'}; hasil scan ${state.mirrorY ? 'dibalik' : 'dikembalikan'}.`,
+        state.selectedBoxId), 'Menerapkan...');
+    syncMirrorButton();
+  } catch (error) {
+    state.mirrorY = previous;
+    syncMirrorButton();
+    showToast(`Gagal mengubah Mirror Y: ${error.message}`, 'error', 4500);
+  }
+}
+
 function applyYawScale() {
   const rawYaw = Number($('yaw-scale').value);
   const rawRotation = Number($('map-rotation').value);
@@ -1604,7 +1672,7 @@ function applyYawScale() {
   }
   $('yaw-scale').value = yaw.toFixed(2);
   $('map-rotation').value = rotation.toFixed(1);
-  setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° — sesuaikan sampai dinding lurus.`);
+  setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
   const scanId = state.loadedScan || $('scan-select').value;
   if (scanId) loadPoints(scanId, true);
 }
@@ -2700,6 +2768,7 @@ $('reset-view').addEventListener('click', () => {
 });
 $('apply-yaw-scale').addEventListener('click', applyYawScale);
 $('reset-yaw-scale').addEventListener('click', resetYawScale);
+$('toggle-mirror-y').addEventListener('click', toggleMirrorY);
 $('top-zoom-in').addEventListener('click', () => {
   state.topZoom = Math.min(8, (Number(state.topZoom) || 1) * 1.2);
   drawTopDown();
@@ -2925,6 +2994,7 @@ try {
 renderLabelSuggestions();
 updateSelectionStatus();
 updateUndoButton();
+syncMirrorButton();
 
 (async () => {
   await refreshScans();

@@ -87,6 +87,28 @@ def _as_int(value, default=None):
         return default
 
 
+def _map_xyz(row, yaw_scale, map_rotation_deg, mirror_y, mirror_center_m):
+    """Map raw millimetres to the same prior/display frame as the boxes."""
+    x = _as_float(row.get("x_mm"))
+    y = _as_float(row.get("y_mm"))
+    z = _as_float(row.get("z_mm"))
+    if x is None or y is None or z is None:
+        return None
+    x, y, z = x / 1000.0, y / 1000.0, z / 1000.0
+    yaw_value = row.get("yaw_deg")
+    if yaw_scale != 1.0 and yaw_value not in (None, ""):
+        yaw = math.radians(float(yaw_value) * yaw_scale)
+        distance = math.hypot(x, y)
+        x = distance * math.cos(yaw)
+        y = distance * math.sin(yaw)
+    rotation = math.radians(float(map_rotation_deg))
+    ca, sa = math.cos(rotation), math.sin(rotation)
+    x, y = x * ca - y * sa, x * sa + y * ca
+    if mirror_y:
+        y = 2.0 * float(mirror_center_m) - y
+    return x, y, z
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -283,9 +305,19 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
     room = annotations.get("room") or {}
     yaw_scale = _as_float(room.get("yaw_scale"), 1.0)
     map_rotation = _as_float(room.get("map_rotation_deg"), 0.0)
+    try:
+        mirror_y = bool(float(room.get("mirror_y", 1.0)))
+    except (TypeError, ValueError):
+        mirror_y = True
+    mirror_center = _as_float(room.get("mirror_center_m"))
+    if mirror_center is None:
+        ys = [float(point[1]) for point in (annotations.get("room_outline") or [])
+              if isinstance(point, (list, tuple)) and len(point) >= 2]
+        mirror_center = (min(ys) + max(ys)) / 2.0 if ys else 0.0
     reconstruction = reconstruct_points(
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation,
-        annotations=annotations)
+        annotations=annotations, mirror_y=mirror_y,
+        mirror_center_m=mirror_center)
     boxes = reconstruction.get("boxes") or []
     mount_row_set = set(reconstruction.get("mount_rows") or [])
     ceiling_row_set = set(reconstruction.get("ceiling_rows") or [])
@@ -315,9 +347,9 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
         y_mm = _as_float(row.get("y_mm"))
         z_mm = _as_float(row.get("z_mm"))
         range_mm = _as_float(row.get("range_mm"))
-        x_m = x_mm / 1000.0 if x_mm is not None else None
-        y_m = y_mm / 1000.0 if y_mm is not None else None
-        z_m = z_mm / 1000.0 if z_mm is not None else None
+        mapped = _map_xyz(row, yaw_scale, map_rotation,
+                          mirror_y, mirror_center)
+        x_m, y_m, z_m = mapped if mapped is not None else (None, None, None)
         source = str(row.get("range_source") or "")
         valid = range_mm is not None and range_mm > 0
         if valid:
@@ -485,6 +517,8 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
         "prior_boxes": len(prior_boxes),
         "yaw_scale": yaw_scale,
         "map_rotation_deg": map_rotation,
+        "mirror_y": bool(mirror_y),
+        "mirror_center_m": round(float(mirror_center), 3),
         "room": room,
         "labels": annotations.get("labels") or {},
         "files": files,

@@ -56,6 +56,19 @@ class Reconstruction(unittest.TestCase):
         self.assertEqual(result["boxes"], [])
         self.assertEqual(result["mount_boxes"], 1)
 
+    def test_mirror_y_flips_measured_geometry(self):
+        rows = [{"x_mm": 1500, "y_mm": 1500, "z_mm": 1500,
+                 "range_mm": 2121, "yaw_deg": 45}] * 20
+        base = reconstruct.reconstruct_points(
+            rows, yaw_scale=1.0, map_rotation_deg=0.0)
+        mirrored = reconstruct.reconstruct_points(
+            rows, yaw_scale=1.0, map_rotation_deg=0.0,
+            mirror_y=True, mirror_center_m=0.0)
+        self.assertAlmostEqual(base["boxes"][0]["cy_m"], 1.5, places=2)
+        self.assertAlmostEqual(mirrored["boxes"][0]["cy_m"], -1.5, places=2)
+        self.assertTrue(mirrored["mirror_y"])
+        self.assertAlmostEqual(mirrored["mirror_center_m"], 0.0)
+
     def test_yaw_scale_metadata(self):
         rows = [{"x_mm": 1000, "y_mm": 0, "z_mm": 1500, "range_mm": 1000,
                  "yaw_deg": 0}] * 8

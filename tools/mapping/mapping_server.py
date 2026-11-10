@@ -249,7 +249,7 @@ def _clean_annotations(payload):
     if isinstance(room, dict):
         for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
                     "bedroom_m2", "total_m2", "reference_scale", "yaw_scale",
-                    "map_rotation_deg"):
+                    "map_rotation_deg", "mirror_y", "mirror_center_m"):
             if key in room:
                 try:
                     clean_room[key] = round(float(room[key]), 3)
@@ -278,6 +278,31 @@ def _save_annotations(scan_id, payload):
     annotations = _clean_annotations(payload)
     write_json(_scan_directory(scan_id) / "annotations.json", annotations)
     return annotations
+
+
+def _mirror_defaults(annotations):
+    """Return (mirror_y, center_m) for the hand-authored prior frame.
+
+    Mirroring is the default because the physical yaw axis is opposite the
+    prior/2D view. The centre comes from the prior room outline unless the
+    annotation explicitly stores one.
+    """
+    room = annotations.get("room") or {}
+    raw_mirror = room.get("mirror_y", 1.0)
+    try:
+        mirror_y = bool(float(raw_mirror))
+    except (TypeError, ValueError):
+        mirror_y = True
+    center = room.get("mirror_center_m")
+    try:
+        center = float(center)
+    except (TypeError, ValueError):
+        center = None
+    if center is None:
+        ys = [float(point[1]) for point in (annotations.get("room_outline") or [])
+              if isinstance(point, (list, tuple)) and len(point) >= 2]
+        center = (min(ys) + max(ys)) / 2.0 if ys else 0.0
+    return mirror_y, center
 
 
 def _presence_from_status(status):
@@ -526,9 +551,19 @@ class Handler(BaseHTTPRequestHandler):
                     map_rotation = 10.7
                 map_rotation = max(-45.0, min(45.0, map_rotation))
                 annotations = _load_annotations(scan_id)
+                mirror_default, center_default = _mirror_defaults(annotations)
+                mirror_raw = params.get("mirror_y",
+                                        ["1" if mirror_default else "0"])[0]
+                mirror_y = str(mirror_raw).lower() not in ("0", "false", "off", "no")
+                try:
+                    mirror_center = float(params.get("mirror_center",
+                                                     [str(center_default)])[0])
+                except (TypeError, ValueError):
+                    mirror_center = center_default
                 reconstruction = reconstruct_points(
                     _points(scan_id), yaw_scale=yaw_scale,
-                    map_rotation_deg=map_rotation, annotations=annotations)
+                    map_rotation_deg=map_rotation, annotations=annotations,
+                    mirror_y=mirror_y, mirror_center_m=mirror_center)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
@@ -571,10 +606,19 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     map_rotation = 10.7
                 map_rotation = max(-45.0, min(45.0, map_rotation))
-                annotations = _save_annotations(scan_id, body.get("annotations", body))
+                payload = body.get("annotations", body)
+                if isinstance(payload, dict):
+                    room = payload.setdefault("room", {})
+                    if "mirror_y" in body:
+                        room["mirror_y"] = body["mirror_y"]
+                    if "mirror_center_m" in body:
+                        room["mirror_center_m"] = body["mirror_center_m"]
+                annotations = _save_annotations(scan_id, payload)
+                mirror_y, mirror_center = _mirror_defaults(annotations)
                 reconstruction = reconstruct_points(
                     _points(scan_id), yaw_scale=yaw_scale,
-                    map_rotation_deg=map_rotation, annotations=annotations)
+                    map_rotation_deg=map_rotation, annotations=annotations,
+                    mirror_y=mirror_y, mirror_center_m=mirror_center)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
@@ -591,8 +635,20 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     map_rotation = 0.0
                 map_rotation = max(-45.0, min(45.0, map_rotation))
+                mirror_y = None
+                if "mirror_y" in body:
+                    mirror_y = str(body["mirror_y"]).lower() not in (
+                        "0", "false", "off", "no")
+                mirror_center = None
+                if "mirror_center_m" in body:
+                    try:
+                        mirror_center = float(body["mirror_center_m"])
+                    except (TypeError, ValueError):
+                        mirror_center = None
                 result = export_scene(scan_id, yaw_scale=yaw_scale,
-                                      map_rotation_deg=map_rotation)
+                                      map_rotation_deg=map_rotation,
+                                      mirror_y=mirror_y,
+                                      mirror_center_m=mirror_center)
                 return self._send(200, result)
             if path.startswith("/api/mapping/scans/") and path.endswith("/export"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/export")].strip("/")

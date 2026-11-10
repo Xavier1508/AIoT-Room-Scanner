@@ -41,6 +41,14 @@ class SceneExport(unittest.TestCase):
                 self.assertGreaterEqual(int(index), 2)
                 self.assertLess(int(index), 10)
 
+    def test_map_point_mirror_y(self):
+        row = {"x_mm": 1000, "y_mm": 500, "z_mm": 800, "yaw_deg": 0}
+        x, y, z = scene_export._map_point(
+            row, 1.0, 1.0, 0.0, mirror_y=True, mirror_center_m=0.0)
+        self.assertAlmostEqual(x, 1.0)
+        self.assertAlmostEqual(y, -0.5)
+        self.assertAlmostEqual(z, 0.8)
+
     def test_box_vertices_are_centred(self):
         box = {
             "cx_m": 1.0, "cy_m": 2.0, "angle_deg": 0.0,

@@ -466,7 +466,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                        near_field_m=0.40, mount_guard_m=0.75,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
                        yaw_scale=0.76, map_rotation_deg=10.7,
-                       annotations=None):
+                       annotations=None, mirror_y=False,
+                       mirror_center_m=0.0):
     try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):
@@ -531,6 +532,10 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                     continue
             except (TypeError, ValueError):
                 pass
+        # Apply the prior-frame mirror only after sensor-relative filtering so
+        # near-field/mount rejection still uses the real scanner origin.
+        if mirror_y:
+            y = 2.0 * float(mirror_center_m) - y
         points.append((x, y, z, row.get("range_source") or "", row_index))
 
     if not points:
@@ -543,6 +548,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                   "fov_limit_deg": effective_fov_deg,
                   "yaw_scale": yaw_scale,
                   "map_rotation_deg": round(math.degrees(map_rotation), 1),
+                  "mirror_y": bool(mirror_y),
+                  "mirror_center_m": round(float(mirror_center_m), 3),
                   "near_field_m": near_field_m,
                   "mount_guard_m": mount_guard_m,
                   "note": "No points after near-mount filtering."}
@@ -658,6 +665,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         "fov_limit_deg": effective_fov_deg,
         "yaw_scale": yaw_scale,
         "map_rotation_deg": round(math.degrees(map_rotation), 1),
+        "mirror_y": bool(mirror_y),
+        "mirror_center_m": round(float(mirror_center_m), 3),
         "near_field_m": near_field_m,
         "mount_guard_m": mount_guard_m,
         "note": ("Estimated boxes from one fixed viewpoint; hidden sides are inferred. "

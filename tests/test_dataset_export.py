@@ -58,7 +58,8 @@ class DatasetExportTest(unittest.TestCase):
             }],
             "room_outline": [[-0.3, -1.0], [2.4, -1.0], [2.4, 1.5], [-0.3, 1.5]],
             "room": {"width_m": 2.7, "depth_m": 2.5, "yaw_scale": 1.0,
-                     "map_rotation_deg": 0.0},
+                     "map_rotation_deg": 0.0, "mirror_y": 1.0,
+                     "mirror_center_m": 0.0},
         })
         rows = [
             {"point_index": 0, "yaw_half_steps": -684, "yaw_deg": -60.0,
@@ -117,6 +118,7 @@ class DatasetExportTest(unittest.TestCase):
         self.assertEqual(len(points), 3)
         self.assertEqual(points[0]["clean"], "true")
         self.assertEqual(points[0]["point_label"], "fan")
+        self.assertEqual(points[0]["y_m"], "1.645")
         self.assertEqual(points[2]["range_source"], "hc")
         with Path(result["files"]["objects_csv"]).open(encoding="utf-8") as handle:
             objects = list(csv.DictReader(handle))
@@ -131,6 +133,7 @@ class DatasetExportTest(unittest.TestCase):
         manifest = json.loads(Path(result["files"]["manifest_json"]).read_text(encoding="utf-8"))
         self.assertFalse(manifest["clean"])
         self.assertEqual(manifest["points_total"], 3)
+        self.assertTrue(manifest["mirror_y"])
         self.assertIn("points_csv", manifest["sha256"])
 
 

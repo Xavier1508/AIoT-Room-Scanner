@@ -54,7 +54,23 @@ def _box_color(box):
     return LABEL_COLORS.get(str(box.get("label")), (70, 210, 150))
 
 
-def _map_point(row, yaw_scale, rotation_ca, rotation_sa):
+def _mirror_from_annotations(annotations):
+    room = annotations.get("room") or {}
+    try:
+        mirror_y = bool(float(room.get("mirror_y", 1.0)))
+    except (TypeError, ValueError):
+        mirror_y = True
+    try:
+        center = float(room.get("mirror_center_m"))
+    except (TypeError, ValueError):
+        ys = [float(point[1]) for point in (annotations.get("room_outline") or [])
+              if isinstance(point, (list, tuple)) and len(point) >= 2]
+        center = (min(ys) + max(ys)) / 2.0 if ys else 0.0
+    return mirror_y, center
+
+
+def _map_point(row, yaw_scale, rotation_ca, rotation_sa,
+               mirror_y=False, mirror_center_m=0.0):
     """Apply the same yaw/rotation mapping used by reconstruct_points."""
     x = _as_float(row.get("x_mm"))
     y = _as_float(row.get("y_mm"))
@@ -73,6 +89,8 @@ def _map_point(row, yaw_scale, rotation_ca, rotation_sa):
     if rotation_ca != 1.0 or rotation_sa != 0.0:
         x, y = (x * rotation_ca - y * rotation_sa,
                 x * rotation_sa + y * rotation_ca)
+    if mirror_y:
+        y = 2.0 * float(mirror_center_m) - y
     return x, y, z
 
 
@@ -105,7 +123,8 @@ def _box_faces(base):
     ]
 
 
-def build_ply(points, boxes, scan_id="", yaw_scale=1.0, map_rotation_deg=0.0):
+def build_ply(points, boxes, scan_id="", yaw_scale=1.0, map_rotation_deg=0.0,
+              mirror_y=False, mirror_center_m=0.0):
     """Return ASCII PLY text for point dicts (x,y,z) and reconstruction boxes."""
     box_vertices = [(_box_vertices(box), _box_color(box)) for box in boxes]
     vertex_count = len(points) + sum(len(vertices) for vertices, _ in box_vertices)
@@ -116,6 +135,7 @@ def build_ply(points, boxes, scan_id="", yaw_scale=1.0, map_rotation_deg=0.0):
         f"comment AIoT room scan {scan_id}",
         "comment frame x=right y=forward z=up units=meters",
         f"comment yaw_scale={yaw_scale:.3f} map_rotation_deg={map_rotation_deg:.1f}",
+        f"comment mirror_y={1 if mirror_y else 0} mirror_center_m={mirror_center_m:.3f}",
         f"comment points={len(points)} boxes={len(boxes)}",
         f"element vertex {vertex_count}",
         "property float x",
@@ -172,7 +192,8 @@ def _unique_path(folder: Path, stem: str) -> Path:
 
 
 def export_scene(scan_id: str, yaw_scale: float = 1.0,
-                 map_rotation_deg: float = 0.0) -> dict:
+                 map_rotation_deg: float = 0.0, mirror_y=None,
+                 mirror_center_m=None) -> dict:
     scan_dir = SCANS / scan_id
     points_path = scan_dir / "points.csv"
     if not points_path.is_file():
@@ -180,9 +201,17 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
     with points_path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     annotations = read_json(scan_dir / "annotations.json", {}) or {}
+    default_mirror, default_center = _mirror_from_annotations(annotations)
+    if mirror_y is None:
+        mirror_y = default_mirror
+    if mirror_center_m is None:
+        mirror_center_m = default_center
+    mirror_y = bool(mirror_y)
+    mirror_center_m = float(mirror_center_m)
     reconstruction = reconstruct_points(
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation_deg,
-        annotations=annotations)
+        annotations=annotations, mirror_y=mirror_y,
+        mirror_center_m=mirror_center_m)
     mount_rows = set(int(index) for index in (reconstruction.get("mount_rows") or []))
     rotation_ca = math.cos(math.radians(map_rotation_deg))
     rotation_sa = math.sin(math.radians(map_rotation_deg))
@@ -190,7 +219,9 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
     for index, row in enumerate(rows):
         if index in mount_rows:
             continue
-        mapped = _map_point(row, yaw_scale, rotation_ca, rotation_sa)
+        mapped = _map_point(row, yaw_scale, rotation_ca, rotation_sa,
+                            mirror_y=mirror_y,
+                            mirror_center_m=mirror_center_m)
         if mapped is None:
             continue
         source = str(row.get("range_source") or "")
@@ -200,7 +231,9 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
     boxes = reconstruction.get("boxes") or []
     ply_text = build_ply(points, boxes, scan_id=scan_id,
                          yaw_scale=yaw_scale,
-                         map_rotation_deg=map_rotation_deg)
+                         map_rotation_deg=map_rotation_deg,
+                         mirror_y=mirror_y,
+                         mirror_center_m=mirror_center_m)
     SCENES.mkdir(parents=True, exist_ok=True)
     folder = SCENES / scan_id
     folder.mkdir(parents=True, exist_ok=True)
@@ -212,6 +245,8 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
         "created_utc": utc_iso(),
         "yaw_scale": round(float(yaw_scale), 3),
         "map_rotation_deg": round(float(map_rotation_deg), 1),
+        "mirror_y": bool(mirror_y),
+        "mirror_center_m": round(float(mirror_center_m), 3),
         "points": len(points),
         "boxes": len(boxes),
         "measured_boxes": measured,
