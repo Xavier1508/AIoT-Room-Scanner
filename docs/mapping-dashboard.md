@@ -358,15 +358,34 @@ without resizing it, and clicking a block opens the panel on the **Edit** tab.
   the exact box by row.
 - **Edit** contains: add prior, convert an auto box to an editable prior, delete
   a prior, 2D drag mode, step 5/10 cm, X/Y/Z nudge buttons, rotation buttons,
-  P/L/T size buttons, numeric X/Y/Z/panjang/lebar/sudut fields and **Simpan
-  prior**. Z is clamped to `>= 0` (no box under the floor); priors are stored per
-  scan in `annotations.json`. **Hapus** hides an auto box and deletes a
-  prior/manual box (with confirmation). Every save/nudge/resize/export action
-  shows a busy spinner and a success/error toast; static JS/HTML/CSS are served
-  with `charset=utf-8` so UI text is not mojibaked.
+  numeric X/Y/Z/panjang/lebar/sudut fields and **Simpan prior**. Numbers are the
+  primary editor: type a value and press **Enter** to save it directly. Z is
+  clamped to `>= 0` (no box under the floor); priors are stored per scan in
+  `annotations.json`.
+- **2D one-side resize:** the selected box shows 8 white handles (4 corners +
+  4 edge midpoints). Drag one handle and only that side/corner moves; the
+  opposite side stays fixed, so the pivot and size change together. Selecting
+  an auto box and dragging a handle automatically promotes it to a prior first.
+  The white crosshair marks the true object centre/pivot; the dashed ray shows
+  the local angle. A corner/edge label reports `L x W x angle` live.
+- **Hapus is permanent:** auto-box Hapus writes the box id to the separate
+  `removed` list in `annotations.json`, so **Reset** cannot bring objects 5/6/7
+  back. Sembunyikan still uses the temporary `hidden` list; Reset clears
+  `labels`, `hidden`, `merges` and point labels but keeps `removed` and priors.
+- **Undo:** every successful save (drag, resize, nudge, numeric edit, label,
+  delete, reset) pushes the previous annotation snapshot onto a bounded stack.
+  **Ctrl+Z** or the **Undo (Ctrl+Z)** button restores it. Inputs keep native
+  text undo while focused; after Enter the field blurs so global undo works.
+- **Simpan 3D:** writes a self-contained ASCII PLY plus a JSON sidecar under
+  `research/mapping/scenes/<scan>/<utc>.ply`. The PLY contains all filtered scan
+  points (cyan ToF, orange HC) and every measured/prior box as 8 vertices +
+  12 triangles, coloured by label. The sidecar records counts, yaw/rotation,
+  box geometry and the SHA-256 of the PLY. The status line shows the exact path.
 - **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
   and the selected-box panel shows the exact coordinates. The **Skala sumbu**
-  checkbox toggles the ticks.
+  checkbox toggles the ticks. Every save/nudge/resize/export action also shows a
+  busy spinner and a success/error toast; static JS/HTML/CSS are served with
+  `charset=utf-8` so UI text is not mojibaked.
 
 **Dataset CSV export (Dataset tab):** pick a scan, enter a run label, mark
 **Run bersih** when the scan/labels are ready for training, and export. The
@@ -410,6 +429,7 @@ shows the gate reason, wall distance and distance spread.
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/export`
+- `POST /api/mapping/scans/{id}/scene` (body `{yaw_scale, map_rotation}`; writes PLY + JSON)
 - `GET /api/mapping/dataset`
 - `POST /api/mapping/presence/reset`
 - `GET /api/mapping/calibration`

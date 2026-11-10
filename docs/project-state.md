@@ -45,7 +45,7 @@ fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 52 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 54 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -379,21 +379,33 @@ fallback.
   tag in 2D and a white edge loop in 3D. Overlap selection prefers
   non-wall/smaller boxes (door vs wall) and cycles on repeated clicks; the
   sidebar row selects the exact box. Axis ticks (0.5 m 2D, 1 m 3D) and a Skala
-  sumbu toggle were added. **Prior UX:** the Hapus button hides auto boxes and
-  deletes prior/manual boxes (with confirm); the sidebar has P/P/L/T size
-  buttons plus numeric length/width/Z fields; every save/nudge/resize/export
-  action shows a busy spinner and a success/error toast; static JS/HTML/CSS are
-  served with `charset=utf-8`. Objects 5/6/7 (old measured fan/object boxes)
-  are hidden for the next full rescan. **Dataset export:** per-run CSV under
+  sumbu toggle were added. **Prior UX revision:** numeric X/Y/Z/length/width/
+  angle fields are the primary editor (P/L/T quick buttons removed); Enter
+  applies and blurs. The selected box shows 8 white 2D handles; dragging a
+  corner/edge moves only that side while the opposite side stays fixed, and
+  dragging an auto box promotes it to a prior first. A white crosshair + dashed
+  angle ray marks the true object centre/pivot, with a live `L x W x angle`
+  tag. **Hapus is permanent:** auto boxes are written to `removed` (separate
+  from temporary `hidden`), so Reset keeps objects 5/6/7 deleted. A bounded
+  annotation snapshot stack adds **Ctrl+Z / Undo**; Reset asks for confirmation
+  and preserves `removed` + priors. **Simpan 3D** writes an ASCII PLY plus JSON
+  sidecar under `research/mapping/scenes/<scan>/` with filtered scan points and
+  all measured/prior boxes (8 vertices + 12 triangles each). Partition prior is
+  centred at `(-0.10, 0.50)` with `0.20 x 0.60 x 2.40 m`, between the WC door
+  and the desk niche. Every save/nudge/resize/export action shows a busy spinner
+  and a success/error toast; static JS/HTML/CSS are served with `charset=utf-8`.
+  **Dataset export:** per-run CSV under
   `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
   `objects.csv`, `manifest.json/csv`, `annotations.json`, `README.txt` and
   `dataset/index.csv`; points include timestamps, raw sensors, XYZ, point/object/
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 52 Python pass. Evidence:
-  `analysis/mapping/dashboard-20261110T124935Z/sidebar-floating-closed.png` and
-  `sidebar-floating-open.png`.
+  presence. Tests: 87 C++ + 54 Python pass. Evidence:
+  `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
+  `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
+  `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,
+  132 faces, 20,244 bytes, SHA-256 `704ab5da...d4bc09` recorded in the sidecar).
 - The PC dashboard loads `/api/mapping/scans` independently of ESP32 health,
   so saved scans and the 3D map remain viewable while the board is offline.
 - Local Git `main` initialized; source/docs/tests are saved in the initial
@@ -430,7 +442,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **103 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **106 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -468,7 +480,9 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   97 = 3D object export table; 98 = 3D object export manifest;
   99 = block sidebar/prior editor screenshot; 100 = dataset CSV export UI;
   101 = floating sidebar closed (full map); 102 = floating sidebar open (overlay);
-  103 = prior size controls and saved toast.
+  103 = prior size controls and saved toast; 104 = partition pivot + one-side
+  resize handles (full page); 105 = Simpan 3D PLY scene status; 106 = partition
+  2D pivot crosshair and 8 resize handles.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
