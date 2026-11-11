@@ -2,9 +2,11 @@
 
 Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-Installed firmware is **`0.8.1-ml-empty-human`**; the TFLite Micro
-empty/human classifier is live (`ready=true`, `human` 99.6%, 4 ms, 5,248-byte
-arena) and sensors run with overall **OK**. The ToF near reflector was the
+Last confirmed firmware is **`0.8.1-ml-empty-human`**; the TFLite Micro
+empty/human classifier was live (`ready=true`, `human` 99.6%, 4 ms, 5,248-byte
+arena) and sensors ran with overall **OK**. Prepared **`0.8.2-ml-alert`** adds
+AI-driven buzzer alert, but its OTA attempt left the board offline; USB/power
+recovery is pending. The ToF near reflector was the
 protective lens cover; after removal, ToF is valid at ~2.4 m. The **current
 full fine scan** `20261110T184241Z` completed **475/475 points (473 valid,
 452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
@@ -54,15 +56,17 @@ buzzer/safety fallback.
   It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
   sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
   test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
-- **Installed firmware: `0.8.1-ml-empty-human`**, build
-  `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
+- **Prepared firmware: `0.8.2-ml-alert`**, build
+  `analysis/platformio/build-20261111T125903948Z/firmware.bin`, **941,920
   bytes**, SHA-256
-  `3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
-  It adds ESP_TF 2.1.1 / TFLite Micro, a 64 KiB tensor arena and the int8
-  empty/human 1D-CNN (14,584 bytes). RAM **116,520 bytes (35.6%)**, flash
-  **14.3%**. `0.8.0` OTA succeeded but `ml_init_failed` because the resolver
-  omitted the model's `MEAN` op; `0.8.1` adds `AddMean()` and live inference is
-  verified (`human` 99.6%, 4 ms, arena 5,248 bytes).
+  `ca6bb359011b1e8d69bdb6e05c562a9c6c37267a258e430aa67007df6fe791bf`.
+  It adds `ml_alert_on/off`: when ML is ready, class `human`, confidence >=
+  0.80 and the arm is idle/parked, the buzzer beeps every 700 ms; rule HLK has
+  priority and remains the safety fallback. Build/RAM/flash: **116,544 bytes
+  (35.6%)**, **14.4%**. OTA was attempted but the board went offline after the
+  upload/reboot and has not answered on 192.168.1.200 or `aiot-room.local`;
+  USB/power recovery is pending. Last confirmed running firmware is **0.8.1**
+  (ML live: `human` 99.6%, 4 ms, 5,248-byte arena).
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -492,13 +496,18 @@ per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
 PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
-and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Firmware `0.8.1`
-is installed and ML is live; sensors are running with overall **OK**. The two
-30-point validation scans (`20261111T114928Z`, `20261111T115125Z`) are **dirty**
-because the operator was active in the room; they are timing/health checks, not
-mapping evidence. Remaining work: run the first **clean** full scan when the
-operator confirms the room is empty, then export the clean dataset run. The
-final mapping PLY is
+and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Last confirmed
+firmware `0.8.1` had ML live and sensors **OK**; prepared `0.8.2-ml-alert` adds
+AI-driven buzzer alert, but its OTA attempt left the board offline and recovery
+is pending. The two 30-point validation scans (`20261111T114928Z`,
+`20261111T115125Z`) are **dirty** because the operator was active in the room;
+they are timing/health checks, not mapping evidence. A unified master dataset
+was generated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (6,051
+rows = 475 mapping points + 5,576 HLK frames, timestamped, labels empty/human;
+SHA-256 `6b3f8e02…f440`) and will be regenerated after the new empty/human
+sessions. Remaining work: recover/verify the board, record the new empty and
+human sessions, retrain/compare if desired, then run the first **clean** full
+scan and regenerate the master dataset + PLY. The final mapping PLY is
 `research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
 auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
 12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is

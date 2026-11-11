@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.8.1-ml-empty-human";
+constexpr char version[] = "0.8.2-ml-alert";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -42,6 +42,8 @@ constexpr uint32_t hlkAlertMaxIntervalMs = 2000;        // Slow beep at 75 cm.
 constexpr uint16_t hlkAlertBeepMs = 70;
 constexpr uint8_t hlkAlertConfirmFrames = 3;
 constexpr uint32_t hlkAlertParkedStableMs = 1000;      // Re-arm only after the arm is still.
+constexpr uint32_t mlAlertIntervalMs = 700;             // AI-alert beep period.
+constexpr float mlAlertConfidence = 0.80f;              // Minimum human confidence.
 constexpr int16_t hcOffsetMm = 0;                       // Provisional; refine in PC calibration.
 constexpr int16_t tofOffsetMm = 50;                     // ToF lens is ~5 cm ahead of HC reference.
 constexpr uint16_t tofNearReflectorMm = 500;            // Fixed near return (mount/cover) threshold.

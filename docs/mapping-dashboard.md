@@ -243,6 +243,15 @@ subtracts); click empty space, click outside the 3D view, or press **Escape**
 to clear both point and block selection. **Middle-drag** pans, right-drag pans,
 wheel zooms and left-drag orbits.
 
+**AI alert and unified dataset:** the AI/Presence tab has an **AI Alert**
+toggle (firmware 0.8.2). When enabled, the DL class `human` with confidence
+>= 0.80 drives the buzzer; rule HLK has priority when enabled. The final
+dataset can be collected as one long-format CSV
+(`research/mapping/dataset/aiot_room_dataset_v1.csv`) with `record_type`
+`scan_point`/`hlk_frame`, UTC timestamps, labels, session IDs and split.
+`tools/mapping/export_master.py` rebuilds it from the latest clean scan run and
+all `frames.jsonl` sessions.
+
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least
 **75 cm** (one default LD2410 distance gate), the dashboard draws **H1/H2**

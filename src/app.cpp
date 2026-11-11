@@ -74,6 +74,9 @@ void App::stopAll() {
   stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
   scanMode_ = false;
   hlkAlertEnabled_ = false;
+  mlAlertEnabled_ = false;
+  mlAlertActive_ = false;
+  mlAlertMuteReason_ = "disabled";
   safety_.stop();
 }
 bool App::beginPose(uint32_t now) {
@@ -158,6 +161,38 @@ void App::maybeHlkAlert(uint32_t now) {
   hlkAlertNextMs_ = now + interval;
   ++hlkAlertCount_;
 }
+void App::maybeMlAlert(uint32_t now) {
+  auto mute = [this](const char* reason) {
+    mlAlertActive_ = false;
+    mlAlertNextMs_ = 0;
+    mlAlertMuteReason_ = reason;
+  };
+  if (!mlAlertEnabled_) { mute("disabled"); return; }
+  if (hlkAlertEnabled_) { mute("rule_alert_priority"); return; }
+  if (scanMode_) { mute("scan_mode"); return; }
+  if (otaActive()) { mute("ota"); return; }
+  if (!sensors_.running()) { mute("sensors_off"); return; }
+  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
+    mute("actuator_test");
+    return;
+  }
+  if (stepper_.active() || stepperMovePending_ || servo_.active()) {
+    mute("actuator_motion");
+    return;
+  }
+  if (!ml_.ready() || !ml_.windowReady()) { mute("window_not_ready"); return; }
+  if (ml_.label() != "human" || ml_.confidence() < config::mlAlertConfidence) {
+    mute("empty_or_low_confidence");
+    return;
+  }
+  mlAlertActive_ = true;
+  mlAlertMuteReason_ = "active";
+  if (buzzer_.active()) return;
+  if (mlAlertNextMs_ && int32_t(now - mlAlertNextMs_) < 0) return;
+  buzzer_.alert(now, config::hlkAlertBeepMs);
+  mlAlertNextMs_ = now + config::mlAlertIntervalMs;
+  ++mlAlertCount_;
+}
 void App::clearQueue() {
   CommandRequest discarded;
   while (xQueueReceive(commands_, &discarded, 0) == pdTRUE) {}
@@ -195,7 +230,7 @@ String App::execute(Command command) {
     return String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":" + jsonQuote(message) + "}";
   };
   if (command == Command::Status) { publish(now); return statusJson(); }
-  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"sensors_start\",\"sensors_stop\",\"scan_mode_start\",\"scan_mode_stop\",\"hlk_alert_on\",\"hlk_alert_off\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"stepper_left_5\",\"stepper_right_5\",\"release_stepper\",\"park_servo\",\"servo_up_200\",\"servo_down_200\",\"servo_up_50\",\"servo_down_50\",\"servo_up_25\",\"servo_down_25\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
+  if (command == Command::Help) return "{\"ok\":true,\"commands\":[\"help\",\"status\",\"buzzer_test\",\"hlk_start\",\"hlk_stop\",\"sensors_start\",\"sensors_stop\",\"scan_mode_start\",\"scan_mode_stop\",\"hlk_alert_on\",\"hlk_alert_off\",\"ml_alert_on\",\"ml_alert_off\",\"motor_arm\",\"step_test\",\"step_test_long\",\"servo_arm\",\"servo_test\",\"servo_test_long\",\"park_stepper\",\"stepper_left_10\",\"stepper_right_10\",\"stepper_left_5\",\"stepper_right_5\",\"release_stepper\",\"park_servo\",\"servo_up_200\",\"servo_down_200\",\"servo_up_50\",\"servo_down_50\",\"servo_up_25\",\"servo_down_25\",\"release_servo\",\"zero_stepper_here\",\"save_servo_here\",\"release_pose\",\"stop\",\"selftest\",\"wifi_scan\",\"wifi_scan_results\",\"wifi_scan_cancel\",\"wifi_scan_page_0\",\"wifi_scan_page_1\",\"wifi_scan_page_2\",\"wifi_scan_page_3\",\"wifi_scan_page_4\",\"wifi_scan_page_5\",\"wifi_scan_page_6\",\"wifi_scan_page_7\"],\"provisioning\":\"use tools/ops/device.py setup for numbered SSID selection over USB\"}";
   if (command == Command::Invalid) return result(false, "unknown_command_no_action");
   if (command == Command::Stop) {
     stopAll(); network_.cancelScan(); clearQueue();
@@ -263,8 +298,18 @@ String App::execute(Command command) {
   if (command == Command::HlkAlertOn || command == Command::HlkAlertOff) {
     if (command == Command::HlkAlertOn && !hlkEnabled_) return result(false, "hlk_not_enabled");
     hlkAlertEnabled_ = command == Command::HlkAlertOn;
+    if (hlkAlertEnabled_) mlAlertEnabled_ = false;
     event(hlkAlertEnabled_ ? "hlk_proximity_alert_enabled" : "hlk_proximity_alert_disabled");
     return result(true, hlkAlertEnabled_ ? "hlk_alert_enabled" : "hlk_alert_disabled");
+  }
+  if (command == Command::MlAlertOn || command == Command::MlAlertOff) {
+    if (command == Command::MlAlertOn && !ml_.ready()) {
+      return result(false, "ml_not_ready");
+    }
+    mlAlertEnabled_ = command == Command::MlAlertOn;
+    if (mlAlertEnabled_) hlkAlertEnabled_ = false;
+    event(mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
+    return result(true, mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
   }
   if (command == Command::ReleasePose) {
     if (safety_.mode() != Mode::Parked) return result(false, "not_parked_no_action");
@@ -525,6 +570,14 @@ void App::publish(uint32_t now) {
         ",\"count\":" + hlkAlertCount_ +
         ",\"last_distance_cm\":" + hlkAlertLastDistanceCm_ +
         ",\"last_energy\":" + hlkAlertLastEnergy_ + "}";
+   s += String(",\"ml_alert\":{\"enabled\":") + (mlAlertEnabled_ ? "true" : "false") +
+        ",\"active\":" + (mlAlertActive_ ? "true" : "false") +
+        ",\"mute_reason\":" + jsonQuote(mlAlertMuteReason_) +
+        ",\"class\":" + jsonQuote(ml_.label()) +
+        ",\"confidence\":" + String(ml_.confidence(), 3) +
+        ",\"threshold\":" + String(config::mlAlertConfidence, 2) +
+        ",\"interval_ms\":" + config::mlAlertIntervalMs +
+        ",\"count\":" + mlAlertCount_ + "}";
    s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
        ",\"received\":" + (reading.received ? "true" : "false") + ",\"uart_bytes\":" + hlkBytes_ +
@@ -614,6 +667,7 @@ void App::tick() {
         (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked);
     ml_.update(now, mlReading, mlHlkValid, sensors_.running(), mlBusy);
   }
+  maybeMlAlert(now);
   network_.tick(now);
   if (uint32_t(now - lastPublish_) >= 200) publish(now);
   const uint32_t reboot = rebootAt_.load();

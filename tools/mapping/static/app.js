@@ -383,6 +383,20 @@ function renderPresence() {
     setText('actuator-summary', 'ESP offline');
     setText('actuator-detail', state.presenceError || 'Status aktuator belum tersedia.');
   }
+  const mlAlert = state.health?.esp?.ml_alert || {};
+  const mlAlertButton = $('ml-alert-toggle');
+  if (mlAlertButton) {
+    const enabled = Boolean(mlAlert.enabled);
+    mlAlertButton.textContent = `AI Alert: ${enabled ? 'ON' : 'OFF'}`;
+    mlAlertButton.classList.toggle('active', enabled);
+    mlAlertButton.disabled = !state.health?.esp || mlAlert.enabled == null;
+  }
+  if (mlAlert.enabled != null) {
+    setText('ml-alert-status', `${mlAlert.active ? 'BEEP' : 'idle'} · ${mlAlert.class || '—'} `
+      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% · ${mlAlert.mute_reason || '—'} · count ${mlAlert.count ?? 0}`);
+  } else {
+    setText('ml-alert-status', 'AI alert belum tersedia');
+  }
   const liveMl = state.health?.esp?.ml || null;
   const cv = ml.cv_accuracy_mean != null
     ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(1)}%` : '—';
@@ -1584,6 +1598,25 @@ async function clearPresence() {
   } catch (error) {
     setText('presence-detail', `Gagal reset presence: ${error.message}`);
     showToast(`Gagal reset presence: ${error.message}`, 'error', 4500);
+  }
+}
+
+async function toggleMlAlert() {
+  const current = Boolean(state.health?.esp?.ml_alert?.enabled);
+  const command = current ? 'ml_alert_off' : 'ml_alert_on';
+  try {
+    await withBusy($('ml-alert-toggle'), () => api('/api/mapping/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    }), 'AI alert...');
+    await refreshHealth();
+    showToast(command === 'ml_alert_on'
+      ? 'AI alert aktif: buzzer mengikuti prediksi DL.'
+      : 'AI alert nonaktif.', 'success');
+  } catch (error) {
+    setText('ml-alert-status', `Gagal: ${error.message}`);
+    showToast(`Gagal AI alert: ${error.message}`, 'error', 4500);
   }
 }
 
@@ -3187,6 +3220,7 @@ $('show-axis').addEventListener('change', () => {
 });
 $('export-run').addEventListener('click', exportDataset);
 $('presence-clear').addEventListener('click', clearPresence);
+$('ml-alert-toggle').addEventListener('click', toggleMlAlert);
 $('block-filter').addEventListener('input', renderBlockList);
 document.querySelectorAll('[data-sidebar-tab]').forEach(button => {
   button.addEventListener('click', () => setSidebarTab(button.dataset.sidebarTab));

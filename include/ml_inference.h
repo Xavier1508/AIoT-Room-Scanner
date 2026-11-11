@@ -13,6 +13,10 @@ class MlClassifier {
   void update(uint32_t now, const HlkReading& reading, bool hlkValid,
               bool sensorsRunning, bool busy);
   String statusJson() const;
+  bool ready() const { return ready_; }
+  bool windowReady() const { return windowReady_; }
+  const String& label() const { return label_; }
+  float confidence() const { return confidence_; }
 
  private:
   static constexpr uint8_t kWindow = 32;

@@ -6,6 +6,13 @@ This page is the reproducible deployment path for the on-device classifier.
 `ml_init_failed` because its resolver omitted the model's `MEAN` op; `0.8.1`
 registers `AddMean()` and uses a 10-op resolver.
 
+**Prepared `0.8.2-ml-alert`** adds `ml_alert_on/off` and an AI-driven buzzer
+mode (human + confidence >= 0.80, rule HLK priority). Artifact:
+`analysis/platformio/build-20261111T125903948Z/firmware.bin`, 941,920 bytes,
+SHA-256 `ca6bb359011b1e8d69bdb6e05c562a9c6c37267a258e430aa67007df6fe791bf`.
+Build passed, but the OTA attempt left the board offline; recovery/verification
+is pending, so do not treat 0.8.2 as installed yet.
+
 ## Model
 
 - Task: **empty vs human** (binary).
