@@ -5,9 +5,9 @@ application OTA, sensor health and the PC mapping dashboard are verified.
 **`0.8.3-ml-alert-logits` is the current firmware** (device-computed softmax
 over the model logits) and is installed from `app0`; `app1` holds the working
 `0.8.2` logits build from the same fix iteration. The TFLite Micro empty/human
-classifier is live (`ready=true`, arena 5,128 bytes) and the **AI alert**
-(`ml_alert_on/off`) is verified to accept commands; the buzzer behavior still
-needs the 9V sensor rail. `0.8.2-ml-alert` crashed at boot in the ESP_TF
+classifier is live (`ready=true`, arena 5,128 bytes) and the **AI alert** is
+verified end-to-end on the 9V rail: empty → no beep, human → beeps every 700 ms,
+with a measured 4.2 s release delay. `0.8.2-ml-alert` crashed at boot in the ESP_TF
 Softmax Prepare path; the image was read back byte-identical to the artifact,
 so this was a firmware/library layout issue, not a corrupt OTA. The ToF near
 reflector was the
@@ -49,8 +49,8 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   bytes**, SHA-256
   `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
   ML is `ready=true`, model `hlk-cnn-20261111T035836Z-logits`, arena
-  **5,128 bytes**. The AI alert command is verified; the 9V sensor/buzzer
-  acceptance test is pending.
+  **5,128 bytes**. The AI alert is verified end-to-end on 9V: sensors `OK`,
+  empty = no beep, human = 700 ms beeps, release delay **4.2 s**.
 - **Known-good `0.8.1` artifact:** `0.8.1-ml-empty-human`,
   `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
   bytes**, SHA-256

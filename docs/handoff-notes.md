@@ -2,7 +2,8 @@
 
 Updated: 2026-11-11. Current firmware: `0.8.3-ml-alert-logits` (TFLite Micro
 empty/human classifier, deployed as logits with on-device softmax), ML live
-(`ready=true`, arena 5,128 bytes), AI alert command verified. `0.8.2-ml-alert`
+(`ready=true`, arena 5,128 bytes), AI alert verified end-to-end on 9V
+(empty = no beep, human = 700 ms beeps, 4.2 s release delay). `0.8.2-ml-alert`
 crashed at boot in the ESP_TF TFLite-Micro Softmax Prepare path; the OTA image
 read back byte-identical to the artifact, so it was a library/layout issue, not
 corruption. The fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`)
@@ -102,11 +103,10 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Switch to the 9V jack (USB disconnected), run `sensors_start`, and confirm
-   HC/ToF/HLK health. Then verify `ml_alert_on`: empty room = no beep, human +
-   confidence >= 0.80 = 700 ms beeps; `ml_alert_off` stops it. Record new
-   empty/human sessions. When the operator confirms the room is empty, run a
-   clean full scan and regenerate the unified master dataset.
+1. Record new empty/human sessions (3–5 min each) with the fan/lights in their
+   demo state, regenerate the unified master dataset, and optionally train/compare
+   `v3`. When the operator confirms the room is empty, run a clean full scan and
+   regenerate the PLY + dataset manifest.
 2. Confirm `/api/status.ml` becomes ready after ~6.4 s, record latency,
    arena use and the live empty/human result; check no brownout.
 3. Verify the final scan `20261110T184241Z`: Mirror Y ON, auto-align `-1.1°`,
