@@ -70,7 +70,7 @@ buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 60 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 61 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -447,7 +447,7 @@ buzzer/safety fallback.
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 60 Python pass. Evidence:
+  presence. Tests: 87 C++ + 61 Python pass. Evidence:
   `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
   `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
   `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,

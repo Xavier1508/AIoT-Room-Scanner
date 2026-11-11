@@ -95,6 +95,29 @@ class PresenceTrackerTest(unittest.TestCase):
         self.assertNotEqual(unstable["state"], "present")
         self.assertEqual(unstable["gate"], "distance_unstable")
 
+    def test_dual_track_occupancy_estimate(self):
+        tracker = presence.PresenceTracker(confirm_frames=1,
+                                           multi_separation_cm=40)
+        reading = positive(distance_cm=100, energy=80, target_state=3)
+        reading.update({
+            "moving_distance_cm": 100, "moving_energy": 80,
+            "stationary_distance_cm": 260, "stationary_energy": 70,
+        })
+        result = tracker.update(reading, now=0.0)
+        self.assertEqual(result["state"], "present")
+        self.assertEqual(result["occupancy"], 2)
+        self.assertEqual([track["id"] for track in result["tracks"]], ["H1", "H2"])
+        self.assertIn("bukan people counter", result["occupancy_note"])
+
+        close = positive(distance_cm=120, energy=80, target_state=3)
+        close.update({
+            "moving_distance_cm": 120, "moving_energy": 80,
+            "stationary_distance_cm": 135, "stationary_energy": 70,
+        })
+        merged = tracker.update(close, now=1.0)
+        self.assertEqual(merged["occupancy"], 1)
+        self.assertEqual(merged["tracks"][0]["source"], "combined")
+
     def test_reset(self):
         tracker = presence.PresenceTracker(confirm_frames=1)
         tracker.update(positive(), now=0.0)

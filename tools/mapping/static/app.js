@@ -58,6 +58,10 @@ const state = {
   mirrorY: true,
   mirrorCenter: 0,
   snapWallObjects: true,
+  sceneLayers: {
+    points: true, walls: true, priors: true, objects: true,
+    labels: true, grid: true,
+  },
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
@@ -336,9 +340,11 @@ function renderPresence() {
     setText('presence-class', '—');
     setText('presence-confidence', '—');
     setText('presence-distance', '—');
+    setText('presence-occupancy', '—');
     setText('presence-reason', '—');
     badge('presence-state', '—');
     badge('presence-energy', '—');
+    badge('presence-track-count', 'estimasi');
   } else {
     const offlineEmpty = Boolean(state.presenceError) && presence.state === 'empty';
     const confidence = Math.max(0, Math.min(1, Number(presence.confidence) || 0));
@@ -351,9 +357,15 @@ function renderPresence() {
     setText('presence-class', offlineEmpty ? '—' : String(presence.class || 'empty'));
     setText('presence-confidence', offlineEmpty ? '—' : `${Math.round(confidence * 100)}%`);
     setText('presence-distance', presence.distance_cm != null ? `${Number(presence.distance_cm).toFixed(1)} cm` : '—');
+    const tracks = Array.isArray(presence.tracks) ? presence.tracks : [];
+    setText('presence-occupancy', presence.occupancy_label
+      || (tracks.length ? `${tracks.length} orang` : '0'));
+    badge('presence-track-count', `${tracks.length} track`);
     badge('presence-state', presence.state);
     badge('presence-energy', presence.energy != null ? `energy ${presence.energy}` : 'energy —');
-    setText('presence-reason', `Rule: ${presence.rule}. Model: ${presence.model}.`);
+    const trackText = tracks.map(track =>
+      `${track.id || track.source} ${Number(track.distance_cm || 0).toFixed(0)} cm`).join(' · ');
+    setText('presence-reason', `${tracks.length ? `Track: ${trackText}. ` : ''}Rule: ${presence.rule}. ${presence.occupancy_note || ''}`);
     if (state.presenceError && !offlineEmpty) setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
   }
   if (alert.enabled != null) {
@@ -1897,31 +1909,36 @@ function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)
       || presence.gate === 'beyond_wall') return;
-  const distance = Number(presence.distance_cm) / 100;
-  if (!Number.isFinite(distance) || distance <= 0) return;
+  const tracks = Array.isArray(presence.tracks) && presence.tracks.length
+    ? presence.tracks
+    : [{ id: 'H1', distance_cm: presence.distance_cm,
+      confidence: presence.confidence, source: 'combined' }];
   const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
-  const point = toScreen(distance * Math.cos(yaw), distance * Math.sin(yaw));
-  const size = 0.5 * scale;
-  const color = presence.class === 'non-human'
-    ? [255, 170, 70]
-    : (presence.state === 'holding' ? [255, 210, 90] : [90, 255, 170]);
-  ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.14)`;
-  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 3]);
-  ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
-  ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
-  ctx.setLineDash([]);
-  ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.65)`;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(origin.x, origin.y);
-  ctx.lineTo(point.x, point.y);
-  ctx.stroke();
-  const label = `${String(presence.class || 'human').toUpperCase()} ${distance.toFixed(2)} m · `
-    + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
-  drawTag(ctx, point.x, point.y - size / 2 - 12, label,
-    `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
+  const colors = [[90, 255, 170], [102, 217, 255], [255, 209, 102]];
+  tracks.forEach((track, index) => {
+    const distance = Number(track.distance_cm) / 100;
+    if (!Number.isFinite(distance) || distance <= 0) return;
+    const point = toScreen(distance * Math.cos(yaw), distance * Math.sin(yaw));
+    const size = 0.5 * scale;
+    const color = colors[index % colors.length];
+    ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.14)`;
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+    ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.65)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+    const label = `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m · `
+      + `${Math.round(Number(track.confidence || presence.confidence || 0) * 100)}%`;
+    drawTag(ctx, point.x, point.y - size / 2 - 12 - index * 18, label,
+      `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
+  });
 }
 
 function selectedPointSet() {
@@ -2363,7 +2380,60 @@ function drawHuman3D(ctx, width, height, radius) {
   ctx.fillText(text, labelPoint.x + 6, labelPoint.y - 4);
 }
 
+function update3DScene() {
+  if (!window.Room3D || !window.Room3D.isReady()) return false;
+  const points = state.points
+    .filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null)
+    .map(scaledPoint)
+    .map(point => {
+      const selected = selectedPointSet().has(Number(point.point_index));
+      const base = point.range_source === 'tof' ? [80, 220, 255] : [255, 170, 60];
+      return {
+        x: Number(point.x_mm) / 1000,
+        y: Number(point.y_mm) / 1000,
+        z: Number(point.z_mm) / 1000,
+        source: point.range_source,
+        color: selected ? [255, 255, 255] : base,
+      };
+    });
+  const boxes = currentBoxes().map((box, index) => ({
+    ...box,
+    index: index + 1,
+    color: boxColor(box),
+  }));
+  const presence = state.presence;
+  let tracks = [];
+  if (presence && ['present', 'holding'].includes(presence.state)) {
+    tracks = Array.isArray(presence.tracks) && presence.tracks.length
+      ? presence.tracks
+      : (presence.distance_cm != null ? [{
+        id: 'H1', source: 'combined', class: 'human',
+        distance_cm: Number(presence.distance_cm),
+        energy: Number(presence.energy || 0),
+        confidence: Number(presence.confidence || 0),
+      }] : []);
+  }
+  window.Room3D.update({
+    points,
+    boxes,
+    selectedId: state.selectedBoxId,
+    roomOutline: state.priorVisible ? (state.roomOutline || []) : [],
+    priorVisible: state.priorVisible,
+    viewMode: state.viewMode,
+    showDistances: state.showDistances,
+    showAxis: state.showAxis,
+    tracks,
+    presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
+  });
+  return true;
+}
+
 function drawCloud() {
+  if (update3DScene()) return;
+  drawCloudCanvas();
+}
+
+function drawCloudCanvas() {
   const canvas = $('cloud');
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
@@ -2762,6 +2832,10 @@ $('view-both').addEventListener('click', () => { state.viewMode = 'both'; drawCl
 $('view-blocks').addEventListener('click', () => { state.viewMode = 'blocks'; drawCloud(); drawTopDown(); });
 $('view-points').addEventListener('click', () => { state.viewMode = 'points'; drawCloud(); drawTopDown(); });
 $('view-top').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) {
+    window.Room3D.setCamera('top');
+    return;
+  }
   state.viewYaw = 0;
   state.viewPitch = 1.15;
   state.zoom = 1.4;
@@ -2853,19 +2927,59 @@ $('select-through').addEventListener('change', () => {
   state.selectThrough = $('select-through').checked;
 });
 $('scan-select').addEventListener('change', () => loadPoints($('scan-select').value));
-$('rotate-left').addEventListener('click', () => { state.viewYaw -= 0.2; drawCloud(); });
-$('rotate-right').addEventListener('click', () => { state.viewYaw += 0.2; drawCloud(); });
-$('pitch-up').addEventListener('click', () => { state.viewPitch = Math.min(1.2, state.viewPitch + 0.15); drawCloud(); });
-$('pitch-down').addEventListener('click', () => { state.viewPitch = Math.max(-1.2, state.viewPitch - 0.15); drawCloud(); });
-$('zoom-in').addEventListener('click', () => { state.zoom = Math.min(4, state.zoom * 1.2); drawCloud(); });
-$('zoom-out').addEventListener('click', () => { state.zoom = Math.max(0.25, state.zoom / 1.2); drawCloud(); });
+$('rotate-left').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.orbit(-0.2); return; }
+  state.viewYaw -= 0.2; drawCloud();
+});
+$('rotate-right').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.orbit(0.2); return; }
+  state.viewYaw += 0.2; drawCloud();
+});
+$('pitch-up').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.pitch(-0.15); return; }
+  state.viewPitch = Math.min(1.2, state.viewPitch + 0.15); drawCloud();
+});
+$('pitch-down').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.pitch(0.15); return; }
+  state.viewPitch = Math.max(-1.2, state.viewPitch - 0.15); drawCloud();
+});
+$('zoom-in').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.zoom(1 / 1.2); return; }
+  state.zoom = Math.min(4, state.zoom * 1.2); drawCloud();
+});
+$('zoom-out').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.zoom(1.2); return; }
+  state.zoom = Math.max(0.25, state.zoom / 1.2); drawCloud();
+});
 $('reset-view').addEventListener('click', () => {
+  if (window.Room3D?.isReady()) { window.Room3D.setCamera('iso'); return; }
   state.viewYaw = -0.65;
   state.viewPitch = 0.55;
   state.zoom = 1.4;
   state.viewPanX = 0;
   state.viewPanY = 0;
   drawCloud();
+});
+document.querySelectorAll('[data-scene-layer]').forEach(button => {
+  button.addEventListener('click', () => {
+    const name = button.dataset.sceneLayer;
+    state.sceneLayers[name] = !state.sceneLayers[name];
+    button.classList.toggle('active', state.sceneLayers[name]);
+    window.Room3D?.setLayer(name, state.sceneLayers[name]);
+  });
+});
+$('scene-top').addEventListener('click', () => window.Room3D?.setCamera('top'));
+$('scene-iso').addEventListener('click', () => window.Room3D?.setCamera('iso'));
+$('scene-fit').addEventListener('click', () => window.Room3D?.setCamera('fit'));
+$('scene-fullscreen').addEventListener('click', () => window.Room3D?.toggleFullscreen());
+$('scene-demo').addEventListener('click', () => {
+  window.Room3D?.demo();
+  state.viewMode = 'both';
+  drawTopDown();
+});
+window.addEventListener('room3d-ready', () => {
+  drawCloud();
+  window.Room3D?.setCamera('iso');
 });
 $('apply-yaw-scale').addEventListener('click', applyYawScale);
 $('reset-yaw-scale').addEventListener('click', resetYawScale);
@@ -3087,6 +3201,10 @@ function bindTopDown() {
   }, { passive: false });
 }
 
+window.selectBoxById = selectBoxById;
+window.setSidebarOpen = setSidebarOpen;
+window.showToast = showToast;
+window.drawCloud = drawCloud;
 bindCanvas();
 bindTopDown();
 try {

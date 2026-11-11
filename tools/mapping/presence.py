@@ -25,7 +25,7 @@ class PresenceTracker:
     def __init__(self, confirm_frames=3, hold_s=6.0, min_cm=30.0,
                  max_cm=600.0, energy_threshold=40.0, history_limit=120,
                  beyond_margin_cm=50.0, no_target_hold_s=2.5,
-                 distance_spread_cm=20.0):
+                 distance_spread_cm=20.0, multi_separation_cm=40.0):
         self.confirm_frames = max(1, int(confirm_frames))
         self.hold_s = max(0.0, float(hold_s))
         self.min_cm = float(min_cm)
@@ -34,6 +34,7 @@ class PresenceTracker:
         self.beyond_margin_cm = max(0.0, float(beyond_margin_cm))
         self.no_target_hold_s = max(0.0, float(no_target_hold_s))
         self.distance_spread_cm = max(1.0, float(distance_spread_cm))
+        self.multi_separation_cm = max(10.0, float(multi_separation_cm))
         self._history = deque(maxlen=max(10, int(history_limit)))
         self._distance_history = deque(maxlen=5)
         self._state = "empty"
@@ -47,6 +48,10 @@ class PresenceTracker:
         self._last_target = None
         self._last_max_range = None
         self._last_spread = None
+        self._last_moving_cm = None
+        self._last_stationary_cm = None
+        self._last_moving_energy = None
+        self._last_stationary_energy = None
 
     def _decay(self, now, reason, hold_s=None):
         hold = self.hold_s if hold_s is None else max(0.0, float(hold_s))
@@ -73,12 +78,18 @@ class PresenceTracker:
         target = _number(hlk.get("target_state"))
         moving_energy = _number(hlk.get("moving_energy"))
         stationary_energy = _number(hlk.get("stationary_energy"))
+        moving_cm = _number(hlk.get("moving_distance_cm"))
+        stationary_cm = _number(hlk.get("stationary_distance_cm"))
         max_range = _number(max_range_cm)
         self._last_distance = distance
         self._last_energy = energy
         self._last_target = target
         self._last_max_range = max_range
         self._last_spread = None
+        self._last_moving_cm = moving_cm
+        self._last_stationary_cm = stationary_cm
+        self._last_moving_energy = moving_energy
+        self._last_stationary_energy = stationary_energy
 
         if scanning:
             self._confirm = 0
@@ -152,20 +163,85 @@ class PresenceTracker:
         })
         return self.snapshot()
 
+    def _track(self, source, distance, energy):
+        return {
+            "id": source,
+            "source": source,
+            "class": "human",
+            "distance_cm": round(float(distance), 1),
+            "energy": int(energy) if energy is not None else None,
+            "confidence": round(min(0.95, 0.55 + min(1.0, float(energy) / 180.0) * 0.30), 3),
+        }
+
+    def _build_tracks(self):
+        if self._state not in ("present", "holding"):
+            return []
+        moving_ok = (self._last_moving_cm is not None
+                     and self.min_cm <= self._last_moving_cm <= self.max_cm
+                     and (self._last_moving_energy or 0) >= self.energy_threshold)
+        stationary_ok = (self._last_stationary_cm is not None
+                         and self.min_cm <= self._last_stationary_cm <= self.max_cm
+                         and (self._last_stationary_energy or 0) >= self.energy_threshold)
+        tracks = []
+        if moving_ok:
+            tracks.append(self._track("moving", self._last_moving_cm,
+                                      self._last_moving_energy))
+        if stationary_ok:
+            tracks.append(self._track("stationary", self._last_stationary_cm,
+                                      self._last_stationary_energy))
+        if len(tracks) == 2:
+            separation = abs(tracks[0]["distance_cm"] - tracks[1]["distance_cm"])
+            if separation < self.multi_separation_cm:
+                return [{
+                    "id": "combined",
+                    "source": "combined",
+                    "class": "human",
+                    "distance_cm": round((tracks[0]["distance_cm"] + tracks[1]["distance_cm"]) / 2, 1),
+                    "energy": max(tracks[0]["energy"] or 0, tracks[1]["energy"] or 0),
+                    "confidence": round(max(tracks[0]["confidence"], tracks[1]["confidence"]), 3),
+                }]
+            tracks.sort(key=lambda item: item["distance_cm"])
+            tracks[0]["id"] = "H1"
+            tracks[1]["id"] = "H2"
+            return tracks
+        if tracks:
+            return tracks
+        if (self._last_distance is not None
+                and self.min_cm <= self._last_distance <= self.max_cm):
+            return [self._track("combined", self._last_distance,
+                                self._last_energy)]
+        return []
+
     def snapshot(self):
         presence_class = ("human" if self._state in ("present", "holding")
                           else "unknown" if self._state in ("confirming", "scanning")
                           else "empty")
+        tracks = self._build_tracks()
+        occupancy = len(tracks)
         return {
             "state": self._state,
             "class": presence_class,
             "confidence": round(self._confidence, 3),
+            "tracks": tracks,
+            "occupancy": occupancy,
+            "occupancy_label": ("empty" if occupancy == 0 else
+                                "1 orang" if occupancy == 1 else
+                                f"{occupancy}+ orang"),
+            "occupancy_note": ("Estimasi dari target moving/stationary HLK; "
+                               "bukan people counter dan tidak punya sudut."),
+            "multi_separation_cm": self.multi_separation_cm,
             "distance_cm": (round(self._last_distance, 1)
                             if self._last_distance is not None else None),
             "energy": (int(self._last_energy)
                        if self._last_energy is not None else None),
             "target_state": (int(self._last_target)
                              if self._last_target is not None else None),
+            "moving_distance_cm": self._last_moving_cm,
+            "stationary_distance_cm": self._last_stationary_cm,
+            "moving_energy": (int(self._last_moving_energy)
+                              if self._last_moving_energy is not None else None),
+            "stationary_energy": (int(self._last_stationary_energy)
+                                  if self._last_stationary_energy is not None else None),
             "confirm_frames": self._confirm,
             "confirm_required": self.confirm_frames,
             "reason": self._last_reason,
@@ -178,7 +254,7 @@ class PresenceTracker:
             "no_target_hold_s": self.no_target_hold_s,
             "rule": ("HLK valid, target>0, energy>=40, 30<=distance<=600 cm, "
                      "3 frames, distance<=wall+50 cm"),
-            "model": "rule baseline (DL not deployed)",
+            "model": "rule baseline + dual-track occupancy estimate (DL separate)",
             "history": list(self._history),
         }
 
@@ -196,3 +272,7 @@ class PresenceTracker:
         self._last_target = None
         self._last_max_range = None
         self._last_spread = None
+        self._last_moving_cm = None
+        self._last_stationary_cm = None
+        self._last_moving_energy = None
+        self._last_stationary_energy = None

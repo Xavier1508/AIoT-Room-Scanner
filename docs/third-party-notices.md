@@ -1,5 +1,12 @@
 # Third-party notices
 
+## Three.js
+
+`tools/mapping/static/vendor/three.module.js` and `OrbitControls.js` are
+vendored from Three.js **0.160.0** (MIT license, license text in
+`tools/mapping/static/vendor/LICENSE`). They are served locally so the 3D
+dashboard works without an internet connection.
+
 ## ESP_TF / TensorFlow Lite for Microcontrollers
 
 `lib_deps = nickjgniklu/ESP_TF@2.1.1` supplies TensorFlow Lite for

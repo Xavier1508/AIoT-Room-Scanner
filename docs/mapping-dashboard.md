@@ -213,6 +213,21 @@ matching the 2D plan. The previous projection put +Y downward, which made the
 near-top view with X horizontal, Y vertical (plan) and Z height. The legend
 below the map states the axis convention.
 
+**WebGL 3D view:** the 3D panel is now a local Three.js 0.160 scene (vendored,
+no CDN) with orbit/pan/zoom, camera presets **Top / Iso / Fit / Full**, layer
+toggles for points, walls, priors, objects, labels and grid, click-to-select
+box labels, a floor grid and a 2D-canvas fallback if WebGL is unavailable. The
+**Demo** button activates all layers, sets the isometric camera and closes the
+sidebar. The 2D editor remains a canvas because it is the precise
+resize/prior editor.
+
+**Dual-track occupancy estimate:** the HLK status exposes separate moving and
+stationary distances/energies. When both are valid and separated by at least
+40 cm, the dashboard draws **H1/H2** markers and labels the occupancy as
+`2+ orang (estimasi)`. Closer targets merge into one marker. This is an
+occupancy estimate from one radar; HLK has no angle and is not a true
+people counter. Two side-by-side people at the same distance remain one marker.
+
 **Scan direction:** the scan is labelled from **−60° on the chair side** →
 fan → bed/wardrobe → **+60°**, clockwise. The top-down view draws the FOV
 boundaries and `start −60° (kursi)` / `end +60° (kasur/lemari)` labels. The
@@ -448,7 +463,10 @@ reports `beyond_wall`, clears the human marker immediately and the dashboard
 draws a small orange `HLK beyond wall` diagnostic instead. A valid HLK target
 with no `target_state` uses a shorter 2.5 s hold; three stable distance frames
 are required. The **AI / Presence** tab has a **Clear presence** button and
-shows the gate reason, wall distance and distance spread.
+shows the gate reason, wall distance, distance spread, per-track list and an
+**estimasi orang** badge. The dual-track heuristic uses the HLK moving and
+stationary distances separately; it is an occupancy estimate, not a people
+counter.
 
 ## Endpoints
 
