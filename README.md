@@ -2,14 +2,17 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware berjalan terverifikasi: **0.5.0-sequential-scan**, termasuk pemilihan SSID dari
-pemindaian radio ESP32-S3 (lihat status proyek untuk hasil terbaru).
-Firmware ini menambahkan sensor health/error-rate, HLK di kartu sensor, fine jog
-5°/25 µs, scan envelope ±45°/500–950 µs, sequential power guard (servo/stepper
-tidak bergerak bersamaan), dan buzzer parkir 75→30 cm yang mute saat scan.
-Dashboard PC terpisah untuk kalibrasi, scan, dan point cloud 3D isometrik:
-[docs/mapping-dashboard.md](docs/mapping-dashboard.md). Training deep learning
-belum dijalankan; ESP32 hanya collector/control. CDM324 tetap ditunda.
+Firmware terpasang saat ini: **0.7.3-tof-obstruction**. Build siap OTA:
+**0.8.0-ml-empty-human**, yang menambahkan classifier 1D-CNN **empty/human** di
+ESP32-S3 melalui TensorFlow Lite Micro (model int8 14.584 byte, rule HLK tetap
+menjadi fallback buzzer/safety), di samping
+pemilihan SSID pasif, sensor health/error-rate, HLK, fine jog 5°/25 µs,
+scan envelope **±60°/500–950 µs**, sequential power guard (servo/stepper tidak
+bergerak bersamaan), dan buzzer parkir 75→30 cm yang mute saat scan.
+Dashboard PC terpisah untuk kalibrasi, scan, point cloud 3D/2D, Mirror Y,
+auto-align dinding, editor prior, dan ekspor PLY:
+[docs/mapping-dashboard.md](docs/mapping-dashboard.md). Deploy model TFLite
+Micro: [docs/ml-deployment.md](docs/ml-deployment.md). CDM324 tetap ditunda.
 Status hasil aktual: [docs/project-state.md](docs/project-state.md) dan
 [docs/test-report.md](docs/test-report.md). Jangan menyamakan build dengan lulus hardware.
 Notices kode register VL53L1X: [docs/third-party-notices.md](docs/third-party-notices.md).
@@ -254,8 +257,11 @@ Pop-Location
 Buka `http://127.0.0.1:8000/`. Dashboard menyediakan kalibrasi HC/ToF, scan
 grid 5°/25 µs atau 10°/50 µs secara **sequential** (stepper hold → servo attach
 → sweep vertikal → servo detach → stepper lagi), penyimpanan
-`research/mapping/scans/`, dan viewer point cloud 3D isometrik berbasis canvas
-dengan overlay presence HLK.
+`research/mapping/scans/`, viewer point cloud 3D isometrik + top-down 2D,
+**Mirror Y** default ON, **Auto luruskan** dinding, wall-constrained fit untuk
+objek besar (kasur/meja), editor prior satu-sisi, Ctrl+Z, ekspor **PLY + JSON**
+ke `research/mapping/scenes/`, serta overlay presence HLK dan classifier DL
+empty/human live dari ESP32.
 
 Untuk restart otomatis bila server PC crash, jalankan
 `.\tools\ops\start-mapping.cmd` dan biarkan jendelanya terbuka. Ini **berbeda**

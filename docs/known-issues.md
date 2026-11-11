@@ -197,16 +197,20 @@ export is for 3D classification/segmentation.
 only after 3 confirmed HLK frames with `energy>=40` and 30–600 cm. It is
 suppressed during scan mode and holds for 6 s after the target disappears. It
 is not a trained human/non-human classifier and can be triggered by other
-moving targets. The DL model is not deployed; non-human live markers wait for
-the 3-class model and a true held-out session.
+moving targets. Firmware `0.8.0` prepares a separate v2 empty/human DL
+classifier (14,584-byte int8 1D CNN, 97.38% ± 5.24% contiguous-block
+validation), but the live human marker and buzzer remain rule-based until OTA
+and held-out validation. Non-human live markers wait for the 3-class model.
 
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%
 positive. A rule `max(moving_energy)>0` reached 100% on the same validation
-split, while the 1D CNN reached 82.7% (human recall 77.2%). Do not deploy the
-binary DL model as the primary detector; keep the rule for movement/presence.
-A meaningful DL target must be harder: human vs non-human, stationary-human
-presence, or activity classification, evaluated on a true held-out session.
+split, while the older 1D CNN reached 82.7% (human recall 77.2%) and was not
+deployed. The v2 model now uses contiguous 5-block validation and reaches
+97.38% ± 5.24%; it is prepared for firmware 0.8.0 as a **secondary classifier**,
+while the rule remains the primary movement/presence and buzzer path. A harder
+DL target remains human vs non-human, stationary-human presence, or activity
+classification on a true held-out session.
 
 The updated workbook maps the standard 5 V HC-SR04 to TRIG10/ECHO11 with the
 installed 1 kΩ + (1 kΩ+1 kΩ) divider, and VL53L1X to SDA8/SCL9 with optional

@@ -191,6 +191,21 @@ the PLY and dataset exporters. In scan `20261110T184241Z`, the fan-sized object
 `mirror-on-topdown-2d.png`, `mirror-off-topdown-2d.png` under
 `analysis/mapping/dashboard-20261110T184241Z/`.
 
+**Auto luruskan and wall-constrained objects:** `POST
+/api/mapping/scans/{id}/auto-align` searches a bounded ±5° rotation and scores
+measured walls by weighted angle residual, wall support, length, thickness,
+wall count, and whether a large low object can be snapped to a wall. It also
+penalizes extra/missing walls and large global rotations. The selected result
+is saved as `room.map_rotation_deg` with the residual shown in the UI. For scan
+`20261110T184241Z` it selected **-1.1°** with 3 walls and residual **1.61°**.
+The **Objek lurus** toggle (`room.snap_wall_objects`, default ON) re-fits a
+large low object to the nearest fitted wall angle within 30°, while small
+objects keep PCA. Bed #5 is `bed`, `-1.2°`, `angle_source=wall_snap`; fan #6 is
+`fan`, `81.8°`, `angle_source=pca`. The prior bed was removed, leaving **12
+blocks** (3 measured walls + bed + fan + 7 priors). Final scan evidence:
+`auto-align-bed-fan.png`, `auto-align-bed-fan-2d.png`,
+`block-list-auto-align.png`.
+
 **3D projection and axes:** the 3D view now uses +X right, +Y up and +Z up,
 matching the 2D plan. The previous projection put +Y downward, which made the
 3D view look vertically flipped. The default camera is an isometric view
@@ -258,9 +273,11 @@ selection:
 Annotations are stored per scan in
 `research/mapping/scans/<id>/annotations.json` and include labels, hidden,
 merges, point labels, label catalog, manual/prior boxes, room outline and room
-metadata. The current dense scan has a manual `fan` label, a prior bed and a
-prior wardrobe. The measured wall block is 3.06 m long because it includes the
-corner/side surface; the 2.7 m room prior is the intended rectangle.
+metadata. The current scan `20261110T184241Z` has measured labels `bed` (#5,
+wall-snapped) and `fan` (#6, PCA), plus prior wardrobe, desk, chair, partition
+and both doors. The prior bed was removed. The final map is 12 blocks:
+3 measured walls + bed + fan + 7 priors. The 2.70×2.51 m room outline is the
+prior rectangle aligned to the measured walls.
 
 **3D object dataset:** `tools/mapping/ml/export_pointcloud.py` exports point
 labels and object boxes:
@@ -304,10 +321,13 @@ The **AI / Presence** tab shows:
 - DL model metrics and a rule-vs-DL comparison table,
 - a live energy/distance trend with per-frame state dots.
 
-This is deliberately honest: the live prediction is the **rule baseline**.
-The binary DL model is not deployed because it scored 82.7% validation versus
-100% for `max(moving_energy)>0` on the same split. The panel is the integration
-point for the future 3-class `empty`/`human`/`non-human` model.
+The panel shows both paths: the live rule prediction and the live DL result when
+firmware `0.8.0` is running. The deployed model is the **v2 binary empty/human**
+1D CNN (int8, 14,584 bytes) with **97.38% ± 5.24%** contiguous-block validation.
+The older 8,040-byte model was not deployed because it scored 82.7% versus 100%
+for `max(moving_energy)>0` on the same split. The rule remains the
+buzzer/safety fallback; the panel is also the integration point for the future
+3-class `empty`/`human`/`non-human` model.
 
 ## Deep learning boundary
 
@@ -330,24 +350,25 @@ py -3 tools/mapping/ml/collect.py --label human --duration 60
 Training runs on the PC:
 
 ```powershell
-py -3 tools/mapping/ml/train.py --data research/mapping/ml --window 32 --stride 8
+py -3 tools/mapping/ml/train.py --data research/mapping/ml --window 32 --stride 4 --cv-blocks 5
 ```
 
-It trains a small 1D CNN, evaluates it, and exports `model.tflite`,
-`model_data.h`, labels, normalization and metrics. The ESP32 inference layer is
-not integrated yet; it will run only when the arm is parked, never during the
-scan. A quantized model under ~50 KB plus an ~80 KB arena fits the current
-~230 KB free heap without PSRAM. The current scan still produces a geometric
-HC/ToF point cloud; TinyML is for HLK presence/activity, not point-cloud
+It trains a small 1D CNN, evaluates contiguous time blocks, and exports
+`model.tflite`, `model_data.h`, `model_metadata.h`, labels, normalization and
+metrics. ESP32 inference is integrated through **ESP_TF 2.1.1 / TFLite Micro**
+and runs only when sensors are valid, the arm is parked and no scan/motion is
+active; it needs ~6.4 s to fill a 32-frame window. A 64 KiB arena plus the
+14,584-byte int8 model fits without PSRAM. The current scan still produces a
+geometric HC/ToF point cloud; TinyML is for HLK presence, not point-cloud
 geometry.
 
-**Current ML baseline:** the first binary `empty vs human` dataset (5,576
-frames, 1,387 windows) trained a 1D CNN to 82.7% validation accuracy, while a
-simple `max(moving_energy)>0` rule reached 100% on the same split. The rule is
-kept for movement/presence; the DL model is a pipeline baseline, not the
-primary detector. A meaningful DL target must be harder: human vs non-human,
-stationary-human presence, or activity classification, evaluated on a true
-held-out session.
+**Current ML v2:** the binary `empty vs human` dataset (5,576 frames, 1,379
+windows) trained the deployed 1D CNN to **97.38% ± 5.24%** on contiguous
+5-block validation; the older 8,040-byte model scored 82.7% and was not
+deployed. The rule `max(moving_energy)>0` remains the buzzer/safety fallback;
+the DL is a separate classifier shown in the AI/Presence tab. A future harder
+target is human vs non-human or activity classification on a true held-out
+session.
 
 ## Prior editor, block sidebar and dataset export
 
@@ -394,8 +415,8 @@ without resizing it, and clicking a block opens the panel on the **Edit** tab.
   `research/mapping/scenes/<scan>/<utc>.ply`. The PLY contains all filtered scan
   points (cyan ToF, orange HC) and every measured/prior box as 8 vertices +
   12 triangles, coloured by label. The sidecar records counts, yaw/rotation,
-  mirror state/centre, box geometry and the SHA-256 of the PLY. The status line
-  shows the exact path.
+  mirror state/centre, wall-snap state, box geometry and the SHA-256 of the
+  PLY. The status line shows the exact path.
 - **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
   and the selected-box panel shows the exact coordinates. The **Skala sumbu**
   checkbox toggles the ticks. Every save/nudge/resize/export action also shows a
@@ -443,8 +464,9 @@ shows the gate reason, wall distance and distance spread.
 - `GET /api/mapping/scans/{id}/reconstruct?yaw_scale=1.00&map_rotation=0.0&mirror_y=1&mirror_center=0.355`
 - `GET /api/mapping/scans/{id}/annotations`
 - `POST /api/mapping/scans/{id}/annotations`
+- `POST /api/mapping/scans/{id}/auto-align` (body `{yaw_scale, mirror_y, mirror_center_m, search_min, search_max}`)
 - `POST /api/mapping/scans/{id}/export`
-- `POST /api/mapping/scans/{id}/scene` (body `{yaw_scale, map_rotation, mirror_y, mirror_center_m}`; writes PLY + JSON)
+- `POST /api/mapping/scans/{id}/scene` (body `{yaw_scale, map_rotation, mirror_y, mirror_center_m, snap_wall_objects}`; writes PLY + JSON)
 - `GET /api/mapping/dataset`
 - `POST /api/mapping/presence/reset`
 - `GET /api/mapping/calibration`

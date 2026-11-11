@@ -1,6 +1,8 @@
 # Scope and authorization
 
-Project: AIoT ESP32-S3 room-scanner hardware bring-up, not 3D/AI implementation.
+Project: AIoT ESP32-S3 room-scanner hardware bring-up plus local 3D mapping
+and an on-device TinyML empty/human classifier. No cloud AI, external
+publication, or unrelated device testing is in scope.
 
 The user authorizes developing/building this workspace and identifying/flashing
 their connected ESP32-S3, followed by local-network diagnostics and authenticated

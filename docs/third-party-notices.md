@@ -1,5 +1,13 @@
 # Third-party notices
 
+## ESP_TF / TensorFlow Lite for Microcontrollers
+
+`lib_deps = nickjgniklu/ESP_TF@2.1.1` supplies TensorFlow Lite for
+Microcontrollers and Espressif ESP-NN kernels for the on-device empty/human
+classifier. ESP_TF is MIT-licensed; TensorFlow Lite Micro is Apache-2.0.
+The generated `src/ml_model_data.h` and `src/ml_model_metadata.h` are produced
+from this project's own training data by `tools/mapping/ml/train.py`.
+
 ## VL53L1X register sequence
 
 `src/sensors.cpp` contains a small self-contained register-level VL53L1X

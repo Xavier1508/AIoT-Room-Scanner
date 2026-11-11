@@ -2,31 +2,35 @@
 
 Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-`0.7.3-tof-obstruction` is installed; it keeps the ±60° room scan and adds
-near-reflector detection. The ToF near reflector was the protective lens cover;
-after it was removed, ToF is valid at ~2.4 m. The **current full fine scan**
-`20261110T184241Z` completed **475/475 points (473 valid, 452 ToF + 21 HC)** in
-**33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs over 500–950 µs,
-**8 samples/point**, dwell 500 ms and 250 ms sample interval. Reconstruction
-with **yaw 1.00 / map rotation 0.0°** produced 450 filtered points, 23 mount
-points, 83 ceiling points in the default mirrored view (63 pre-mirror),
-**3 measured walls + 2 measured objects + 8 priors**
-(13 blocks). The new room outline is **2.70×2.51 m = 6.78 m²** (total 9.03 m²
-with the bathroom/niche priors). The prior layout was transferred from
-`20261110T124935Z` with a translation of **dx=-0.039 m, dy=+0.137 m** based on
-the wall-centre delta. **Mirror Y is ON by default** because the scanner yaw
-axis is opposite the prior/2D frame: the measured scan is flipped vertically
-about the prior room centre (`y=0.355 m`). Before the fix the fan-sized object
-#6 sat inside the bed prior; after mirroring #6 is at `(0.806, 1.206)` and the
-bed-sized object #5 at `(1.427, -0.029)`. Previous scan `20261110T124935Z`
-remains historical: 475/475 points (472 valid, 445 ToF + 27 HC). The dashboard
-renders a full-width
-top-down 2D map and 3D isometric view, wall-first reconstruction, per-scan room
-prior, custom labels, box/point selection and a rule-based human capsule. ToF
-is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
+Installed firmware is `0.7.3-tof-obstruction`; **prepared firmware
+`0.8.0-ml-empty-human`** adds the TFLite Micro empty/human classifier and is
+ready for OTA when the board is back online. The ToF near reflector was the
+protective lens cover; after removal, ToF is valid at ~2.4 m. The **current
+full fine scan** `20261110T184241Z` completed **475/475 points (473 valid,
+452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
+over 500–950 µs, **8 samples/point**, dwell 500 ms and 250 ms sample interval.
+Reconstruction with **yaw 1.00**, **Mirror Y ON**, and **auto-align rotation
+-1.1°** produced 450 filtered points, 23 mount points, 60 ceiling points in the
+final auto-aligned view, **3 measured walls + 2 measured objects
+(bed, fan) + 7 priors = 12 blocks**. The measured bed #5 is labeled `bed` and
+wall-snapped to `-1.2°`; the fan #6 remains `81.8°` (physically angled). The
+prior bed was removed; only the measured bed remains. Wall residual after
+auto-align is **1.61°** with 3 walls. The new room outline is
+**2.70×2.51 m = 6.78 m²** (total 9.03 m² with the bathroom/niche priors). The
+prior layout was transferred from `20261110T124935Z` with a translation of
+**dx=-0.039 m, dy=+0.137 m**. **Mirror Y is ON by default** because the scanner
+yaw axis is opposite the prior/2D frame: the scan is flipped about the prior
+room centre (`y=0.356 m`). The dashboard renders full-width 3D/2D views,
+wall-first reconstruction, per-scan priors, custom labels, auto-align,
+wall-constrained object fit, box/point selection, a rule-based human capsule and
+the live DL classifier. ToF is `OK` (`near_reflector=false`); scans use ToF with
+HC fallback. The DL model is 14,584 bytes int8, 32-frame/6-feature, with
+**97.38% ± 5.24%** contiguous-block validation; the rule path remains the
+buzzer/safety fallback.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
+- ML deployment/build/OTA checklist: [ml-deployment.md](ml-deployment.md).
 - ESP32-S3 rev0.2, 16 MB quad flash, native USB Serial/JTAG COM9 identified.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
@@ -39,6 +43,14 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
   sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
   test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
+- **Prepared firmware: `0.8.0-ml-empty-human`**, build
+  `analysis/platformio/build-20261111T044748131Z/firmware.bin`, **935,552
+  bytes**, SHA-256
+  `109ddfaccf522b38e3914dd6a78158a7bc6a37a0de5f910b0df787a2ee32e763`.
+  It adds ESP_TF 2.1.1 / TFLite Micro, a 64 KiB tensor arena and the int8
+  empty/human 1D-CNN (14,584 bytes). RAM **116,480 bytes (35.5%)**, flash
+  **14.3%**. OTA/live verification is pending because the board was offline;
+  see `docs/ml-deployment.md`.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -58,7 +70,7 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 56 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 60 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -275,6 +287,13 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   rule-separable; the DL model is **not deployed** as the primary detector.
   Artifacts: `research/mapping/ml/model-empty-human/`; evidence:
   `analysis/mapping/ml-training-20261109T193000Z/`.
+- **v2 binary model prepared for deployment:** 32-frame/6-feature 1D CNN,
+  contiguous 5-block validation **97.38% ± 5.24%**, int8 **14,584 bytes**,
+  classes `empty/human`. Firmware `0.8.0-ml-empty-human` uses ESP_TF 2.1.1 /
+  TFLite Micro with a 64 KiB arena; `/api/status.ml` exposes class, confidence,
+  latency, inference count, arena use and mute reason. Rule HLK remains the
+  buzzer/safety fallback. OTA/live verification pending because the board was
+  offline; see `docs/ml-deployment.md`.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -342,15 +361,18 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   toggleable, per-scan data, not hard-coded, and excluded from training until
   confirmed. The newer full scan `20261110T184241Z` re-measures the room as
   **2.70×2.51 m = 6.78 m²** (total 9.03 m²), keeps 3 measured walls, and finds
-  two measured objects: **#5 1.92×1.20×0.60 m** at `(1.427, 0.741)` with 65
-  points and **#6 0.51×0.45×0.54 m** at `(0.833, -0.526)` with 33 points before
-  mirroring. The old priors were translated by `dx=-0.039 m`, `dy=+0.137 m`;
-  #6 matches the old fan-sized measured object within 6 cm, supporting that
-  transfer. **Mirror Y defaults ON** and flips the measured scan about the prior
-  room-centre (`mirror_center_m=0.355`); after mirroring #6 is at
-  `(0.806, 1.206)` and #5 at `(1.427, -0.029)`, so #6 no longer penetrates the
-  bed prior. The setting is stored per scan in `room.mirror_y` and used by the
-  scene/dataset exporters.
+  two measured objects: **bed #5** at `(1.346, 0.004)` with 68 points and
+  **fan #6** at `(0.822, 1.254)` with 33 points in the final mirrored view.
+  The old priors were translated by `dx=-0.039 m`, `dy=+0.137 m`; #6 matches
+  the old fan-sized measured object within 6 cm, supporting that transfer.
+  **Mirror Y defaults ON** about the prior room-centre
+  (`mirror_center_m=0.356`). **Auto luruskan** searched ±5° and selected
+  **-1.1°** (3 walls, residual 1.61°). The bed is labeled `bed` and the
+  wall-constrained fit snapped it to **-1.2°** (parallel to the dominant wall);
+  the fan remains at **81.8°** because it is small and physically angled. The
+  prior bed was removed, leaving **12 blocks** (3 measured walls + bed + fan +
+  7 priors). Settings are stored per scan in `room.mirror_y`,
+  `room.mirror_center_m`, `room.map_rotation_deg` and `room.snap_wall_objects`.
 - **Near-field / mount guard:** returns closer than **40 cm** are excluded;
   low returns below the sensor plane inside **75 cm** and below-floor returns
   are also removed. This eliminates the table/mount corners that previously
@@ -374,8 +396,9 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   6 s hold. The AI/Presence tab shows class, confidence, distance, energy,
   actuator status, a live energy/distance trend and rule-vs-DL metrics. The 3D
   view draws a 1.7 m human capsule; the top-down view draws a highlighted box,
-  leader and live distance. Scan mode suppresses the marker. This is the rule
-  baseline; DL is not deployed. UI check screenshots:
+  leader and live distance. Scan mode suppresses the marker. This marker is the
+  rule baseline; the separate v2 DL empty/human classifier is prepared for
+  firmware 0.8.0 and does not drive the marker/buzzer. UI check screenshots:
   `analysis/mapping/dashboard-20261110Tpresence/human-capsule-ui-check-v2.png`
   and `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`.
 - A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
@@ -424,7 +447,7 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 56 Python pass. Evidence:
+  presence. Tests: 87 C++ + 60 Python pass. Evidence:
   `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
   `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
   `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,
@@ -439,16 +462,16 @@ is `OK` (`near_reflector=false`); scans use ToF with HC fallback.
 475/475 points, 3 measured walls + 2 measured objects + 8 transferred priors,
 per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
-PLY scene export, Mirror Y toggle (default ON) and per-run clean/dirty CSV
-export. Remaining work: confirm the two measured objects (especially #5 at
-`1.427, -0.029` in the mirrored view, 1.92×1.20×0.60 m, likely the bed or a
-large desk) and the transferred prior positions, then export the first
-**clean** dataset run after the labels are confirmed. The PLY scene is
-`research/mapping/scenes/20261110T184241Z/20261110T193522Z.ply` (Mirror Y ON).
-For DL, use the per-run `points.csv`/`objects.csv` under
-`research/mapping/dataset/clean/` as the first 3D-object dataset; the HLK
-`empty`/`human`/`non-human` time-series model remains a separate later task.
-Only deploy DL if it beats the rule on a true held-out session.
+PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
+object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
+and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Remaining work:
+when the board is back, OTA `0.8.0-ml-empty-human`, verify live DL empty/human,
+record screenshots/metrics, then export the first **clean** dataset run. The
+final mapping PLY is
+`research/mapping/scenes/20261110T184241Z/20261111T045800Z.ply` (Mirror Y ON,
+auto-align -1.1°, wall snap ON, 12 boxes). The DL model is
+`research/mapping/ml/model-empty-human-v2/`; deployment steps are in
+`docs/ml-deployment.md`. The rule path remains the buzzer/safety fallback.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
@@ -468,7 +491,7 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
 
 ## Evidence and storage handoff
 
-- Research CLI integrity verification: **115 stored artifacts checked, 0 failures**.
+- Research CLI integrity verification: **125 stored artifacts checked, 0 failures**.
   Evidence 8 = current build manifest; 9 = upload; 10 = USB verification;
   11 = actual passive scan; 12 = live scan/stop; 13/14 = host tests;
   15 = intermediate-retention cleanup; 16 = current application binary;
@@ -512,7 +535,12 @@ and removed: 897 files / 6,188,429 bytes. No other global packages were deleted.
   108 = new full scan top-down 2D; 109 = new full scan block list;
   110 = new full scan reconstruction summary; 111 = new full scan PLY scene
   (pre-mirror); 112 = Mirror Y ON full map; 113 = Mirror Y ON top-down 2D;
-  114 = Mirror Y OFF comparison; 115 = Mirror Y ON final PLY scene.
+  114 = Mirror Y OFF comparison; 115 = Mirror Y ON PLY scene (pre-auto-align);
+  116 = ML v2 metrics; 117 = ML v2 int8 TFLite; 118 = auto-align bed/fan full
+  map; 119 = auto-align bed/fan 2D; 120 = auto-align block list; 121 = AI panel
+  metrics offline; 122 = final auto-align PLY; 123 = firmware 0.8.0 build;
+  124 = firmware 0.8.0 manifest; 125 = PC parity check for firmware-style
+  empty/human preprocessing.
 - Build wrappers automatically removed object/ELF/cache scratch; the latest
   build alone purged **43,644,343 bytes** of disposable build state.
 - Purged **20 hash-matched intermediate binary copies / 4,025,840 bytes**.
