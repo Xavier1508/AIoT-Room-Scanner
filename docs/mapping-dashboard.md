@@ -230,8 +230,10 @@ is an occupancy estimate from one radar; HLK has no angle and is not a true
 people counter. Two side-by-side people at the same distance remain one marker.
 The dashboard mirrors the point cloud with the same yaw-scale → rotation →
 mirror order as reconstruction and the PLY exporter, and filters mount rows so
-it displays the same 450 points as the scene export. The top-down canvas is
-square and fits the measured room outline, with a 1 m scale bar.
+it displays the same 450 points as the scene export. The top-down canvas keeps
+its original 1200×700 viewport but auto-fits the measured room outline, so the
+map content fills the panel instead of shrinking into the centre; a 1 m scale
+bar and zoom-to-cursor are available.
 
 **Scan direction:** the scan is labelled from **−60° on the chair side** →
 fan → bed/wardrobe → **+60°**, clockwise. The top-down view draws the FOV

@@ -231,9 +231,9 @@ function addPresenceTrack(track, index, yawDeg) {
   state.groups.presence.add(arc);
   const label = addLabel(
     `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m`,
-    new THREE.Vector3(x, y, 2.15),
+    new THREE.Vector3(x, y, 2.05),
     index === 0 ? '#8dffc6' : '#9fe8ff',
-    0.82,
+    0.64,
   );
   label.renderOrder = 1003;
 }
@@ -291,7 +291,7 @@ function setCamera(mode = 'iso') {
   if (!state.ready) return;
   const { center, radius } = centerAndRadius();
   const fov = THREE.MathUtils.degToRad(state.camera.fov);
-  const margin = mode === 'top' ? 1.04 : 0.90;
+  const margin = mode === 'top' ? 1.00 : 0.74;
   const distance = Math.max(2.4, radius / Math.sin(fov / 2) * margin);
   state.camera.up.set(0, 0, 1);
   if (mode === 'top') {

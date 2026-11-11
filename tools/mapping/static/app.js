@@ -2232,12 +2232,12 @@ function drawTopDown() {
       + (Number.isFinite(total) ? ` · total ${total.toFixed(1)} m²` : '');
     ctx.font = '20px system-ui';
     const textWidth = ctx.measureText(text).width;
-    ctx.fillStyle = 'rgba(8,15,25,0.78)';
-    ctx.fillRect(14, 12, textWidth + 18, 32);
+    ctx.fillStyle = 'rgba(8,15,25,0.80)';
+    ctx.fillRect(12, 8, textWidth + 16, 28);
     ctx.fillStyle = 'rgba(120,255,200,0.95)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, 23, 29);
+    ctx.fillText(text, 20, 22);
     ctx.textBaseline = 'alphabetic';
   }
   const origin = toScreen(0, 0);

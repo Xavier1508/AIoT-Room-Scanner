@@ -305,8 +305,8 @@ button.busy::after {
 .scene3d-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  min-height: 420px;
+  aspect-ratio: 12 / 7;
+  min-height: 320px;
   background: #0a1019;
   border: 1px solid #2d425c;
   border-radius: 10px;
@@ -337,7 +337,7 @@ button.busy::after {
 .scene3d-toolbar-right { top: 8px; right: 8px; justify-content: flex-end; }
 .scene3d-toolbar button {
   pointer-events: auto;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
   padding: 5px 7px;
   border-radius: 6px;
@@ -373,9 +373,6 @@ button.busy::after {
 .scene3d-wrap:fullscreen .scene3d-status { font-size: 12px; }
 
 @media (min-width: 1100px) {
-  .map-main .map-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .scene3d-wrap { min-height: 520px; }
-}
-@media (min-width: 1500px) {
-  .scene3d-wrap { min-height: 600px; }
+  .map-main .map-grid { grid-template-columns: minmax(0, 1.28fr) minmax(0, 1fr); }
+  .scene3d-wrap { min-height: 380px; }
 }
