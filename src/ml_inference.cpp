@@ -160,13 +160,26 @@ void MlClassifier::update(uint32_t now, const HlkReading& reading,
   latencyMs_ = millis() - start;
   ++inferences_;
   lastInferenceMs_ = now;
+  // The deployed model exposes logits (Softmax stripped at conversion time);
+  // apply softmax in float32 here. This avoids the ESP_TF TFLite-Micro Softmax
+  // Prepare abort on this board while preserving the trained weights.
   const float outputScale = gOutput->params.scale;
   const int outputZero = gOutput->params.zero_point;
+  float logits[ML_CLASSES];
+  float maxLogit = -INFINITY;
+  for (int index = 0; index < ML_CLASSES; ++index) {
+    logits[index] = (gOutput->data.int8[index] - outputZero) * outputScale;
+    if (logits[index] > maxLogit) maxLogit = logits[index];
+  }
+  float total = 0.0f;
+  for (int index = 0; index < ML_CLASSES; ++index) {
+    logits[index] = expf(logits[index] - maxLogit);
+    total += logits[index];
+  }
   best_ = 0;
   float bestProbability = -1.0f;
   for (int index = 0; index < ML_CLASSES; ++index) {
-    const float probability =
-        (gOutput->data.int8[index] - outputZero) * outputScale;
+    const float probability = total > 0.0f ? logits[index] / total : 0.0f;
     if (probability > bestProbability) {
       bestProbability = probability;
       best_ = static_cast<uint8_t>(index);

@@ -5,19 +5,23 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 DATA_HEADER = ROOT / "src" / "ml_model_data.h"
 META_HEADER = ROOT / "src" / "ml_model_metadata.h"
-MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v2" / "model.tflite"
+MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v2-logits" / "model.tflite"
+TRAINED_MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v2" / "model.tflite"
 
 
 class MlAssets(unittest.TestCase):
-    def test_header_matches_trained_tflite(self):
+    def test_header_matches_deployed_logits_tflite(self):
         text = DATA_HEADER.read_text(encoding="utf-8")
         start = text.index("{") + 1
         end = text.index("};")
         raw = bytes(int(value.strip()) for value in text[start:end].replace("\n", " ").split(",")
                     if value.strip())
         self.assertEqual(len(raw), int(re.search(r"g_model_len = (\d+)", text).group(1)))
-        if MODEL.is_file():
-            self.assertEqual(raw, MODEL.read_bytes())
+        self.assertTrue(MODEL.is_file(), "deployed logits model is missing")
+        self.assertEqual(raw, MODEL.read_bytes())
+        if TRAINED_MODEL.is_file():
+            self.assertNotEqual(raw, TRAINED_MODEL.read_bytes(),
+                                "deployed model must have the Softmax op stripped")
         self.assertLess(len(raw), 50 * 1024)
 
     def test_metadata_contract(self):

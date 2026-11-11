@@ -244,7 +244,7 @@ to clear both point and block selection. **Middle-drag** pans, right-drag pans,
 wheel zooms and left-drag orbits.
 
 **AI alert and unified dataset:** the AI/Presence tab has an **AI Alert**
-toggle (firmware 0.8.2). When enabled, the DL class `human` with confidence
+toggle (firmware 0.8.3+). When enabled, the DL class `human` with confidence
 >= 0.80 drives the buzzer; rule HLK has priority when enabled. The final
 dataset can be collected as one long-format CSV
 (`research/mapping/dataset/aiot_room_dataset_v1.csv`) with `record_type`
@@ -375,8 +375,8 @@ The **AI / Presence** tab shows:
 - a live energy/distance trend with per-frame state dots.
 
 The panel shows both paths: the live rule prediction and the live DL result when
-firmware `0.8.0` is running. The deployed model is the **v2 binary empty/human**
-1D CNN (int8, 14,584 bytes) with **97.38% ± 5.24%** contiguous-block validation.
+firmware `0.8.3` is running. The deployed model is the **v2 binary empty/human**
+1D CNN (int8 logits, 14,528 bytes) with **97.38% ± 5.24%** contiguous-block validation.
 The older 8,040-byte model was not deployed because it scored 82.7% versus 100%
 for `max(moving_energy)>0` on the same split. The rule remains the
 buzzer/safety fallback; the panel is also the integration point for the future
@@ -411,7 +411,7 @@ It trains a small 1D CNN, evaluates contiguous time blocks, and exports
 metrics. ESP32 inference is integrated through **ESP_TF 2.1.1 / TFLite Micro**
 and runs only when sensors are valid, the arm is parked and no scan/motion is
 active; it needs ~6.4 s to fill a 32-frame window. A 64 KiB arena plus the
-14,584-byte int8 model fits without PSRAM. The current scan still produces a
+14,528-byte int8 logits model fits without PSRAM. The current scan still produces a
 geometric HC/ToF point cloud; TinyML is for HLK presence, not point-cloud
 geometry.
 

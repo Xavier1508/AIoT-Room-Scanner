@@ -197,10 +197,11 @@ export is for 3D classification/segmentation.
 only after 3 confirmed HLK frames with `energy>=40` and 30–600 cm. It is
 suppressed during scan mode and holds for 6 s after the target disappears. It
 is not a trained human/non-human classifier and can be triggered by other
-moving targets. Firmware `0.8.0` prepares a separate v2 empty/human DL
-classifier (14,584-byte int8 1D CNN, 97.38% ± 5.24% contiguous-block
-validation), but the live human marker and buzzer remain rule-based until OTA
-and held-out validation. Non-human live markers wait for the 3-class model.
+moving targets. Firmware `0.8.3-ml-alert-logits` runs the separate v2 empty/human
+DL classifier (14,528-byte int8 logits 1D CNN, 97.38% ± 5.24% contiguous-block
+validation); `ml_alert_on` lets the DL class drive the buzzer (human +
+confidence >= 0.80), while `hlk_alert_on` keeps rule priority. Non-human live
+markers wait for the 3-class model.
 
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%

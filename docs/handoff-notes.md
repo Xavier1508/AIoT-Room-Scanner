@@ -1,12 +1,13 @@
 # Handoff notes — AIoT ESP32-S3 room scanner
 
-Updated: 2026-11-11. Last confirmed firmware: `0.8.1-ml-empty-human`
-(TFLite Micro empty/human classifier), ML live (`ready=true`, `human` 99.6%,
-4 ms, 5,248-byte arena), sensors **OK**. `0.8.0` failed `ml_init_failed`
-because its resolver omitted `MEAN`; `0.8.1` adds it. Prepared
-`0.8.2-ml-alert` (AI-driven buzzer) built successfully, but its OTA attempt
-left the board offline; USB/power recovery is pending. The two 30-point
-validation scans are dirty (operator active); the clean full scan is deferred.
+Updated: 2026-11-11. Current firmware: `0.8.3-ml-alert-logits` (TFLite Micro
+empty/human classifier, deployed as logits with on-device softmax), ML live
+(`ready=true`, arena 5,128 bytes), AI alert command verified. `0.8.2-ml-alert`
+crashed at boot in the ESP_TF TFLite-Micro Softmax Prepare path; the OTA image
+read back byte-identical to the artifact, so it was a library/layout issue, not
+corruption. The fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`)
+and computes softmax in float32 on the ESP32. The two 30-point validation scans
+are dirty (operator active); the clean full scan is deferred.
 A unified master dataset exists at
 `research/mapping/dataset/aiot_room_dataset_v1.csv` (6,051 rows, timestamped,
 labels empty/human). The current
@@ -24,12 +25,11 @@ rotation `-1.1°`, measured bed/fan labels and no prior bed; see
 - Local 3D/2D mapping dashboard, per-scan priors, Mirror Y, auto-align, PLY
   export and a **TFLite Micro empty/human classifier**. The rule HLK path
   remains the buzzer/safety fallback.
-- Last confirmed firmware: `0.8.1-ml-empty-human`, 940,592 bytes (including
-  the 14,584-byte int8 model), RAM 116,520 bytes (35.6%), SHA-256
-  `3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
-  Prepared `0.8.2-ml-alert`: 941,920 bytes, SHA-256
-  `ca6bb359011b1e8d69bdb6e05c562a9c6c37267a258e430aa67007df6fe791bf`;
-  OTA/recovery pending. See `docs/ml-deployment.md`.
+- Installed firmware: `0.8.3-ml-alert-logits`, 942,032 bytes (including the
+  14,528-byte logits model), RAM 116,544 bytes (35.6%), SHA-256
+  `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
+  The earlier `0.8.1` artifact (940,592 bytes, SHA-256 `3d19fa9b…130e`) is the
+  known-good fallback image. See `docs/ml-deployment.md`.
 - USB-only power keeps the board web/API online but does not power the 5V
   sensor rail: HC stale, VL53L1X absent, HLK no data. Use the 9V jack for sensor
   calibration; do not connect USB and jack together.
@@ -102,10 +102,11 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Recover the board (USB/power) after the failed `0.8.2-ml-alert` OTA, verify
-   the image and AI-alert command, then record new empty/human sessions. When
-   the operator confirms the room is empty, run a clean full scan and regenerate
-   the unified master dataset.
+1. Switch to the 9V jack (USB disconnected), run `sensors_start`, and confirm
+   HC/ToF/HLK health. Then verify `ml_alert_on`: empty room = no beep, human +
+   confidence >= 0.80 = 700 ms beeps; `ml_alert_off` stops it. Record new
+   empty/human sessions. When the operator confirms the room is empty, run a
+   clean full scan and regenerate the unified master dataset.
 2. Confirm `/api/status.ml` becomes ready after ~6.4 s, record latency,
    arena use and the live empty/human result; check no brownout.
 3. Verify the final scan `20261110T184241Z`: Mirror Y ON, auto-align `-1.1°`,

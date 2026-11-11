@@ -2,11 +2,15 @@
 
 Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-Last confirmed firmware is **`0.8.1-ml-empty-human`**; the TFLite Micro
-empty/human classifier was live (`ready=true`, `human` 99.6%, 4 ms, 5,248-byte
-arena) and sensors ran with overall **OK**. Prepared **`0.8.2-ml-alert`** adds
-AI-driven buzzer alert, but its OTA attempt left the board offline; USB/power
-recovery is pending. The ToF near reflector was the
+**`0.8.3-ml-alert-logits` is the current firmware** (device-computed softmax
+over the model logits) and is installed from `app0`; `app1` holds the working
+`0.8.2` logits build from the same fix iteration. The TFLite Micro empty/human
+classifier is live (`ready=true`, arena 5,128 bytes) and the **AI alert**
+(`ml_alert_on/off`) is verified to accept commands; the buzzer behavior still
+needs the 9V sensor rail. `0.8.2-ml-alert` crashed at boot in the ESP_TF
+Softmax Prepare path; the image was read back byte-identical to the artifact,
+so this was a firmware/library layout issue, not a corrupt OTA. The ToF near
+reflector was the
 protective lens cover; after removal, ToF is valid at ~2.4 m. The **current
 full fine scan** `20261110T184241Z` completed **475/475 points (473 valid,
 452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
@@ -28,9 +32,9 @@ room centre (`y=0.356 m`). The dashboard renders full-width 3D/2D views,
 wall-first reconstruction, per-scan priors, custom labels, auto-align,
 wall-constrained object fit, box/point selection, a rule-based human capsule and
 the live DL classifier. ToF is `OK` (`near_reflector=false`); scans use ToF with
-HC fallback. The DL model is 14,584 bytes int8, 32-frame/6-feature, with
-**97.38% ± 5.24%** contiguous-block validation; the rule path remains the
-buzzer/safety fallback.
+HC fallback. The deployed DL model is the 14,528-byte int8 **logits** variant
+(softmax computed on-device), 32-frame/6-feature, with **97.38% ± 5.24%**
+contiguous-block validation; the rule path remains the buzzer/safety fallback.
 
 - Scope/physical checklist: [scope.md](scope.md).
 - Handoff notes for the next model/session: [handoff-notes.md](handoff-notes.md).
@@ -39,14 +43,21 @@ buzzer/safety fallback.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.8.1-ml-empty-human`**, installed through real LAN OTA
-  on 2026-11-11. Artifact:
+- **Running firmware: `0.8.3-ml-alert-logits`**, installed through real LAN OTA
+  on 2026-11-11 from `app0`. Artifact:
+  `analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
+  bytes**, SHA-256
+  `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
+  ML is `ready=true`, model `hlk-cnn-20261111T035836Z-logits`, arena
+  **5,128 bytes**. The AI alert command is verified; the 9V sensor/buzzer
+  acceptance test is pending.
+- **Known-good `0.8.1` artifact:** `0.8.1-ml-empty-human`,
   `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
   bytes**, SHA-256
   `3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
   `0.8.0` failed `ml_init_failed` because the TFLite Micro resolver was missing
-  `MEAN`; `0.8.1` adds it, ML is `ready=true`, live `human` 99.6%, latency
-  **4 ms**, arena **5,248 bytes**. Sensors are running with overall **OK**
+  `MEAN`; `0.8.1` adds it, ML was `ready=true`, live `human` 99.6%, latency
+  **4 ms**, arena **5,248 bytes**. Sensors ran with overall **OK**
   (HC/ToF/HLK all OK).
 - **Previous firmware (superseded): `0.7.3-tof-obstruction`**.
   Artifact:
@@ -56,17 +67,22 @@ buzzer/safety fallback.
   It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
   sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
   test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
-- **Prepared firmware: `0.8.2-ml-alert`**, build
-  `analysis/platformio/build-20261111T125903948Z/firmware.bin`, **941,920
+- **Installed firmware: `0.8.3-ml-alert-logits`**, build
+  `analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
   bytes**, SHA-256
-  `ca6bb359011b1e8d69bdb6e05c562a9c6c37267a258e430aa67007df6fe791bf`.
+  `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
   It adds `ml_alert_on/off`: when ML is ready, class `human`, confidence >=
   0.80 and the arm is idle/parked, the buzzer beeps every 700 ms; rule HLK has
-  priority and remains the safety fallback. Build/RAM/flash: **116,544 bytes
-  (35.6%)**, **14.4%**. OTA was attempted but the board went offline after the
-  upload/reboot and has not answered on 192.168.1.200 or `aiot-room.local`;
-  USB/power recovery is pending. Last confirmed running firmware is **0.8.1**
-  (ML live: `human` 99.6%, 4 ms, 5,248-byte arena).
+  priority and remains the safety fallback. The deployed model is the **logits**
+  variant (`src/ml_model_data.h` from
+  `research/mapping/ml/model-empty-human-v2-logits/`): the Softmax op is
+  stripped and the ESP32 computes a float32 softmax, because the ESP_TF
+  TFLite-Micro Softmax Prepare path aborted on this board. Host parity max
+  probability delta **0.0019**. Build/RAM: **116,544 bytes (35.6%)**; live
+  arena **5,128 bytes**. The earlier `0.8.2-ml-alert` artifact
+  (`analysis/platformio/build-20261111T125903948Z/firmware.bin`, 941,920 bytes,
+  SHA-256 `ca6bb359…91bf`) is retained as failure evidence; its flash readback
+  matched the artifact byte-for-byte, so the OTA was not corrupt.
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -310,6 +326,11 @@ buzzer/safety fallback.
   latency, inference count, arena use and mute reason. Live after OTA:
   `ready=true`, `human` **99.6%**, latency **4 ms**, arena **5,248 bytes**.
   Rule HLK remains the buzzer/safety fallback; see `docs/ml-deployment.md`.
+- **v2 logits redeploy (`0.8.3-ml-alert-logits`):** the deployed model drops the
+  Softmax op (14,528 bytes, `research/mapping/ml/model-empty-human-v2-logits/`)
+  because the ESP_TF Softmax Prepare path aborted on this board; softmax is
+  computed in float32 on-device. Arena **5,128 bytes**. Adds `ml_alert_on/off`
+  (human + confidence >= 0.80, 700 ms beep, rule HLK priority).
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -496,18 +517,18 @@ per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
 PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
-and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Last confirmed
-firmware `0.8.1` had ML live and sensors **OK**; prepared `0.8.2-ml-alert` adds
-AI-driven buzzer alert, but its OTA attempt left the board offline and recovery
-is pending. The two 30-point validation scans (`20261111T114928Z`,
+and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. **0.8.3-ml-alert-logits**
+is installed and ML is live (logits model, arena 5,128 bytes); the AI alert
+command is verified, but the buzzer/sensor acceptance test needs the 9V rail.
+The two 30-point validation scans (`20261111T114928Z`,
 `20261111T115125Z`) are **dirty** because the operator was active in the room;
 they are timing/health checks, not mapping evidence. A unified master dataset
 was generated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (6,051
 rows = 475 mapping points + 5,576 HLK frames, timestamped, labels empty/human;
 SHA-256 `6b3f8e02…f440`) and will be regenerated after the new empty/human
-sessions. Remaining work: recover/verify the board, record the new empty and
-human sessions, retrain/compare if desired, then run the first **clean** full
-scan and regenerate the master dataset + PLY. The final mapping PLY is
+sessions. Remaining work: switch to the 9V jack, verify sensors + AI alert,
+record the new empty and human sessions, retrain/compare if desired, then run
+the first **clean** full scan and regenerate the master dataset + PLY. The final mapping PLY is
 `research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
 auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
 12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is

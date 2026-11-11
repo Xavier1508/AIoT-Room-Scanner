@@ -59,6 +59,27 @@ research/mapping/ml/model/
 The 1D CNN uses a 32-frame window (~6.4 s at 5 Hz) with features: distance,
 energy, target state, moving energy, stationary energy, delta distance.
 
+## 3. Deploy the logits model (current firmware)
+
+The ESP_TF TFLite-Micro **Softmax** kernel aborts during `AllocateTensors` on
+this board (`QuantizeMultiplierGreaterThanOne`) even though the same model runs
+on the PC. The deployed model therefore keeps the **logits** and the ESP32
+computes softmax in float32:
+
+```powershell
+python tools/mapping/ml/strip_softmax.py `
+  --input research/mapping/ml/model-empty-human-v2/model.tflite `
+  --output research/mapping/ml/model-empty-human-v2-logits
+```
+
+Copy the generated `model_data.h` to `src/ml_model_data.h`, copy
+`model_metadata.h` with the `-logits` version suffix to
+`src/ml_model_metadata.h`, and rebuild. The output tensor becomes int8 logits
+(scale `0.04990008`, zero point `-6`); `src/ml_inference.cpp` dequantizes and
+applies a numerically stable 2-class softmax. Host parity against the original
+softmax model: max probability difference **0.0019** over random inputs.
+
+
 ## 3. Integrate on the ESP32-S3
 
 The intended on-device path is TensorFlow Lite Micro:
