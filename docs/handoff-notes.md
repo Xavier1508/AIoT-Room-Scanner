@@ -10,7 +10,7 @@ corruption. The fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`)
 and computes softmax in float32 on the ESP32. The two 30-point validation scans
 are dirty (operator active); the clean full scan is deferred.
 A unified master dataset exists at
-`research/mapping/dataset/aiot_room_dataset_v1.csv` (6,051 rows, timestamped,
+`research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259 rows, timestamped,
 labels empty/human). The current
 mapping reference is scan `20261110T184241Z` with Mirror Y ON, auto-align
 rotation `-1.1°`, measured bed/fan labels and no prior bed; see

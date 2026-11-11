@@ -46,8 +46,11 @@ It is OTA-installed from `app0` and reports `ready=true`, model
   on-device in float32.
 - TFLite size: **14,528 bytes** (logits) from the 14,584-byte softmax model;
   generated headers: `src/ml_model_data.h`, `src/ml_model_metadata.h`.
-- Dataset: 5,576 frames, 1,379 windows from the two existing sessions
-  (`20261109T183825Z-empty`, `20261109T190639Z-human`).
+- Dataset for v2: 5,576 frames, 1,379 windows from the two original sessions
+  (`20261109T183825Z-empty`, `20261109T190639Z-human`). The expanded master
+  dataset now has **7,784 frames** from four sessions (adds
+  `20261111T152738Z-empty`, 1,079 frames, and `20261111T153448Z-human`, 1,129
+  frames); a v3 retrain is optional.
 - Validation: **contiguous 5-block time split per session**, mean accuracy
   **97.38% ± 5.24%**. The last block is the hard one (empty recall 90%,
   human recall 85%); this is reported, not hidden.
