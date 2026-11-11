@@ -41,13 +41,17 @@ from platformio.project.config import ProjectConfig
 p = PlatformFactory.from_env('bringup', autoinstall=False)
 missing = [n for n, o in p.packages.items() if not o.get('optional') and not p.get_package_dir(n)]
 if not get_core_package_dir('tool-scons', auto_install=False): missing.append('tool-scons')
-if ProjectConfig.get_instance().get('env:bringup', 'lib_deps', []): missing.append('unreviewed lib_deps')
+deps = [str(item) for item in ProjectConfig.get_instance().get('env:bringup', 'lib_deps', [])]
+allowed = {'nickjgniklu/ESP_TF@2.1.1'}
+unreviewed = [item for item in deps if item not in allowed]
+if unreviewed: missing.append('unreviewed lib_deps: ' + ', '.join(unreviewed))
 if missing: raise SystemExit('Missing/unreviewed dependencies; installation requires approval: ' + ', '.join(missing))
-print('Offline dependency preflight passed; all required packages already installed.')
+print('Dependency preflight passed; reviewed ESP_TF may be fetched by PlatformIO if absent.')
 '@
     & $python -B -c $preflight
     if ($LASTEXITCODE -ne 0) { throw 'Dependency preflight refused this build; nothing installed.' }
-    # Existing package reuse only. No library downloads are required by this project.
+    # The reviewed ESP_TF/TFLite-Micro library is the only extra dependency and
+    # may be fetched into the temporary workspace if the cache is empty.
     $ErrorActionPreference = 'Continue'
     & $python -B -m platformio run -e bringup -j $Jobs 2>&1 | Tee-Object -FilePath (Join-Path $run 'build.txt')
     $exit = $LASTEXITCODE

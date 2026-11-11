@@ -193,7 +193,7 @@ def _unique_path(folder: Path, stem: str) -> Path:
 
 def export_scene(scan_id: str, yaw_scale: float = 1.0,
                  map_rotation_deg: float = 0.0, mirror_y=None,
-                 mirror_center_m=None) -> dict:
+                 mirror_center_m=None, snap_wall_objects=None) -> dict:
     scan_dir = SCANS / scan_id
     points_path = scan_dir / "points.csv"
     if not points_path.is_file():
@@ -206,12 +206,19 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
         mirror_y = default_mirror
     if mirror_center_m is None:
         mirror_center_m = default_center
+    if snap_wall_objects is None:
+        room = annotations.get("room") or {}
+        try:
+            snap_wall_objects = bool(float(room.get("snap_wall_objects", 1.0)))
+        except (TypeError, ValueError):
+            snap_wall_objects = True
     mirror_y = bool(mirror_y)
     mirror_center_m = float(mirror_center_m)
     reconstruction = reconstruct_points(
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation_deg,
         annotations=annotations, mirror_y=mirror_y,
-        mirror_center_m=mirror_center_m)
+        mirror_center_m=mirror_center_m,
+        snap_wall_objects=bool(snap_wall_objects))
     mount_rows = set(int(index) for index in (reconstruction.get("mount_rows") or []))
     rotation_ca = math.cos(math.radians(map_rotation_deg))
     rotation_sa = math.sin(math.radians(map_rotation_deg))
@@ -247,6 +254,7 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
         "map_rotation_deg": round(float(map_rotation_deg), 1),
         "mirror_y": bool(mirror_y),
         "mirror_center_m": round(float(mirror_center_m), 3),
+        "snap_wall_objects": bool(snap_wall_objects),
         "points": len(points),
         "boxes": len(boxes),
         "measured_boxes": measured,

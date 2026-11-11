@@ -56,17 +56,25 @@ def _cluster_indices(points, eps_m, use_z=False):
     return list(groups.values())
 
 
-def _fit_geometry(cluster):
-    """Fit an oriented rectangle to a cluster of (x, y, z, source) points."""
+def _fit_geometry(cluster, angle_override=None):
+    """Fit an oriented rectangle to a cluster of (x, y, z, source) points.
+
+    ``angle_override`` is used by the wall-constrained object fit: large low
+    objects near a wall are projected onto the wall direction instead of the
+    PCA direction, which otherwise makes a bed/desk look diagonally crooked.
+    """
     xs = [point[0] for point in cluster]
     ys = [point[1] for point in cluster]
     zs = [point[2] for point in cluster]
     mx = sum(xs) / len(xs)
     my = sum(ys) / len(ys)
-    cov_xx = sum((x - mx) ** 2 for x in xs) / len(xs)
-    cov_yy = sum((y - my) ** 2 for y in ys) / len(ys)
-    cov_xy = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / len(xs)
-    angle = 0.5 * math.atan2(2 * cov_xy, cov_xx - cov_yy)
+    if angle_override is None:
+        cov_xx = sum((x - mx) ** 2 for x in xs) / len(xs)
+        cov_yy = sum((y - my) ** 2 for y in ys) / len(ys)
+        cov_xy = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / len(xs)
+        angle = 0.5 * math.atan2(2 * cov_xy, cov_xx - cov_yy)
+    else:
+        angle = float(angle_override)
     ca, sa = math.cos(angle), math.sin(angle)
     us = [(x - mx) * ca + (y - my) * sa for x, y in zip(xs, ys)]
     vs = [-(x - mx) * sa + (y - my) * ca for x, y in zip(xs, ys)]
@@ -150,9 +158,27 @@ def _split_wall_cluster(cluster, min_points, depth=0, max_depth=2):
             _split_wall_cluster(right, min_points, depth + 1, max_depth))
 
 
-def _box_from_cluster(cluster, force_label=None):
+def _angle_distance(first, second):
+    """Smallest absolute difference between two undirected line angles."""
+    delta = (float(first) - float(second) + math.pi / 2.0) % math.pi
+    return abs(delta - math.pi / 2.0)
+
+
+def _box_from_cluster(cluster, force_label=None, wall_angles=None,
+                      snap_wall_objects=False):
     geometry = _fit_geometry(cluster)
     label = force_label or _classify(geometry)
+    angle_source = "pca"
+    # A large, low object next to a wall is almost always parallel to that
+    # wall. PCA alone fits the visible L-shape and makes a bed/desk look
+    # diagonally crooked. Small objects (e.g. the fan) are left untouched.
+    if (snap_wall_objects and label == "object" and wall_angles
+            and geometry["length"] >= 1.2 and geometry["z_top"] <= 0.90):
+        nearest = min(wall_angles,
+                      key=lambda value: _angle_distance(geometry["angle"], value))
+        if _angle_distance(geometry["angle"], nearest) <= math.radians(30):
+            geometry = _fit_geometry(cluster, angle_override=nearest)
+            angle_source = "wall_snap"
     # HC beam spread makes a wall look 0.5 m thick. Keep the observed width in
     # metadata but draw the wall with the robust 25-75% spread.
     display_width = geometry["width"]
@@ -171,6 +197,7 @@ def _box_from_cluster(cluster, force_label=None):
         "id": _box_id(geometry),
         "label": label,
         "label_source": "auto",
+        "angle_source": angle_source,
         "cx_m": round(geometry["cx"], 3),
         "cy_m": round(geometry["cy"], 3),
         "angle_deg": round(math.degrees(geometry["angle"]), 1),
@@ -467,7 +494,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
                        yaw_scale=0.76, map_rotation_deg=10.7,
                        annotations=None, mirror_y=False,
-                       mirror_center_m=0.0):
+                       mirror_center_m=0.0, snap_wall_objects=False):
     try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):
@@ -550,6 +577,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                   "map_rotation_deg": round(math.degrees(map_rotation), 1),
                   "mirror_y": bool(mirror_y),
                   "mirror_center_m": round(float(mirror_center_m), 3),
+                  "snap_wall_objects": bool(snap_wall_objects),
                   "near_field_m": near_field_m,
                   "mount_guard_m": mount_guard_m,
                   "note": "No points after near-mount filtering."}
@@ -576,6 +604,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                 label = "wall" if geometry["length"] >= 1.50 else "wall_edge"
                 boxes.append(_box_from_cluster(cluster, force_label=label))
         wall_boxes = [box for box in boxes if box["label"] in WALL_LABELS]
+        object_wall_angles = [math.radians(float(box["angle_deg"]))
+                              for box in wall_boxes]
         interior = [point for index, point in enumerate(points)
                     if index not in wall_indices]
         for indices in _cluster_indices(interior, eps_m, use_z=True):
@@ -615,7 +645,9 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
             for part in _split_wall_cluster(cluster, min_points):
                 if len(part) < min_points:
                     continue
-                boxes.append(_box_from_cluster(part))
+                boxes.append(_box_from_cluster(
+                    part, wall_angles=object_wall_angles,
+                    snap_wall_objects=snap_wall_objects))
     else:
         # Sparse or non-axis-aligned scans keep the original 2D clustering.
         fallback_eps = max(eps_m, 0.45)
@@ -667,6 +699,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         "map_rotation_deg": round(math.degrees(map_rotation), 1),
         "mirror_y": bool(mirror_y),
         "mirror_center_m": round(float(mirror_center_m), 3),
+        "snap_wall_objects": bool(snap_wall_objects),
         "near_field_m": near_field_m,
         "mount_guard_m": mount_guard_m,
         "note": ("Estimated boxes from one fixed viewpoint; hidden sides are inferred. "
@@ -674,4 +707,114 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                  "Yaw scale is provisional until a known-target calibration."),
     }
     return apply_annotations(result, annotations)
+
+
+def _axis_residual_deg(angle_deg):
+    value = abs(float(angle_deg)) % 90.0
+    return min(value, 90.0 - value)
+
+
+def _wall_score(result, rotation_deg=0.0):
+    all_boxes = result.get("boxes") or []
+    walls = [box for box in all_boxes
+             if box.get("label") in WALL_LABELS
+             and str(box.get("source")) != "prior"]
+    total_points = sum(int(box.get("points", 0) or 0) for box in walls)
+    if len(walls) < 2 or total_points <= 0:
+        return -1e9, {
+            "wall_count": len(walls),
+            "wall_points": total_points,
+            "residual_deg": 180.0,
+            "wall_length_m": 0.0,
+            "wall_thickness_m": 0.0,
+            "wall_angles_deg": [],
+            "object_align_bonus": 0.0,
+        }
+    residual = sum(
+        int(box.get("points", 0) or 0) * _axis_residual_deg(box.get("angle_deg", 0.0))
+        for box in walls) / total_points
+    length = sum(float(box.get("length_m", 0.0) or 0.0) for box in walls)
+    thickness = sum(
+        int(box.get("points", 0) or 0)
+        * float(box.get("width_observed_m", box.get("width_m", 0.0)) or 0.0)
+        for box in walls) / total_points
+    wall_angles = [float(box.get("angle_deg", 0.0)) for box in walls]
+    # Large low objects (the bed/desk class) should be snap-able to a wall.
+    # This prevents the search from choosing a rotation that straightens the
+    # walls only by hiding a false mid-room wall and leaving the bed diagonal.
+    object_bonus = 0.0
+    for box in all_boxes:
+        if (box.get("label") in WALL_LABELS + ("mount",)
+                or str(box.get("source")) == "prior"
+                or float(box.get("length_m", 0.0) or 0.0) < 1.2
+                or float(box.get("z_top_m", 0.0) or 0.0) > 0.90):
+            continue
+        nearest = min((_angle_distance(
+            math.radians(float(box.get("angle_deg", 0.0))),
+            math.radians(angle)) for angle in wall_angles), default=math.pi)
+        object_bonus += 20.0 if nearest <= math.radians(25) else -30.0
+    # Do not chase a perfect wall fit by rotating the whole room far away from
+    # the hand-authored prior frame. 1 degree of residual is visually fine.
+    score = (-80.0 * max(0.0, residual - 1.0)
+             + 0.05 * total_points
+             + 2.0 * length
+             + 3.0 * len(walls)
+             - 5.0 * thickness
+             - 4.0 * abs(rotation_deg)
+             + object_bonus
+             - 50.0 * max(0, len(walls) - 3)
+             - 40.0 * max(0, 3 - len(walls)))
+    return score, {
+        "wall_count": len(walls),
+        "wall_points": total_points,
+        "residual_deg": residual,
+        "wall_length_m": length,
+        "wall_thickness_m": thickness,
+        "wall_angles_deg": wall_angles,
+        "object_align_bonus": object_bonus,
+    }
+
+
+def auto_align_rotation(rows, yaw_scale=1.0,
+                        annotations=None, mirror_y=True,
+                        mirror_center_m=0.0, search_min=-5.0,
+                        search_max=5.0, coarse_step=0.5,
+                        refine_step=0.1):
+    """Find the map rotation that makes the measured walls straightest.
+
+    The score is dominated by the weighted residual of wall angles to the
+    nearest 0/90 axis, with wall support/length as tie-breakers. This is a
+    room-frame correction; the selected object angle is handled separately by
+    the wall-constrained object fit.
+    """
+    def evaluate(rotation):
+        result = reconstruct_points(
+            rows, yaw_scale=yaw_scale, map_rotation_deg=rotation,
+            annotations=annotations, mirror_y=mirror_y,
+            mirror_center_m=mirror_center_m, snap_wall_objects=False)
+        score, details = _wall_score(result, rotation)
+        return {"rotation_deg": float(rotation), "score": float(score), **details}
+
+    candidates = []
+    steps = int(round((search_max - search_min) / coarse_step))
+    for index in range(steps + 1):
+        candidates.append(evaluate(search_min + index * coarse_step))
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    best = candidates[0]
+    center = best["rotation_deg"]
+    refine_start = center - coarse_step
+    refine_end = center + coarse_step
+    refine_steps = int(round((refine_end - refine_start) / refine_step))
+    for index in range(refine_steps + 1):
+        rotation = refine_start + index * refine_step
+        if abs(rotation - center) < 1e-9:
+            continue
+        candidates.append(evaluate(rotation))
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    best = dict(candidates[0])
+    best["search_min"] = search_min
+    best["search_max"] = search_max
+    best["candidates_evaluated"] = len(candidates)
+    best["top_candidates"] = [dict(item) for item in candidates[:5]]
+    return best
 

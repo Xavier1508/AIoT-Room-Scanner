@@ -21,6 +21,7 @@ String jsonQuote(const String& value) {
 void App::begin() {
   // Set safe output latches first, before serial, NVS, Wi-Fi, or any web task.
   buzzer_.begin(); stepper_.begin(); servo_.begin(); sensors_.begin();
+  if (!ml_.begin()) event("ml_init_failed");
   // This SDK has a secondary USB log console. Keep SDK log writers out of the
   // framed diagnostics channel; application events/status remain available.
   esp_log_level_set("*", ESP_LOG_NONE);
@@ -69,6 +70,7 @@ void App::event(const char* text) {
 }
 void App::stopAll() {
   buzzer_.stop(); stepper_.stop(); servo_.stop(); sensors_.stop();
+  ml_.reset();
   stepperHolding_ = servoHolding_ = stepperMovePending_ = false;
   scanMode_ = false;
   hlkAlertEnabled_ = false;
@@ -447,7 +449,7 @@ void App::publish(uint32_t now) {
   const bool valid = hlkEnabled_ && reading.received && uint32_t(now - reading.timestampMs) <= config::hlkStaleMs;
   const esp_partition_t* running = esp_ota_get_running_partition();
   const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
-  String s; s.reserve(7000);
+  String s; s.reserve(7600);
   s = String("{\"version\":") + jsonQuote(config::version) + ",\"build\":" + jsonQuote(String(__DATE__) + " " + __TIME__) +
       ",\"uptime_ms\":" + now + ",\"mode\":" + jsonQuote(modeName(safety_.mode())) +
       ",\"motor_armed\":" + (safety_.motorArmed() ? "true" : "false") +
@@ -535,6 +537,7 @@ void App::publish(uint32_t now) {
        ",\"moving_distance_cm\":" + reading.movingCm + ",\"stationary_distance_cm\":" + reading.stationaryCm +
        ",\"moving_energy\":" + reading.movingEnergy + ",\"stationary_energy\":" + reading.stationaryEnergy +
        ",\"detection_distance_cm\":" + reading.detectionCm + ",\"engineering\":" + (reading.engineering ? "true}}" : "false}}");
+  s += String(",\"ml\":") + ml_.statusJson();
   s += String(",\"ota\":{\"running_slot\":") + jsonQuote(running ? running->label : "unknown") +
        ",\"next_slot_bytes\":" + (next ? String(next->size) : "0") + ",\"automatic_rollback\":false}";
   s += String(",\"last_command_id\":") + lastCommandId_ + ",\"last_result\":" + lastResult_ + ",\"events\":[";
@@ -602,6 +605,15 @@ void App::tick() {
   }
   sensors_.tick(now);
   maybeHlkAlert(now);
+  {
+    const auto& mlReading = hlk_.reading();
+    const bool mlHlkValid = hlkEnabled_ && mlReading.received &&
+        uint32_t(now - mlReading.timestampMs) <= config::hlkStaleMs;
+    const bool mlBusy = scanMode_ || otaActive() || stepper_.active() ||
+        servo_.active() || stepperMovePending_ ||
+        (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked);
+    ml_.update(now, mlReading, mlHlkValid, sensors_.running(), mlBusy);
+  }
   network_.tick(now);
   if (uint32_t(now - lastPublish_) >= 200) publish(now);
   const uint32_t reboot = rebootAt_.load();

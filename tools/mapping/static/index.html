@@ -96,7 +96,9 @@
       <button id="apply-yaw-scale">Terapkan</button>
       <button id="reset-yaw-scale" class="alt">Reset kal.</button>
       <button id="toggle-mirror-y" class="alt active" type="button" title="Balik hasil scan secara vertikal terhadap prior">Mirror Y: ON</button>
-      <span id="yaw-scale-note" class="note">yaw 0.76 · rotasi 10.7° · mirror Y ON — sesuaikan sampai dinding lurus.</span>
+      <button id="toggle-snap-objects" class="alt active" type="button" title="Objek besar rendah di dekat dinding diproyeksikan sejajar dinding">Objek lurus: ON</button>
+      <button id="auto-align" class="alt" type="button" title="Cari rotasi yang membuat dinding paling lurus">Auto luruskan</button>
+      <span id="yaw-scale-note" class="note">yaw 0.76 · rotasi 10.7° · mirror Y ON · objek lurus ON — sesuaikan sampai dinding lurus.</span>
     </div>
     <div class="row annotation-row">
       <button id="undo-annotations" class="alt" type="button" disabled>Undo (Ctrl+Z)</button>
@@ -243,7 +245,7 @@
     <section class="card"><h2>Model DL</h2>
       <div id="model-summary" class="big">—</div>
       <p id="model-detail" class="note">—</p>
-      <p class="note">Model binary empty/human belum dipakai sebagai detektor utama karena rule lebih akurat pada data validasi. Panel ini menampilkan metrik model dan status deploy secara jujur.</p>
+      <p class="note">Model 1D CNN binary empty/human disiapkan untuk berjalan di ESP32-S3 lewat TFLite Micro (firmware 0.8.0). Rule HLK tetap menjadi jalur buzzer/safety; panel ini menampilkan hasil DL live, latensi, dan metrik validasi blok waktu setelah board online.</p>
     </section>
   </div>
   <section class="card"><h2>Tren energi &amp; jarak HLK</h2>

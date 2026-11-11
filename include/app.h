@@ -10,6 +10,7 @@
 #include "commands.h"
 #include "console.h"
 #include "hlk_protocol.h"
+#include "ml_inference.h"
 #include "network.h"
 #include "safety.h"
 #include "settings.h"
@@ -53,6 +54,7 @@ class App {
   StepperController stepper_;
   ServoController servo_;
   SensorController sensors_;
+  MlClassifier ml_;
   HardwareSerial hlkSerial_{1};
   HlkParser hlk_;
   bool hlkEnabled_ = false, wifiWasConnected_ = false;

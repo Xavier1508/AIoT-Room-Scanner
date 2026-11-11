@@ -57,6 +57,7 @@ const state = {
   mapRotation: storedMapRotation(),
   mirrorY: true,
   mirrorCenter: 0,
+  snapWallObjects: true,
   topZoom: 1.0,
   topPanX: 0,
   topPanY: 0,
@@ -362,28 +363,45 @@ function renderPresence() {
     setText('actuator-summary', 'ESP offline');
     setText('actuator-detail', state.presenceError || 'Status aktuator belum tersedia.');
   }
-  const accuracy = ml.final_val_accuracy != null
-    ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '—';
+  const liveMl = state.health?.esp?.ml || null;
+  const cv = ml.cv_accuracy_mean != null
+    ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(1)}%` : '—';
   const classes = Array.isArray(ml.classes) && ml.classes.length
     ? ml.classes.join(' / ') : 'binary empty / human';
-  setText('model-summary', `${classes} · val ${accuracy}`);
-  setText('model-detail', `${ml.frames ?? '—'} frame · ${ml.windows ?? '—'} window · ${ml.tflite_bytes ?? '—'} byte TFLite · holdout ${ml.holdout_sessions?.length ?? 0} sesi`);
-  renderModelComparison(ml);
+  if (liveMl && liveMl.enabled) {
+    const confidence = Math.max(0, Math.min(1, Number(liveMl.confidence) || 0));
+    setText('model-summary', liveMl.window_ready
+      ? `DL live: ${String(liveMl.class || '—').toUpperCase()} · ${Math.round(confidence * 100)}%`
+      : `DL live: menunggu window (${liveMl.window_ready ? 'siap' : 'mengisi'})`);
+    setText('model-detail', `${liveMl.model_version || '—'} · ${liveMl.window ?? '—'} frame · latency ${liveMl.latency_ms ?? '—'} ms · inferences ${liveMl.inferences ?? 0} · arena ${liveMl.arena_used_bytes ?? '—'} B · ${liveMl.mute_reason || '—'}`);
+  } else {
+    setText('model-summary', `${classes} · CV ${cv}`);
+    setText('model-detail', `${ml.frames ?? '—'} frame · ${ml.windows ?? '—'} window · ${ml.tflite_bytes ?? '—'} byte TFLite · CV blocks ${ml.cv_blocks ?? '—'}`);
+  }
+  renderModelComparison(ml, liveMl);
   drawPresenceTrend();
 }
 
-function renderModelComparison(ml) {
+function renderModelComparison(ml, liveMl = null) {
   const container = $('model-comparison');
   if (!container) return;
   container.replaceChildren();
   const rule = ml.rule_baseline || {};
+  const presence = state.presence || {};
+  const liveConfidence = Math.max(0, Math.min(1, Number(liveMl?.confidence) || 0));
   const rows = [
-    ['Rule max(moving_energy)>0',
+    ['Rule HLK (live)',
+      presence.class ? `${String(presence.class).toUpperCase()} · ${Math.round((Number(presence.confidence) || 0) * 100)}%` : '—',
+      `state ${presence.state || '—'} · gate ${presence.gate || '—'}; tetap menjadi jalur buzzer/safety.`],
+    ['DL 1D CNN (live)',
+      liveMl?.window_ready ? `${String(liveMl.class || '—').toUpperCase()} · ${Math.round(liveConfidence * 100)}%` : 'menunggu window',
+      liveMl?.enabled ? `latency ${liveMl.latency_ms ?? '—'} ms · ${liveMl.mute_reason || '—'}` : 'firmware belum mengirim status ML.'],
+    ['DL validasi blok',
+      ml.cv_accuracy_mean != null ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(1)}% ± ${(Number(ml.cv_accuracy_std || 0) * 100).toFixed(1)}%` : (ml.final_val_accuracy != null ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '—'),
+      '5 blok waktu kontigu per sesi; angka generalisasi yang dilaporkan.'],
+    ['Rule baseline',
       rule.val_accuracy != null ? `${(Number(rule.val_accuracy) * 100).toFixed(1)}%` : '100.0%',
       'Baseline pada split yang sama; bukan model DL.'],
-    ['DL 1D CNN binary',
-      ml.final_val_accuracy != null ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '82.7%',
-      'empty recall 91.0%, human recall 77.2%; belum deployed.'],
   ];
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -661,18 +679,22 @@ async function loadPoints(scanId, preserveCalibration = false) {
       const storedCenter = Number(roomMeta.mirror_center_m);
       if (Number.isFinite(storedCenter)) state.mirrorCenter = storedCenter;
     }
+    const rawSnap = roomMeta.snap_wall_objects;
+    state.snapWallObjects = rawSnap === undefined || rawSnap === null
+      ? true : Boolean(Number(rawSnap));
     syncMirrorButton();
+    syncSnapButton();
     const data = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/points`);
     state.points = data.points || [];
     state.loadedScan = scanId;
     $('scan-select').value = scanId;
     $('yaw-scale').value = Number(state.yawScale).toFixed(2);
     $('map-rotation').value = Number(state.mapRotation).toFixed(1);
-    setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
+    setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} · objek lurus ${state.snapWallObjects ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
     let reconstruction = null;
     let annotations = preAnnotations || { labels: {}, hidden: [], merges: [] };
     try {
-      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}&mirror_y=${state.mirrorY ? 1 : 0}&mirror_center=${Number(state.mirrorCenter).toFixed(3)}`);
+      const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}&mirror_y=${state.mirrorY ? 1 : 0}&mirror_center=${Number(state.mirrorCenter).toFixed(3)}&snap_objects=${state.snapWallObjects ? 1 : 0}`);
       reconstruction = rec.reconstruction;
       annotations = rec.annotations || annotations;
     } catch (error) {
@@ -779,6 +801,10 @@ function applyAnnotationState(annotations) {
   if (state.room.mirror_y !== undefined && state.room.mirror_y !== null) {
     state.mirrorY = Boolean(Number(state.room.mirror_y));
   }
+  if (state.room.snap_wall_objects !== undefined
+      && state.room.snap_wall_objects !== null) {
+    state.snapWallObjects = Boolean(Number(state.room.snap_wall_objects));
+  }
   const outlineCenter = mirrorCenterFromOutline(state.roomOutline);
   if (Number.isFinite(outlineCenter) && outlineCenter !== 0) {
     state.mirrorCenter = outlineCenter;
@@ -787,6 +813,7 @@ function applyAnnotationState(annotations) {
     if (Number.isFinite(storedCenter)) state.mirrorCenter = storedCenter;
   }
   syncMirrorButton();
+  syncSnapButton();
   renderLabelSuggestions();
   renderRoomInfo();
 }
@@ -1253,6 +1280,7 @@ async function saveAnnotations(annotations, message, keepSelection = null, optio
   annotations.room.map_rotation_deg = state.mapRotation;
   annotations.room.mirror_y = state.mirrorY ? 1 : 0;
   annotations.room.mirror_center_m = state.mirrorCenter;
+  annotations.room.snap_wall_objects = state.snapWallObjects ? 1 : 0;
   setText('annotation-status', 'Menyimpan...');
   showToast('Menyimpan anotasi...', 'info', 8000);
   let data;
@@ -1262,7 +1290,8 @@ async function saveAnnotations(annotations, message, keepSelection = null, optio
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ annotations, yaw_scale: state.yawScale,
         map_rotation: state.mapRotation, mirror_y: state.mirrorY ? 1 : 0,
-        mirror_center_m: state.mirrorCenter }),
+        mirror_center_m: state.mirrorCenter,
+        snap_wall_objects: state.snapWallObjects ? 1 : 0 }),
     });
   } catch (error) {
     setText('annotation-status', `Gagal menyimpan: ${error.message}`);
@@ -1657,6 +1686,78 @@ async function toggleMirrorY() {
   }
 }
 
+function syncSnapButton() {
+  const button = $('toggle-snap-objects');
+  if (!button) return;
+  button.classList.toggle('active', state.snapWallObjects);
+  button.textContent = state.snapWallObjects ? 'Objek lurus: ON' : 'Objek lurus: OFF';
+  button.title = state.snapWallObjects
+    ? 'Objek besar rendah di dekat dinding diproyeksikan sejajar dinding.'
+    : 'Objek mengikuti hasil PCA mentah.';
+}
+
+async function toggleSnapObjects() {
+  if (!state.loadedScan) return;
+  const previous = state.snapWallObjects;
+  state.snapWallObjects = !state.snapWallObjects;
+  syncSnapButton();
+  const next = annotationsClone();
+  next.room = next.room || {};
+  next.room.snap_wall_objects = state.snapWallObjects ? 1 : 0;
+  try {
+    await withBusy($('toggle-snap-objects'),
+      () => saveAnnotations(next,
+        `Luruskan objek ${state.snapWallObjects ? 'aktif' : 'nonaktif'}.`,
+        state.selectedBoxId), 'Menerapkan...');
+    syncSnapButton();
+  } catch (error) {
+    state.snapWallObjects = previous;
+    syncSnapButton();
+    showToast(`Gagal mengubah objek lurus: ${error.message}`, 'error', 4500);
+  }
+}
+
+async function autoAlign() {
+  if (!state.loadedScan) {
+    showToast('Pilih scan dulu.', 'warn');
+    return;
+  }
+  try {
+    setText('annotation-status', 'Mencari rotasi dinding terbaik...');
+    const data = await withBusy($('auto-align'), () => api(
+      `/api/mapping/scans/${encodeURIComponent(state.loadedScan)}/auto-align`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          yaw_scale: state.yawScale,
+          mirror_y: state.mirrorY ? 1 : 0,
+          mirror_center_m: state.mirrorCenter,
+          search_min: -5,
+          search_max: 5,
+        }),
+      }), 'Mencari...');
+    const rotation = Number(data.rotation_deg);
+    state.mapRotation = Math.max(-45, Math.min(45, Number.isFinite(rotation) ? rotation : 0));
+    $('map-rotation').value = state.mapRotation.toFixed(1);
+    const next = annotationsClone();
+    next.room = next.room || {};
+    next.room.map_rotation_deg = state.mapRotation;
+    next.room.snap_wall_objects = state.snapWallObjects ? 1 : 0;
+    await saveAnnotations(next,
+      `Auto luruskan: rotasi ${state.mapRotation.toFixed(1)}° · residual ${Number(data.residual_deg || 0).toFixed(2)}° · ${data.wall_count ?? '-'} dinding.`,
+      state.selectedBoxId);
+    const residual = Number(data.residual_deg);
+    if (Number.isFinite(residual) && residual > 2.5) {
+      showToast(`Dinding masih menyisakan ${residual.toFixed(2)}°; cek yaw scale/mount.`, 'warn', 6000);
+    } else {
+      showToast(`Auto luruskan: rotasi ${state.mapRotation.toFixed(1)}°, residual ${Number(data.residual_deg || 0).toFixed(2)}°.`, 'success', 5000);
+    }
+  } catch (error) {
+    setText('annotation-status', `Gagal auto luruskan: ${error.message}`);
+    showToast(`Gagal auto luruskan: ${error.message}`, 'error', 5000);
+  }
+}
+
 function applyYawScale() {
   const rawYaw = Number($('yaw-scale').value);
   const rawRotation = Number($('map-rotation').value);
@@ -1672,7 +1773,7 @@ function applyYawScale() {
   }
   $('yaw-scale').value = yaw.toFixed(2);
   $('map-rotation').value = rotation.toFixed(1);
-  setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
+  setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} · objek lurus ${state.snapWallObjects ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
   const scanId = state.loadedScan || $('scan-select').value;
   if (scanId) loadPoints(scanId, true);
 }
@@ -2769,6 +2870,8 @@ $('reset-view').addEventListener('click', () => {
 $('apply-yaw-scale').addEventListener('click', applyYawScale);
 $('reset-yaw-scale').addEventListener('click', resetYawScale);
 $('toggle-mirror-y').addEventListener('click', toggleMirrorY);
+$('toggle-snap-objects').addEventListener('click', toggleSnapObjects);
+$('auto-align').addEventListener('click', autoAlign);
 $('top-zoom-in').addEventListener('click', () => {
   state.topZoom = Math.min(8, (Number(state.topZoom) || 1) * 1.2);
   drawTopDown();
@@ -2995,6 +3098,7 @@ renderLabelSuggestions();
 updateSelectionStatus();
 updateUndoButton();
 syncMirrorButton();
+syncSnapButton();
 
 (async () => {
   await refreshScans();

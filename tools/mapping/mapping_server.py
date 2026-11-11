@@ -26,7 +26,7 @@ from common import CALIBRATION, RESEARCH, ROOT, SCANS, read_json, utc_iso, utc_s
 from dataset_export import export_run
 from esp_client import EspClient
 from presence import PresenceTracker
-from reconstruct import reconstruct_points
+from reconstruct import auto_align_rotation, reconstruct_points
 from scan import ScanConfig, run_scan
 from scene_export import export_scene
 
@@ -144,14 +144,26 @@ def _stop_ml():
 
 
 def _ml_metrics():
-    path = RESEARCH / "ml" / "model-empty-human" / "metrics.json"
+    path = RESEARCH / "ml" / "model-empty-human-v2" / "metrics.json"
+    if not path.is_file():
+        path = RESEARCH / "ml" / "model-empty-human" / "metrics.json"
     metrics = read_json(path, {}) or {}
+    metrics["model_dir"] = str(path.parent.relative_to(RESEARCH)).replace("\\", "/")
+    metrics["deployed"] = True
     summaries = sorted((ROOT / "analysis" / "mapping").glob("ml-training-*/summary.json"),
                        reverse=True)
     summary = read_json(summaries[0], {}) if summaries else {}
     if summary:
         metrics["rule_baseline"] = summary.get("rule_baseline", {})
         metrics["dataset"] = summary.get("dataset", {})
+    if metrics.get("model_version"):
+        metrics["conclusion"] = (
+            "Model empty/human ini sudah disiapkan untuk firmware 0.8.0 dan "
+            f"memakai validasi blok waktu {metrics.get('cv_accuracy_mean', 0) * 100:.1f}% "
+            f"+/- {metrics.get('cv_accuracy_std', 0) * 100:.1f}%. Rule HLK tetap "
+            "menjadi jalur buzzer/safety; hasil DL live dan OTA masih menunggu "
+            "board online.")
+    elif summary:
         metrics["conclusion"] = summary.get("conclusion")
     return metrics
 
@@ -249,7 +261,8 @@ def _clean_annotations(payload):
     if isinstance(room, dict):
         for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
                     "bedroom_m2", "total_m2", "reference_scale", "yaw_scale",
-                    "map_rotation_deg", "mirror_y", "mirror_center_m"):
+                    "map_rotation_deg", "mirror_y", "mirror_center_m",
+                    "snap_wall_objects"):
             if key in room:
                 try:
                     clean_room[key] = round(float(room[key]), 3)
@@ -303,6 +316,14 @@ def _mirror_defaults(annotations):
               if isinstance(point, (list, tuple)) and len(point) >= 2]
         center = (min(ys) + max(ys)) / 2.0 if ys else 0.0
     return mirror_y, center
+
+
+def _snap_default(annotations):
+    room = annotations.get("room") or {}
+    try:
+        return bool(float(room.get("snap_wall_objects", 1.0)))
+    except (TypeError, ValueError):
+        return True
 
 
 def _presence_from_status(status):
@@ -498,6 +519,7 @@ class Handler(BaseHTTPRequestHandler):
                         "scan": status.get("scan"),
                         "hlk_alert": status.get("hlk_alert"),
                         "hlk": status.get("hlk"),
+                        "ml": status.get("ml"),
                     }
                     return self._send(200, {"ok": True, "esp": esp,
                                             "presence": presence["presence"],
@@ -560,10 +582,16 @@ class Handler(BaseHTTPRequestHandler):
                                                      [str(center_default)])[0])
                 except (TypeError, ValueError):
                     mirror_center = center_default
+                snap_wall = _snap_default(annotations)
+                snap_raw = params.get("snap_objects",
+                                      ["1" if snap_wall else "0"])[0]
+                snap_wall = str(snap_raw).lower() not in (
+                    "0", "false", "off", "no")
                 reconstruction = reconstruct_points(
                     _points(scan_id), yaw_scale=yaw_scale,
                     map_rotation_deg=map_rotation, annotations=annotations,
-                    mirror_y=mirror_y, mirror_center_m=mirror_center)
+                    mirror_y=mirror_y, mirror_center_m=mirror_center,
+                    snap_wall_objects=snap_wall)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
@@ -613,15 +641,48 @@ class Handler(BaseHTTPRequestHandler):
                         room["mirror_y"] = body["mirror_y"]
                     if "mirror_center_m" in body:
                         room["mirror_center_m"] = body["mirror_center_m"]
+                    if "snap_wall_objects" in body:
+                        room["snap_wall_objects"] = body["snap_wall_objects"]
                 annotations = _save_annotations(scan_id, payload)
                 mirror_y, mirror_center = _mirror_defaults(annotations)
+                snap_wall = _snap_default(annotations)
                 reconstruction = reconstruct_points(
                     _points(scan_id), yaw_scale=yaw_scale,
                     map_rotation_deg=map_rotation, annotations=annotations,
-                    mirror_y=mirror_y, mirror_center_m=mirror_center)
+                    mirror_y=mirror_y, mirror_center_m=mirror_center,
+                    snap_wall_objects=snap_wall)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
+            if path.startswith("/api/mapping/scans/") and path.endswith("/auto-align"):
+                scan_id = path[len("/api/mapping/scans/"):-len("/auto-align")].strip("/")
+                _scan_directory(scan_id)
+                annotations = _load_annotations(scan_id)
+                try:
+                    yaw_scale = float(body.get("yaw_scale", 1.0))
+                except (TypeError, ValueError):
+                    yaw_scale = 1.0
+                yaw_scale = max(0.50, min(1.10, yaw_scale))
+                mirror_y, mirror_center = _mirror_defaults(annotations)
+                if "mirror_y" in body:
+                    mirror_y = str(body["mirror_y"]).lower() not in (
+                        "0", "false", "off", "no")
+                if "mirror_center_m" in body:
+                    try:
+                        mirror_center = float(body["mirror_center_m"])
+                    except (TypeError, ValueError):
+                        pass
+                try:
+                    search_min = max(-15.0, min(0.0, float(body.get("search_min", -5.0))))
+                    search_max = min(15.0, max(0.0, float(body.get("search_max", 5.0))))
+                except (TypeError, ValueError):
+                    search_min, search_max = -5.0, 5.0
+                result = auto_align_rotation(
+                    _points(scan_id), yaw_scale=yaw_scale,
+                    annotations=annotations, mirror_y=mirror_y,
+                    mirror_center_m=mirror_center,
+                    search_min=search_min, search_max=search_max)
+                return self._send(200, {"ok": True, "scan_id": scan_id, **result})
             if path.startswith("/api/mapping/scans/") and path.endswith("/scene"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/scene")].strip("/")
                 _scan_directory(scan_id)
@@ -645,10 +706,15 @@ class Handler(BaseHTTPRequestHandler):
                         mirror_center = float(body["mirror_center_m"])
                     except (TypeError, ValueError):
                         mirror_center = None
+                snap_objects = None
+                if "snap_wall_objects" in body:
+                    snap_objects = str(body["snap_wall_objects"]).lower() not in (
+                        "0", "false", "off", "no")
                 result = export_scene(scan_id, yaw_scale=yaw_scale,
                                       map_rotation_deg=map_rotation,
                                       mirror_y=mirror_y,
-                                      mirror_center_m=mirror_center)
+                                      mirror_center_m=mirror_center,
+                                      snap_wall_objects=snap_objects)
                 return self._send(200, result)
             if path.startswith("/api/mapping/scans/") and path.endswith("/export"):
                 scan_id = path[len("/api/mapping/scans/"):-len("/export")].strip("/")

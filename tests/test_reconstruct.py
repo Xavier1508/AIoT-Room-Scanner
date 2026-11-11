@@ -69,6 +69,63 @@ class Reconstruction(unittest.TestCase):
         self.assertTrue(mirrored["mirror_y"])
         self.assertAlmostEqual(mirrored["mirror_center_m"], 0.0)
 
+    def test_axis_residual_and_wall_snap(self):
+        self.assertAlmostEqual(reconstruct._axis_residual_deg(3.0), 3.0)
+        self.assertAlmostEqual(reconstruct._axis_residual_deg(87.0), 3.0)
+        self.assertAlmostEqual(reconstruct._axis_residual_deg(90.0), 0.0)
+        import math
+        angle = math.radians(20.0)
+        ca, sa = math.cos(angle), math.sin(angle)
+        large = []
+        for i in range(21):
+            for j in range(11):
+                u = -1.0 + i * 0.1
+                v = -0.5 + j * 0.1
+                large.append((u * ca - v * sa, u * sa + v * ca, 0.6, "tof"))
+        snapped = reconstruct._box_from_cluster(
+            large, wall_angles=[0.0, math.pi / 2.0],
+            snap_wall_objects=True)
+        self.assertEqual(snapped["angle_source"], "wall_snap")
+        self.assertAlmostEqual(snapped["angle_deg"], 0.0, places=1)
+        small = []
+        for i in range(6):
+            for j in range(5):
+                u = -0.25 + i * 0.1
+                v = -0.2 + j * 0.1
+                small.append((u * ca - v * sa, u * sa + v * ca, 0.6, "tof"))
+        untouched = reconstruct._box_from_cluster(
+            small, wall_angles=[0.0, math.pi / 2.0],
+            snap_wall_objects=True)
+        self.assertEqual(untouched["angle_source"], "pca")
+
+    def test_auto_align_returns_three_wall_frame(self):
+        import math
+        angle = math.radians(4.0)
+        ca, sa = math.cos(angle), math.sin(angle)
+        rows = []
+        for index in range(26):
+            x, y = index * 0.1, 0.0
+            rows.append({"x_mm": (x * ca - y * sa) * 1000,
+                         "y_mm": (x * sa + y * ca) * 1000,
+                         "z_mm": 1500, "range_mm": 2000, "yaw_deg": 0})
+        for index in range(21):
+            x, y = 2.5, index * 0.1
+            rows.append({"x_mm": (x * ca - y * sa) * 1000,
+                         "y_mm": (x * sa + y * ca) * 1000,
+                         "z_mm": 1500, "range_mm": 2000, "yaw_deg": 0})
+        for index in range(26):
+            x, y = index * 0.1, 2.0
+            rows.append({"x_mm": (x * ca - y * sa) * 1000,
+                         "y_mm": (x * sa + y * ca) * 1000,
+                         "z_mm": 1500, "range_mm": 2000, "yaw_deg": 0})
+        result = reconstruct.auto_align_rotation(
+            rows, yaw_scale=1.0, mirror_y=False, mirror_center_m=0.0,
+            search_min=-5.0, search_max=5.0)
+        self.assertEqual(result["wall_count"], 3)
+        self.assertLess(result["residual_deg"], 2.0)
+        self.assertGreaterEqual(result["rotation_deg"], -5.0)
+        self.assertLessEqual(result["rotation_deg"], 5.0)
+
     def test_yaw_scale_metadata(self):
         rows = [{"x_mm": 1000, "y_mm": 0, "z_mm": 1500, "range_mm": 1000,
                  "yaw_deg": 0}] * 8

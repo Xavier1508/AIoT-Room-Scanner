@@ -314,10 +314,15 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
         ys = [float(point[1]) for point in (annotations.get("room_outline") or [])
               if isinstance(point, (list, tuple)) and len(point) >= 2]
         mirror_center = (min(ys) + max(ys)) / 2.0 if ys else 0.0
+    try:
+        snap_wall_objects = bool(float(room.get("snap_wall_objects", 1.0)))
+    except (TypeError, ValueError):
+        snap_wall_objects = True
     reconstruction = reconstruct_points(
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation,
         annotations=annotations, mirror_y=mirror_y,
-        mirror_center_m=mirror_center)
+        mirror_center_m=mirror_center,
+        snap_wall_objects=snap_wall_objects)
     boxes = reconstruction.get("boxes") or []
     mount_row_set = set(reconstruction.get("mount_rows") or [])
     ceiling_row_set = set(reconstruction.get("ceiling_rows") or [])
@@ -519,6 +524,7 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
         "map_rotation_deg": map_rotation,
         "mirror_y": bool(mirror_y),
         "mirror_center_m": round(float(mirror_center), 3),
+        "snap_wall_objects": bool(snap_wall_objects),
         "room": room,
         "labels": annotations.get("labels") or {},
         "files": files,
