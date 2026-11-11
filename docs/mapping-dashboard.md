@@ -223,10 +223,15 @@ resize/prior editor.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least
-40 cm, the dashboard draws **H1/H2** markers and labels the occupancy as
-`2+ orang (estimasi)`. Closer targets merge into one marker. This is an
-occupancy estimate from one radar; HLK has no angle and is not a true
+**75 cm** (one default LD2410 distance gate), the dashboard draws **H1/H2**
+markers with dashed range lines and radial uncertainty arcs, and labels the
+occupancy as `2 target (estimasi)`. Closer targets merge into one marker. This
+is an occupancy estimate from one radar; HLK has no angle and is not a true
 people counter. Two side-by-side people at the same distance remain one marker.
+The dashboard mirrors the point cloud with the same yaw-scale → rotation →
+mirror order as reconstruction and the PLY exporter, and filters mount rows so
+it displays the same 450 points as the scene export. The top-down canvas is
+square and fits the measured room outline, with a 1 m scale bar.
 
 **Scan direction:** the scan is labelled from **−60° on the chair side** →
 fan → bed/wardrobe → **+60°**, clockwise. The top-down view draws the FOV
@@ -464,9 +469,9 @@ draws a small orange `HLK beyond wall` diagnostic instead. A valid HLK target
 with no `target_state` uses a shorter 2.5 s hold; three stable distance frames
 are required. The **AI / Presence** tab has a **Clear presence** button and
 shows the gate reason, wall distance, distance spread, per-track list and an
-**estimasi orang** badge. The dual-track heuristic uses the HLK moving and
-stationary distances separately; it is an occupancy estimate, not a people
-counter.
+**estimasi target** badge. The dual-track heuristic uses the HLK moving and
+stationary distances separately with a **75 cm** minimum separation; it is an
+occupancy estimate, not a people counter.
 
 ## Endpoints
 

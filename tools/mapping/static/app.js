@@ -26,6 +26,7 @@ const state = {
   scans: [],
   calibration: null,
   points: [],
+  mountRows: new Set(),
   scanJob: null,
   loadedScan: null,
   reconstruction: null,
@@ -704,7 +705,9 @@ async function loadPoints(scanId, preserveCalibration = false) {
     $('map-rotation').value = Number(state.mapRotation).toFixed(1);
     setText('yaw-scale-note', `yaw ${Number(state.yawScale).toFixed(2)} · rotasi ${Number(state.mapRotation).toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} · objek lurus ${state.snapWallObjects ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);
     let reconstruction = null;
-    let annotations = preAnnotations || { labels: {}, hidden: [], merges: [] };
+    let annotations = preAnnotations || {
+      labels: {}, size_overrides: {}, hidden: [], merges: [],
+    };
     try {
       const rec = await api(`/api/mapping/scans/${encodeURIComponent(scanId)}/reconstruct?yaw_scale=${state.yawScale}&map_rotation=${state.mapRotation}&mirror_y=${state.mirrorY ? 1 : 0}&mirror_center=${Number(state.mirrorCenter).toFixed(3)}&snap_objects=${state.snapWallObjects ? 1 : 0}`);
       reconstruction = rec.reconstruction;
@@ -713,6 +716,7 @@ async function loadPoints(scanId, preserveCalibration = false) {
       reconstruction = null;
     }
     state.reconstruction = reconstruction;
+    state.mountRows = new Set((reconstruction?.mount_rows || []).map(Number));
     applyAnnotationState(annotations);
     state.undoStack = [];
     updateUndoButton();
@@ -721,7 +725,8 @@ async function loadPoints(scanId, preserveCalibration = false) {
     state.selectionRect = null;
     const blocks = reconstruction?.boxes?.length ?? 0;
     const mountBoxes = reconstruction?.mount_boxes ?? 0;
-    setText('cloud-stats', `${scanId} · ${state.points.length} points · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · rotasi ${Number(reconstruction?.map_rotation_deg ?? state.mapRotation).toFixed(1)}° · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
+    const visibleCount = visibleCloudPoints(true).length;
+    setText('cloud-stats', `${scanId} · ${visibleCount} points tampil · ${state.points.filter(p => p.range_mm != null).length} with range · yaw ${Number(reconstruction?.yaw_scale ?? state.yawScale).toFixed(2)} · rotasi ${Number(reconstruction?.map_rotation_deg ?? state.mapRotation).toFixed(1)}° · ${blocks} estimated blocks · mount ${reconstruction?.mount_points ?? '—'} pts / ${mountBoxes} box hidden`);
     renderBoxControls();
     drawCloud();
     drawTopDown();
@@ -796,6 +801,7 @@ function applyAnnotationState(annotations) {
   const source = annotations || {};
   state.annotations = {
     labels: source.labels || {},
+    size_overrides: source.size_overrides || {},
     hidden: source.hidden || [],
     removed: source.removed || [],
     merges: source.merges || [],
@@ -851,9 +857,10 @@ function renderRoomInfo() {
   if (room.width_m && room.depth_m) {
     const bedroom = room.bedroom_m2 ?? (room.width_m * room.depth_m);
     const total = room.total_m2 ?? (bedroom + (room.bathroom_m2 || 0) + (room.desk_niche_m2 || 0));
-    setText('room-info', `Prior: ${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m = `
-      + `${Number(bedroom).toFixed(2)} m² · kamar mandi ${Number(room.bathroom_m2 || 0).toFixed(2)} m²`
-      + ` · niche ${Number(room.desk_niche_m2 || 0).toFixed(2)} m² · total ${Number(total).toFixed(2)} m²`);
+    const areaSource = room.area_source === 'user'
+      ? ' termasuk kamar mandi (ukuran ruangan)' : '';
+    setText('room-info', `Outline ${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m`
+      + ` · total ${Number(total).toFixed(2)} m²${areaSource}`);
   } else {
     setText('room-info', 'Prior ruangan belum diisi.');
   }
@@ -877,6 +884,7 @@ function annotationsClone() {
   const source = state.annotations || {};
   return JSON.parse(JSON.stringify({
     labels: source.labels || {},
+    size_overrides: source.size_overrides || {},
     hidden: source.hidden || [],
     removed: source.removed || [],
     merges: source.merges || [],
@@ -919,8 +927,12 @@ function renderBoxControls() {
     mergeOption.textContent = text;
     merge.append(mergeOption);
   });
-  if (previous && boxes.some(box => box.id === previous)) select.value = previous;
-  state.selectedBoxId = select.value;
+  if (previous && boxes.some(box => box.id === previous)) {
+    select.value = previous;
+    state.selectedBoxId = previous;
+  } else {
+    state.selectedBoxId = null;
+  }
   const mergeCandidate = boxes.find(box => box.id !== select.value);
   merge.value = mergeCandidate ? mergeCandidate.id : '';
   syncBoxLabel();
@@ -1077,8 +1089,7 @@ function selectedBox() {
 
 function isEditableBox(box) {
   if (!box) return false;
-  return box.source === 'prior' || box.source === 'manual'
-    || box.label_source === 'manual' || box.label_source === 'prior';
+  return box.source === 'prior' || box.source === 'manual';
 }
 
 function updatePriorFieldValues(box) {
@@ -1107,10 +1118,13 @@ function syncPriorFields() {
   }
   const editable = isEditableBox(box);
   updatePriorFieldValues(box);
-  ids.forEach(id => { if ($(id)) $(id).disabled = !editable; });
+  ids.forEach(id => {
+    if (!$(id)) return;
+    $(id).disabled = !editable && id !== 'prior-length' && id !== 'prior-width';
+  });
   setText('prior-status', editable
     ? `Edit ${box.label} (${box.source || 'manual'}). Pivot putih = pusat objek; drag handle = ubah satu sisi.`
-    : `Auto box ${box.label}: klik "Jadikan prior" untuk mengedit posisi/ukuran.`);
+    : `Auto box ${box.label}: panjang/lebar bisa dikunci sesuai ukuran meteran; posisi/sudut tetap dari sensor.`);
 }
 
 async function addPrior() {
@@ -1223,8 +1237,24 @@ async function promoteBoxToPrior(box) {
 
 async function applyPriorFields() {
   const box = selectedBox();
-  if (!box || !isEditableBox(box)) {
-    setText('prior-status', 'Pilih prior/manual box dulu.');
+  if (!box) {
+    setText('prior-status', 'Pilih blok dulu.');
+    return;
+  }
+  if (!isEditableBox(box)) {
+    const length = Math.max(0.05, Number($('prior-length').value) || 0.05);
+    const width = Math.max(0.05, Number($('prior-width').value) || 0.05);
+    const next = annotationsClone();
+    next.size_overrides = next.size_overrides || {};
+    next.size_overrides[box.id] = { length_m: length, width_m: width };
+    try {
+      await withBusy($('apply-prior'),
+        () => saveAnnotations(next,
+          `Ukuran ${box.label} dikunci ${length.toFixed(2)}×${width.toFixed(2)} m.`,
+          box.id), 'Menyimpan...');
+    } catch (error) {
+      setText('prior-status', `Gagal menyimpan ukuran: ${error.message}`);
+    }
     return;
   }
   const next = annotationsClone();
@@ -1638,15 +1668,22 @@ function scaledPoint(point) {
   const rotation = Number(state.mapRotation) * Math.PI / 180;
   const rotate = Number.isFinite(rotation) && Math.abs(rotation) > 1e-9;
   const yawScale = Number.isFinite(scale) && Math.abs(scale - 1) > 1e-6;
-  if (!yawScale && !rotate) return point;
+  const mirrorCenter = Number(state.mirrorCenter);
+  const mirror = Boolean(state.mirrorY) && Number.isFinite(mirrorCenter);
+  if (!yawScale && !rotate && !mirror) return point;
   const x = Number(point.x_mm);
   const y = Number(point.y_mm);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return point;
-  const distance = Math.hypot(x, y);
-  if (!distance) return point;
-  const yaw = Math.atan2(y, x) * (Number.isFinite(scale) ? scale : 1);
-  let rx = distance * Math.cos(yaw);
-  let ry = distance * Math.sin(yaw);
+  let rx = x;
+  let ry = y;
+  if (yawScale) {
+    const distance = Math.hypot(x, y);
+    if (distance) {
+      const yaw = Math.atan2(y, x) * scale;
+      rx = distance * Math.cos(yaw);
+      ry = distance * Math.sin(yaw);
+    }
+  }
   if (rotate) {
     const ca = Math.cos(rotation), sa = Math.sin(rotation);
     const nx = rx * ca - ry * sa;
@@ -1654,7 +1691,22 @@ function scaledPoint(point) {
     rx = nx;
     ry = ny;
   }
+  // The reconstruction, PLY and dataset exports mirror in the prior frame.
+  // Apply the same mirror to the dashboard points so they never drift away
+  // from the boxes and outline.
+  if (mirror) ry = 2.0 * mirrorCenter * 1000.0 - ry;
   return { ...point, x_mm: rx, y_mm: ry };
+}
+
+function visibleCloudPoints(requireZ = false) {
+  const hidden = state.mountRows instanceof Set
+    ? state.mountRows
+    : new Set((state.mountRows || []).map(Number));
+  return state.points
+    .filter(point => point.x_mm != null && point.y_mm != null
+      && (!requireZ || point.z_mm != null)
+      && !hidden.has(Number(point.point_index)))
+    .map(scaledPoint);
 }
 
 function mirrorCenterFromOutline(outline) {
@@ -1866,10 +1918,10 @@ function drawBoxes3D(ctx, width, height, radius) {
 }
 
 function drawTag(ctx, x, y, text, color, scale = 1) {
-  ctx.font = `${12 * scale}px system-ui`;
-  const width = ctx.measureText(text).width + 9 * scale;
-  ctx.fillStyle = 'rgba(10,17,28,0.80)';
-  ctx.fillRect(x - width / 2, y - 10 * scale, width, 19 * scale);
+  ctx.font = `${20 * scale}px system-ui`;
+  const width = ctx.measureText(text).width + 14 * scale;
+  ctx.fillStyle = 'rgba(10,17,28,0.86)';
+  ctx.fillRect(x - width / 2, y - 16 * scale, width, 30 * scale);
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -1919,24 +1971,32 @@ function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
     const distance = Number(track.distance_cm) / 100;
     if (!Number.isFinite(distance) || distance <= 0) return;
     const point = toScreen(distance * Math.cos(yaw), distance * Math.sin(yaw));
-    const size = 0.5 * scale;
+    const size = 0.42 * scale;
     const color = colors[index % colors.length];
-    ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.14)`;
-    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+    const half = (Number(presence.occupancy_uncertainty_deg) || 60) * Math.PI / 180;
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.32)`;
     ctx.lineWidth = 2;
-    ctx.setLineDash([6, 3]);
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, distance * scale, -yaw - half, -yaw + half);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.18)`;
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.98)`;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([7, 4]);
     ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
     ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
     ctx.setLineDash([]);
-    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.65)`;
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.78)`;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
     ctx.lineTo(point.x, point.y);
     ctx.stroke();
     const label = `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m · `
       + `${Math.round(Number(track.confidence || presence.confidence || 0) * 100)}%`;
-    drawTag(ctx, point.x, point.y - size / 2 - 12 - index * 18, label,
+    drawTag(ctx, point.x, point.y - size / 2 - 18 - index * 24, label,
       `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
   });
 }
@@ -1969,23 +2029,13 @@ function drawRoomOutline2D(ctx, toScreen) {
     index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
   });
   ctx.closePath();
-  ctx.fillStyle = 'rgba(120,255,200,0.04)';
+  ctx.fillStyle = 'rgba(120,255,200,0.06)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(120,255,200,0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = 'rgba(120,255,200,0.62)';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([12, 7]);
   ctx.stroke();
   ctx.setLineDash([]);
-  const labelCorner = state.roomOutline.reduce((best, point) =>
-    (Number(point[0]) <= Number(best[0]) && Number(point[1]) >= Number(best[1]) ? point : best),
-  state.roomOutline[0]);
-  const first = toScreen(Number(labelCorner[0]), Number(labelCorner[1]));
-  const room = state.room || {};
-  const dimensions = room.width_m && room.depth_m
-    ? `${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m` : 'prior';
-  ctx.fillStyle = 'rgba(120,255,200,0.85)';
-  ctx.font = '12px system-ui';
-  ctx.fillText(`prior room ${dimensions}`, first.x + 6, first.y - 6);
 }
 
 function drawRoomOutline3D(ctx, width, height, radius) {
@@ -2102,33 +2152,39 @@ function drawResizeHandles2D(ctx, box, toScreen) {
   ctx.restore();
 }
 
-function drawAxisTicks2D(ctx, toScreen, extent) {
+function drawAxisTicks2D(ctx, view, width, height) {
   if (!state.showAxis) return;
   const step = 0.5;
+  const topLeft = view.toWorld(0, 0);
+  const bottomRight = view.toWorld(width, height);
+  const minX = Math.min(topLeft.x, bottomRight.x);
+  const maxX = Math.max(topLeft.x, bottomRight.x);
+  const minY = Math.min(topLeft.y, bottomRight.y);
+  const maxY = Math.max(topLeft.y, bottomRight.y);
   ctx.save();
-  ctx.fillStyle = 'rgba(170,195,220,0.72)';
-  ctx.strokeStyle = 'rgba(170,195,220,0.35)';
-  ctx.font = '10px system-ui';
+  ctx.fillStyle = 'rgba(180,205,230,0.82)';
+  ctx.strokeStyle = 'rgba(170,195,220,0.45)';
+  ctx.font = '20px system-ui';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let value = -Math.floor(extent / step) * step; value <= extent; value += step) {
-    const p = toScreen(value, -extent);
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y + 4); ctx.stroke();
-    if (Math.abs(value) > 0.01) ctx.fillText(value.toFixed(1), p.x, p.y + 6);
+  for (let value = Math.ceil(minX / step) * step; value <= maxX; value += step) {
+    const p = view.toScreen(value, minY);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y + 7); ctx.stroke();
+    if (Math.abs(value) > 0.01) ctx.fillText(value.toFixed(1), p.x, p.y + 10);
   }
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  for (let value = -Math.floor(extent / step) * step; value <= extent; value += step) {
-    const p = toScreen(-extent, value);
-    ctx.beginPath(); ctx.moveTo(p.x - 4, p.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-    if (Math.abs(value) > 0.01) ctx.fillText(value.toFixed(1), p.x - 6, p.y);
+  for (let value = Math.ceil(minY / step) * step; value <= maxY; value += step) {
+    const p = view.toScreen(minX, value);
+    ctx.beginPath(); ctx.moveTo(p.x - 7, p.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    if (Math.abs(value) > 0.01) ctx.fillText(value.toFixed(1), p.x - 10, p.y);
   }
-  const bottomRight = toScreen(extent, -extent);
-  const topLeft = toScreen(-extent, extent);
+  const bottomRightScreen = view.toScreen(maxX, minY);
+  const topLeftScreen = view.toScreen(minX, maxY);
   ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(120,180,255,0.85)';
-  ctx.fillText('X (m)', bottomRight.x - 34, bottomRight.y + 20);
-  ctx.fillText('Y (m)', topLeft.x - 6, topLeft.y - 12);
+  ctx.fillStyle = 'rgba(120,180,255,0.95)';
+  ctx.fillText('X (m)', bottomRightScreen.x - 40, bottomRightScreen.y + 32);
+  ctx.fillText('Y (m)', topLeftScreen.x, topLeftScreen.y - 28);
   ctx.restore();
 }
 
@@ -2138,36 +2194,52 @@ function drawTopDown() {
   const ctx = canvas.getContext('2d');
   const width = canvas.width, height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null).map(scaledPoint);
-  const boxes = visibleBoxes();
+  const view = topDownTransform(canvas);
+  const { points, boxes, extent, scale, toScreen } = view;
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
   const hlkRadius = presence?.distance_cm
     ? Number(presence.distance_cm) / 100
     : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
-  let extent = 1.0;
-  for (const point of points) extent = Math.max(extent, Math.abs(Number(point.x_mm)) / 1000, Math.abs(Number(point.y_mm)) / 1000);
-  for (const box of boxes) {
-    for (const point of boxCorners(box)) extent = Math.max(extent, Math.abs(point.x_mm) / 1000, Math.abs(point.y_mm) / 1000);
-  }
-  extent = Math.max(extent, hlkRadius) * 1.15;
-  const zoom = Math.max(0.4, Math.min(8, Number(state.topZoom) || 1));
-  const scale = Math.min(width, height) * 0.42 / extent * zoom;
-  const toScreen = (x, y) => ({
-    x: width / 2 + x * scale + Number(state.topPanX || 0),
-    y: height / 2 - y * scale + Number(state.topPanY || 0),
-  });
-  const labelScale = Math.max(1, Math.min(1.6, zoom));
-  ctx.lineWidth = 1;
-  const start = -Math.ceil(extent * 2) / 2;
-  for (let value = start; value <= extent; value += 0.5) {
-    const p1 = toScreen(value, -extent), p2 = toScreen(value, extent);
-    const p3 = toScreen(-extent, value), p4 = toScreen(extent, value);
+  const labelScale = 1.15;
+  const worldTopLeft = view.toWorld(0, 0);
+  const worldBottomRight = view.toWorld(width, height);
+  const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
+  const worldMaxX = Math.max(worldTopLeft.x, worldBottomRight.x);
+  const worldMinY = Math.min(worldTopLeft.y, worldBottomRight.y);
+  const worldMaxY = Math.max(worldTopLeft.y, worldBottomRight.y);
+  const gridStep = 0.5;
+  ctx.lineWidth = 2;
+  const startX = Math.floor(worldMinX / gridStep) * gridStep;
+  for (let value = startX; value <= worldMaxX; value += gridStep) {
+    const p1 = toScreen(value, worldMinY);
+    const p2 = toScreen(value, worldMaxY);
     ctx.strokeStyle = Math.abs(value) < 0.01 ? '#2c4562' : '#1a2a3d';
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
   }
-  drawAxisTicks2D(ctx, toScreen, extent);
+  const startY = Math.floor(worldMinY / gridStep) * gridStep;
+  for (let value = startY; value <= worldMaxY; value += gridStep) {
+    const p1 = toScreen(worldMinX, value);
+    const p2 = toScreen(worldMaxX, value);
+    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#2c4562' : '#1a2a3d';
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+  }
+  drawAxisTicks2D(ctx, view, width, height);
+  const roomInfo = state.room || {};
+  if (roomInfo.width_m && roomInfo.depth_m) {
+    const total = Number(roomInfo.total_m2);
+    const text = `ruangan ${Number(roomInfo.width_m).toFixed(2)}×${Number(roomInfo.depth_m).toFixed(2)} m`
+      + (Number.isFinite(total) ? ` · total ${total.toFixed(1)} m²` : '');
+    ctx.font = '20px system-ui';
+    const textWidth = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(8,15,25,0.78)';
+    ctx.fillRect(14, 12, textWidth + 18, 32);
+    ctx.fillStyle = 'rgba(120,255,200,0.95)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 23, 29);
+    ctx.textBaseline = 'alphabetic';
+  }
   const origin = toScreen(0, 0);
   const fovLimit = Number(state.reconstruction?.fov_limit_deg || 60);
   drawOccludedWedges(ctx, toScreen, origin, extent,
@@ -2182,39 +2254,12 @@ function drawTopDown() {
   ctx.setLineDash([]);
   const scanStart = toScreen(Math.cos(-fov) * extent * 0.82, Math.sin(-fov) * extent * 0.82);
   const scanEnd = toScreen(Math.cos(fov) * extent * 0.82, Math.sin(fov) * extent * 0.82);
-  ctx.fillStyle = 'rgba(150,200,255,0.9)';
-  ctx.font = '12px system-ui';
-  ctx.fillText('start −60° (kursi)', scanStart.x - 24, scanStart.y - 8);
-  ctx.fillText('end +60° (kasur/lemari)', scanEnd.x + 4, scanEnd.y - 8);
-  ctx.fillText('scan searah jarum jam', origin.x + 8, origin.y + 20);
+  ctx.fillStyle = 'rgba(150,200,255,0.95)';
+  ctx.font = '20px system-ui';
+  ctx.fillText('start −60° (kursi)', scanStart.x - 40, scanStart.y - 14);
+  ctx.fillText('end +60° (kasur/lemari)', scanEnd.x + 8, scanEnd.y - 14);
+  ctx.fillText('scan searah jarum jam', origin.x + 14, origin.y + 34);
   drawRoomOutline2D(ctx, toScreen);
-  if (state.showDistances) {
-    for (const [boxIndex, box] of boxes.entries()) {
-      if (box.source === 'prior') continue;
-      const color = boxColor(box);
-      let anchor;
-      if (box.label === 'wall' || box.label === 'wall_edge') {
-        const corners = boxCorners(box).slice(0, 4)
-          .map(point => ({ x: Number(point.x_mm) / 1000, y: Number(point.y_mm) / 1000 }));
-        const nearest = corners.reduce((best, point) =>
-          Math.hypot(point.x, point.y) < Math.hypot(best.x, best.y) ? point : best, corners[0]);
-        anchor = toScreen(nearest.x, nearest.y);
-      } else {
-        anchor = toScreen(Number(box.cx_m), Number(box.cy_m));
-      }
-      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.32)`;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(anchor.x, anchor.y); ctx.stroke();
-      ctx.setLineDash([]);
-      const mid = {
-        x: origin.x + (anchor.x - origin.x) * 0.62,
-        y: origin.y + (anchor.y - origin.y) * 0.62 + (boxIndex % 2 === 0 ? -8 : 8),
-      };
-      drawTag(ctx, mid.x, mid.y, `#${boxIndex + 1} ${formatMeters(boxDistance(box))}`,
-        `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
-    }
-  }
   if (state.viewMode !== 'blocks') {
     const selected = selectedPointSet();
     for (const point of points) {
@@ -2223,7 +2268,7 @@ function drawTopDown() {
       ctx.fillStyle = isSelected ? '#ffffff'
         : (point.range_source === 'tof' ? 'rgba(80,220,255,0.85)' : 'rgba(255,170,60,0.85)');
       ctx.beginPath();
-      ctx.arc(screen.x, screen.y, isSelected ? 4.5 : 2.2, 0, Math.PI * 2);
+      ctx.arc(screen.x, screen.y, isSelected ? 6.5 : 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -2235,23 +2280,23 @@ function drawTopDown() {
       ctx.beginPath(); ctx.moveTo(corners[0].x, corners[0].y);
       for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
       ctx.closePath();
-      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.08 : 0.22})`;
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.13 : 0.30})`;
       ctx.fill();
-      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.75 : 0.95})`;
-      ctx.lineWidth = prior ? 1.4 : (box.label === 'wall' ? 2.2 : 1.6);
-      if (prior || box.label === 'wall_edge') ctx.setLineDash([5, 3]);
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${prior ? 0.88 : 0.98})`;
+      ctx.lineWidth = prior ? 2.0 : (box.label === 'wall' ? 3.0 : 2.4);
+      if (prior || box.label === 'wall_edge') ctx.setLineDash([7, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
       if (state.selectedBoxId === box.id) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-        ctx.lineWidth = 3.5;
-        ctx.setLineDash([7, 4]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.98)';
+        ctx.lineWidth = 5;
+        ctx.setLineDash([10, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = '#ffffff';
         for (const corner of corners) {
-          ctx.fillRect(corner.x - 3.5, corner.y - 3.5, 7, 7);
+          ctx.fillRect(corner.x - 5, corner.y - 5, 10, 10);
         }
         ctx.restore();
         const tag = toScreen(Number(box.cx_m),
@@ -2262,11 +2307,11 @@ function drawTopDown() {
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
       if (box.label === 'wall' || box.label === 'wall_edge' || box.source === 'prior') {
         ctx.beginPath();
-        ctx.arc(label.x, label.y, 11 * labelScale, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.92)`;
+        ctx.arc(label.x, label.y, 16 * labelScale, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.96)`;
         ctx.fill();
         ctx.fillStyle = '#0a111c';
-        ctx.font = `bold ${12 * labelScale}px system-ui`;
+        ctx.font = `bold ${18 * labelScale}px system-ui`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(boxIndex + 1), label.x, label.y);
@@ -2276,12 +2321,12 @@ function drawTopDown() {
         const shortName = box.label === 'door-wc' ? 'WC'
           : box.label === 'door-exit' ? 'exit' : box.label;
         const text = `#${boxIndex + 1} ${shortName}`;
-        ctx.font = `${14 * labelScale}px system-ui`;
-        ctx.lineWidth = 3 * labelScale;
-        ctx.strokeStyle = 'rgba(10,17,28,0.85)';
-        ctx.strokeText(text, label.x + 4, label.y - 4);
+        ctx.font = `bold ${20 * labelScale}px system-ui`;
+        ctx.lineWidth = 4 * labelScale;
+        ctx.strokeStyle = 'rgba(10,17,28,0.92)';
+        ctx.strokeText(text, label.x + 6, label.y - 6);
         ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-        ctx.fillText(text, label.x + 4, label.y - 4);
+        ctx.fillText(text, label.x + 6, label.y - 6);
       }
       if (box.source === 'prior' || state.selectedBoxId === box.id) {
         drawBoxPivot2D(ctx, box, toScreen, state.selectedBoxId === box.id);
@@ -2296,29 +2341,66 @@ function drawTopDown() {
       }
     }
   }
+  if (state.showDistances) {
+    for (const [boxIndex, box] of boxes.entries()) {
+      if (box.source === 'prior') continue;
+      const color = boxColor(box);
+      let anchor;
+      if (box.label === 'wall' || box.label === 'wall_edge') {
+        const corners = boxCorners(box).slice(0, 4)
+          .map(point => ({ x: Number(point.x_mm) / 1000, y: Number(point.y_mm) / 1000 }));
+        const nearest = corners.reduce((best, point) =>
+          Math.hypot(point.x, point.y) < Math.hypot(best.x, best.y) ? point : best, corners[0]);
+        anchor = toScreen(nearest.x, nearest.y);
+      } else {
+        anchor = toScreen(Number(box.cx_m), Number(box.cy_m));
+      }
+      const dx = anchor.x - origin.x;
+      const dy = anchor.y - origin.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const offset = 24 * labelScale;
+      ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.42)`;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(anchor.x, anchor.y); ctx.stroke();
+      ctx.setLineDash([]);
+      const mid = {
+        x: origin.x + dx * 0.72 - (dy / length) * offset,
+        y: origin.y + dy * 0.72 + (dx / length) * offset,
+      };
+      drawTag(ctx, mid.x, mid.y, `#${boxIndex + 1} ${formatMeters(boxDistance(box))}`,
+        `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
+    }
+  }
   drawHumanTopDown(ctx, toScreen, origin, scale, labelScale);
   ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.arc(origin.x, origin.y, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.font = '12px system-ui';
-  ctx.strokeStyle = '#ff6b6b'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x + 0.5 * scale, origin.y); ctx.stroke();
-  ctx.fillStyle = '#ff6b6b'; ctx.fillText('X', origin.x + 0.5 * scale + 4, origin.y - 4);
+  ctx.beginPath(); ctx.arc(origin.x, origin.y, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '20px system-ui';
+  ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x + 0.5 * scale, origin.y); ctx.stroke();
+  ctx.fillStyle = '#ff6b6b'; ctx.fillText('X', origin.x + 0.5 * scale + 6, origin.y - 6);
   ctx.strokeStyle = '#6bff9c'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x, origin.y - 0.5 * scale); ctx.stroke();
-  ctx.fillStyle = '#6bff9c'; ctx.fillText('Y', origin.x + 4, origin.y - 0.5 * scale - 4);
-  const barStart = { x: 24, y: height - 24 };
-  ctx.strokeStyle = '#e6edf6'; ctx.lineWidth = 2;
+  ctx.fillStyle = '#6bff9c'; ctx.fillText('Y', origin.x + 6, origin.y - 0.5 * scale - 6);
+  const barStart = { x: 30, y: height - 30 };
+  ctx.strokeStyle = '#e6edf6'; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y); ctx.lineTo(barStart.x + scale, barStart.y); ctx.stroke();
-  ctx.fillStyle = '#e6edf6'; ctx.font = '12px system-ui'; ctx.fillText('1 m', barStart.x + scale / 2 - 12, barStart.y - 6);
+  ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y - 8); ctx.lineTo(barStart.x, barStart.y + 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(barStart.x + scale, barStart.y - 8); ctx.lineTo(barStart.x + scale, barStart.y + 8); ctx.stroke();
+  ctx.fillStyle = '#e6edf6'; ctx.font = '20px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('1 m', barStart.x + scale / 2, barStart.y - 14);
+  ctx.textAlign = 'start';
   if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
     const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
     const screen = toScreen(hlkRadius * Math.cos(yaw), hlkRadius * Math.sin(yaw));
     ctx.fillStyle = gated ? 'rgba(255,170,70,0.22)' : 'rgba(255,80,200,0.28)';
     ctx.strokeStyle = gated ? 'rgba(255,190,90,0.85)' : 'rgba(255,120,220,0.85)';
-    ctx.beginPath(); ctx.arc(screen.x, screen.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = gated ? '#ffc46b' : '#ff9be0'; ctx.font = '11px system-ui';
+    ctx.beginPath(); ctx.arc(screen.x, screen.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = gated ? '#ffc46b' : '#ff9be0'; ctx.font = '18px system-ui';
     ctx.fillText(gated
       ? `HLK beyond wall ${hlkRadius.toFixed(2)} m`
-      : `HLK ${hlkRadius.toFixed(2)} m`, screen.x + 6, screen.y - 6);
+      : `HLK ${hlkRadius.toFixed(2)} m`, screen.x + 10, screen.y - 10);
   }
   drawSelectionOverlay(ctx, 'topdown');
 }
@@ -2382,9 +2464,7 @@ function drawHuman3D(ctx, width, height, radius) {
 
 function update3DScene() {
   if (!window.Room3D || !window.Room3D.isReady()) return false;
-  const points = state.points
-    .filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null)
-    .map(scaledPoint)
+  const points = visibleCloudPoints(true)
     .map(point => {
       const selected = selectedPointSet().has(Number(point.point_index));
       const base = point.range_source === 'tof' ? [80, 220, 255] : [255, 170, 60];
@@ -2417,13 +2497,14 @@ function update3DScene() {
     points,
     boxes,
     selectedId: state.selectedBoxId,
-    roomOutline: state.priorVisible ? (state.roomOutline || []) : [],
+    roomOutline: state.roomOutline || [],
     priorVisible: state.priorVisible,
     viewMode: state.viewMode,
     showDistances: state.showDistances,
     showAxis: state.showAxis,
     tracks,
     occupancyLabel: (tracks.length && presence?.occupancy_label) || '',
+    presenceUncertaintyDeg: Number(presence?.occupancy_uncertainty_deg || 60),
     presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
   });
   return true;
@@ -2440,7 +2521,7 @@ function drawCloudCanvas() {
   const width = canvas.width;
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null).map(scaledPoint);
+  const points = visibleCloudPoints(true);
   const boxes = visibleBoxes();
   const presence = state.presence;
   const hlk = state.health?.esp?.sensors?.hlk;
@@ -2526,38 +2607,62 @@ function pointInPolygon(point, polygon) {
 }
 
 function topDownTransform(canvas) {
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null).map(scaledPoint);
+  const points = visibleCloudPoints(false);
   const boxes = visibleBoxes();
-  const hlk = state.health?.esp?.sensors?.hlk;
-  const hlkRadius = state.presence?.distance_cm
-    ? Number(state.presence.distance_cm) / 100
-    : (hlk?.valid ? Number(hlk.distance_cm || 0) / 100 : 0);
-  let extent = 1.0;
-  for (const point of points) {
-    extent = Math.max(extent, Math.abs(Number(point.x_mm)) / 1000,
-      Math.abs(Number(point.y_mm)) / 1000);
-  }
-  for (const box of boxes) {
-    for (const point of boxCorners(box)) {
-      extent = Math.max(extent, Math.abs(point.x_mm) / 1000, Math.abs(point.y_mm) / 1000);
+  const xs = [];
+  const ys = [];
+  const add = (x, y) => {
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      xs.push(x);
+      ys.push(y);
+    }
+  };
+  const outline = (state.roomOutline || [])
+    .filter(point => Array.isArray(point) && point.length >= 2);
+  if (outline.length >= 3) {
+    // Fit the measured room outline. Points and priors outside the bedroom
+    // (wall thickness, desk niche) must not shrink the plan.
+    for (const [x, y] of outline) add(Number(x), Number(y));
+  } else {
+    for (const point of points) add(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
+    for (const box of boxes) {
+      for (const point of boxCorners(box)) add(point.x_mm / 1000, point.y_mm / 1000);
     }
   }
-  extent = Math.max(extent, hlkRadius) * 1.15;
+  add(0, 0);
+  if (!xs.length) {
+    xs.push(-1, 1);
+    ys.push(-1, 1);
+  }
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const spanX = Math.max(0.6, maxX - minX);
+  const spanY = Math.max(0.6, maxY - minY);
+  const pad = Math.min(canvas.width, canvas.height) * 0.06;
   const zoom = Math.max(0.4, Math.min(8, Number(state.topZoom) || 1));
-  const scale = Math.min(canvas.width, canvas.height) * 0.42 / extent * zoom;
+  const scale = Math.min((canvas.width - 2 * pad) / spanX,
+    (canvas.height - 2 * pad) / spanY) * zoom;
   const toScreen = (x, y) => ({
-    x: canvas.width / 2 + x * scale + Number(state.topPanX || 0),
-    y: canvas.height / 2 - y * scale + Number(state.topPanY || 0),
+    x: canvas.width / 2 + (x - centerX) * scale + Number(state.topPanX || 0),
+    y: canvas.height / 2 - (y - centerY) * scale + Number(state.topPanY || 0),
   });
   const toWorld = (screenX, screenY) => ({
-    x: (screenX - canvas.width / 2 - Number(state.topPanX || 0)) / scale,
-    y: -(screenY - canvas.height / 2 - Number(state.topPanY || 0)) / scale,
+    x: centerX + (screenX - canvas.width / 2 - Number(state.topPanX || 0)) / scale,
+    y: centerY - (screenY - canvas.height / 2 - Number(state.topPanY || 0)) / scale,
   });
-  return { points, boxes, extent, scale, toScreen, toWorld };
+  return {
+    points, boxes, scale, centerX, centerY,
+    extent: Math.max(spanX, spanY) / 2 * 1.05,
+    toScreen, toWorld,
+  };
 }
 
 function cloudTransform(canvas) {
-  const points = state.points.filter(p => p.x_mm != null && p.y_mm != null && p.z_mm != null).map(scaledPoint);
+  const points = visibleCloudPoints(true);
   const boxes = visibleBoxes();
   const hlk = state.health?.esp?.sensors?.hlk;
   const hlkRadius = state.presence?.distance_cm
@@ -2974,6 +3079,13 @@ $('scene-iso').addEventListener('click', () => window.Room3D?.setCamera('iso'));
 $('scene-fit').addEventListener('click', () => window.Room3D?.setCamera('fit'));
 $('scene-fullscreen').addEventListener('click', () => window.Room3D?.toggleFullscreen());
 $('scene-demo').addEventListener('click', () => {
+  state.sceneLayers = {
+    points: true, walls: true, priors: true, objects: true,
+    labels: true, grid: true,
+  };
+  document.querySelectorAll('[data-scene-layer]').forEach(button => {
+    button.classList.toggle('active', true);
+  });
   window.Room3D?.demo();
   state.viewMode = 'both';
   drawTopDown();
@@ -3196,8 +3308,16 @@ function bindTopDown() {
   });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const screenX = (event.clientX - rect.left) * canvas.width / rect.width;
+    const screenY = (event.clientY - rect.top) * canvas.height / rect.height;
+    const before = topDownTransform(canvas).toWorld(screenX, screenY);
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
     state.topZoom = Math.max(0.4, Math.min(8, (Number(state.topZoom) || 1) * factor));
+    const view = topDownTransform(canvas);
+    const after = view.toScreen(before.x, before.y);
+    state.topPanX += screenX - after.x;
+    state.topPanY += screenY - after.y;
     drawTopDown();
   }, { passive: false });
 }

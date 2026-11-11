@@ -25,7 +25,7 @@ class PresenceTracker:
     def __init__(self, confirm_frames=3, hold_s=6.0, min_cm=30.0,
                  max_cm=600.0, energy_threshold=40.0, history_limit=120,
                  beyond_margin_cm=50.0, no_target_hold_s=2.5,
-                 distance_spread_cm=20.0, multi_separation_cm=40.0):
+                 distance_spread_cm=20.0, multi_separation_cm=75.0):
         self.confirm_frames = max(1, int(confirm_frames))
         self.hold_s = max(0.0, float(hold_s))
         self.min_cm = float(min_cm)
@@ -225,10 +225,12 @@ class PresenceTracker:
             "tracks": tracks,
             "occupancy": occupancy,
             "occupancy_label": ("empty" if occupancy == 0 else
-                                "1 orang" if occupancy == 1 else
-                                f"{occupancy}+ orang"),
-            "occupancy_note": ("Estimasi dari target moving/stationary HLK; "
-                               "bukan people counter dan tidak punya sudut."),
+                                "1 target" if occupancy == 1 else
+                                f"{occupancy} target (estimasi)"),
+            "occupancy_note": ("Estimasi target dari jarak moving/stationary "
+                               "HLK; bukan people counter, tanpa sudut, dan "
+                               "resolusi gate radar sekitar 0.75 m."),
+            "occupancy_uncertainty_deg": 60.0,
             "multi_separation_cm": self.multi_separation_cm,
             "distance_cm": (round(self._last_distance, 1)
                             if self._last_distance is not None else None),

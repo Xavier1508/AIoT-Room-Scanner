@@ -111,7 +111,7 @@
           <div><h3>3D isometrik</h3>
             <div class="scene3d-wrap">
               <div id="cloud3d" class="scene3d-canvas" aria-label="Point cloud 3D WebGL"></div>
-              <canvas id="cloud" width="1200" height="700"></canvas>
+              <canvas id="cloud" width="1200" height="1200"></canvas>
               <div class="scene3d-toolbar scene3d-toolbar-left">
                 <button type="button" data-scene-layer="points" class="active">Points</button>
                 <button type="button" data-scene-layer="walls" class="active">Dinding</button>
@@ -130,7 +130,7 @@
               <div id="scene3d-status" class="scene3d-status">Menyiapkan WebGL…</div>
             </div>
           </div>
-          <div><h3>Top-down 2D</h3><canvas id="topdown" width="1200" height="700"></canvas>
+          <div><h3>Top-down 2D</h3><canvas id="topdown" width="1200" height="1200"></canvas>
             <div class="row map-tools">
               <label class="note">2D zoom</label>
               <button id="top-zoom-in" class="alt">+</button>
@@ -219,7 +219,7 @@
               <label>Lebar <input id="prior-width" type="number" step="0.01" min="0.05"></label>
               <label>Sudut <input id="prior-angle" type="number" step="1"></label>
             </div>
-            <button id="apply-prior">Simpan prior</button>
+            <button id="apply-prior">Simpan ukuran / prior</button>
             <span id="prior-status" class="note">Pilih blok prior untuk diedit.</span>
           </div>
           <div class="sidebar-section">
@@ -255,7 +255,7 @@
       <div class="sensor"><div><div class="muted">Class</div><div id="presence-class" class="big">—</div></div><span id="presence-state" class="badge">—</span></div>
       <div class="sensor"><div><div class="muted">Confidence</div><div id="presence-confidence" class="big">—</div></div><span class="badge">rule</span></div>
       <div class="sensor"><div><div class="muted">Jarak HLK</div><div id="presence-distance" class="big">-</div></div><span id="presence-energy" class="badge">-</span></div>
-      <div class="sensor"><div><div class="muted">Estimasi orang</div><div id="presence-occupancy" class="big">-</div></div><span id="presence-track-count" class="badge">estimasi</span></div>
+      <div class="sensor"><div><div class="muted">Estimasi target</div><div id="presence-occupancy" class="big">-</div></div><span id="presence-track-count" class="badge">estimasi</span></div>
       <p id="presence-reason" class="note">-</p>
       <div class="row"><button id="presence-clear" class="danger">Clear presence</button></div>
     </section>

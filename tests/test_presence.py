@@ -118,6 +118,26 @@ class PresenceTrackerTest(unittest.TestCase):
         self.assertEqual(merged["occupancy"], 1)
         self.assertEqual(merged["tracks"][0]["source"], "combined")
 
+    def test_default_separation_matches_radar_gate(self):
+        tracker = presence.PresenceTracker(confirm_frames=1)
+        reading = positive(distance_cm=100, energy=80, target_state=3)
+        reading.update({
+            "moving_distance_cm": 100, "moving_energy": 80,
+            "stationary_distance_cm": 160, "stationary_energy": 70,
+        })
+        merged = tracker.update(reading, now=0.0)
+        self.assertEqual(merged["occupancy"], 1)
+        self.assertEqual(merged["multi_separation_cm"], 75.0)
+
+        farther = positive(distance_cm=100, energy=80, target_state=3)
+        farther.update({
+            "moving_distance_cm": 100, "moving_energy": 80,
+            "stationary_distance_cm": 210, "stationary_energy": 70,
+        })
+        separate = tracker.update(farther, now=1.0)
+        self.assertEqual(separate["occupancy"], 2)
+        self.assertIn("2 target", separate["occupancy_label"])
+
     def test_reset(self):
         tracker = presence.PresenceTracker(confirm_frames=1)
         tracker.update(positive(), now=0.0)

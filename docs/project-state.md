@@ -12,11 +12,13 @@ over 500–950 µs, **8 samples/point**, dwell 500 ms and 250 ms sample interval
 Reconstruction with **yaw 1.00**, **Mirror Y ON**, and **auto-align rotation
 -1.1°** produced 450 filtered points, 23 mount points, 60 ceiling points in the
 final auto-aligned view, **3 measured walls + 2 measured objects
-(bed, fan) + 7 priors = 12 blocks**. The measured bed #5 is labeled `bed` and
-wall-snapped to `-1.2°`; the fan #6 remains `81.8°` (physically angled). The
-prior bed was removed; only the measured bed remains. Wall residual after
-auto-align is **1.61°** with 3 walls. The new room outline is
-**2.70×2.51 m = 6.78 m²** (total 9.03 m² with the bathroom/niche priors). The
+(bed, fan) + 7 priors = 12 blocks**. The measured bed #5 is labeled `bed`,
+wall-snapped to `-1.2°`, and its fitted 1.834×1.536 m footprint is replaced by
+the tape-measured **2.00×1.20 m** lock (same centre/angle); the fan #6 remains
+`81.8°` (physically angled). The prior bed was removed; only the measured bed
+remains. Wall residual after auto-align is **1.61°** with 3 walls. The new room
+outline is **2.70×2.51 m** with **8.6 m² total including the bathroom**
+(user measurement). The
 prior layout was transferred from `20261110T124935Z` with a translation of
 **dx=-0.039 m, dy=+0.137 m**. **Mirror Y is ON by default** because the scanner
 yaw axis is opposite the prior/2D frame: the scan is flipped about the prior
@@ -70,7 +72,7 @@ buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 61 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 63 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -346,11 +348,12 @@ buzzer/safety fallback.
    rotates slowly; and the old canvas as fallback when WebGL is unavailable.
    The 2D canvas stays the precise resize/prior editor.
    Presence now derives up to two tracks from the HLK moving and stationary
-   distances when both are valid and at least 40 cm apart, shown as H1/H2 in
-   3D and 2D with an `estimasi orang` badge. This is an occupancy estimate,
+   distances when both are valid and at least **75 cm** apart (one default
+   LD2410 gate), shown as H1/H2 in 3D and 2D with a `2 target (estimasi)`
+   badge and radial uncertainty arcs. This is an occupancy estimate,
    not a people counter: HLK has no angle, close targets merge, and
    side-by-side people at the same distance remain one marker.
-  The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise.
+   The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise.
 - **Yaw calibration + responsive layout:** for the older 0.7.1 placement the
   commanded yaw was larger than the effective mechanical yaw; the user-tuned
   default was **yaw scale 0.76** (effective FOV ±45.6°) plus **map rotation
@@ -370,10 +373,12 @@ buzzer/safety fallback.
   two doors remain prior-only. Prior wall segments embed the doors; UI colours
   are fan purple, desk green, WC door red, exit door yellow. They are dashed,
   toggleable, per-scan data, not hard-coded, and excluded from training until
-  confirmed. The newer full scan `20261110T184241Z` re-measures the room as
-  **2.70×2.51 m = 6.78 m²** (total 9.03 m²), keeps 3 measured walls, and finds
-  two measured objects: **bed #5** at `(1.346, 0.004)` with 68 points and
-  **fan #6** at `(0.822, 1.254)` with 33 points in the final mirrored view.
+  confirmed. The newer full scan `20261110T184241Z` re-measures the outline as
+  **2.70×2.51 m** with **8.6 m² total including the bathroom** (user
+  measurement), keeps 3 measured walls, and finds two measured objects:
+  **bed #5** at `(1.346, 0.004)` with 68 points, locked to the tape-measured
+  **2.00×1.20 m**, and **fan #6** at `(0.822, 1.254)` with 33 points in the
+  final mirrored view.
   The old priors were translated by `dx=-0.039 m`, `dy=+0.137 m`; #6 matches
   the old fan-sized measured object within 6 cm, supporting that transfer.
   **Mirror Y defaults ON** about the prior room-centre
@@ -458,7 +463,7 @@ buzzer/safety fallback.
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 61 Python pass. Evidence:
+  presence. Tests: 87 C++ + 63 Python pass. Evidence:
   `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
   `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
   `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,
@@ -479,8 +484,9 @@ and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Remaining work:
 when the board is back, OTA `0.8.0-ml-empty-human`, verify live DL empty/human,
 record screenshots/metrics, then export the first **clean** dataset run. The
 final mapping PLY is
-`research/mapping/scenes/20261110T184241Z/20261111T045800Z.ply` (Mirror Y ON,
-auto-align -1.1°, wall snap ON, 12 boxes). The DL model is
+`research/mapping/scenes/20261110T184241Z/20261111T083800Z.ply` (Mirror Y ON,
+auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, 12 boxes, 450
+points, SHA-256 `ff53528d…e807`). The DL model is
 `research/mapping/ml/model-empty-human-v2/`; deployment steps are in
 `docs/ml-deployment.md`. The rule path remains the buzzer/safety fallback.
 

@@ -93,9 +93,11 @@ function labelSprite(text, textColor = '#ffffff', scale = 1) {
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
     map: texture, transparent: true, depthTest: false, depthWrite: false,
+    toneMapped: false,
   }));
   sprite.center.set(0.5, 0.5);
-  sprite.scale.set(1.45 * scale, 0.27 * scale, 1);
+  sprite.scale.set(1.55 * scale, 0.29 * scale, 1);
+  sprite.renderOrder = 1000;
   return sprite;
 }
 
@@ -110,12 +112,15 @@ function addBox(box) {
   const wall = box.label === 'wall' || box.label === 'wall_edge';
   const material = new THREE.MeshStandardMaterial({
     color: base,
+    emissive: base,
+    emissiveIntensity: prior ? 0.05 : (wall ? 0.07 : 0.20),
     transparent: true,
-    opacity: prior ? 0.06 : (wall ? 0.07 : 0.16),
+    opacity: prior ? 0.15 : (wall ? 0.20 : 0.46),
     depthWrite: false,
-    roughness: 0.72,
+    roughness: 0.62,
     metalness: 0.0,
     side: THREE.DoubleSide,
+    toneMapped: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(Number(box.cx_m) || 0, Number(box.cy_m) || 0, (z0 + z1) / 2);
@@ -127,7 +132,8 @@ function addBox(box) {
     new THREE.LineBasicMaterial({
       color: base,
       transparent: true,
-      opacity: prior ? 0.50 : 0.72,
+      opacity: prior ? 0.72 : 0.96,
+      toneMapped: false,
     }),
   );
   mesh.add(edge);
@@ -137,7 +143,8 @@ function addBox(box) {
     const helper = new THREE.BoxHelper(mesh, COLORS.selected);
     helper.material.depthTest = false;
     helper.material.transparent = true;
-    helper.material.opacity = 0.95;
+    helper.material.opacity = 0.98;
+    helper.renderOrder = 1002;
     state.groups.labels.add(helper);
   }
   return mesh;
@@ -156,13 +163,11 @@ function addDistanceLine(box, index) {
   if (origin.distanceTo(end) < 0.08) return;
   const geometry = new THREE.BufferGeometry().setFromPoints([origin, end]);
   const material = new THREE.LineBasicMaterial({
-    color: color(box.color), transparent: true, opacity: 0.30,
+    color: color(box.color), transparent: true, opacity: 0.46,
   });
   state.groups.distances.add(new THREE.Line(geometry, material));
-  const mid = origin.clone().lerp(end, 0.62);
-  mid.z = 0.06;
-  const distance = Math.hypot(end.x, end.y);
-  addLabel(`#${index} ${distance.toFixed(2)} m`, mid, '#dcecff', 0.68);
+  // The distance is appended to the box label above the object, so the floor
+  // stays clear and labels never stack at the sensor origin.
 }
 
 function addPresenceTrack(track, index, yawDeg) {
@@ -176,10 +181,11 @@ function addPresenceTrack(track, index, yawDeg) {
   const material = new THREE.MeshStandardMaterial({
     color: trackColor,
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.40,
     depthWrite: false,
     emissive: trackColor,
-    emissiveIntensity: 0.20,
+    emissiveIntensity: 0.34,
+    toneMapped: false,
   });
   const capsule = new THREE.Mesh(geometry, material);
   capsule.rotation.x = Math.PI / 2;
@@ -201,36 +207,76 @@ function addPresenceTrack(track, index, yawDeg) {
     lineGeometry,
     new THREE.LineDashedMaterial({
       color: trackColor, dashSize: 0.10, gapSize: 0.06,
-      transparent: true, opacity: 0.70,
+      transparent: true, opacity: 0.82,
     }),
   ).computeLineDistances());
-  addLabel(
-    `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m`,
-    new THREE.Vector3(x, y, 1.75),
-    index === 0 ? '#8dffc6' : '#9fe8ff',
-    1.0,
+  // The radar has no angle: draw the radial uncertainty arc so the marker is
+  // not mistaken for an exact 2D position.
+  const half = THREE.MathUtils.degToRad(
+    Number(state.payload?.presenceUncertaintyDeg) || 60);
+  const arcPoints = [];
+  for (let step = 0; step <= 24; step += 1) {
+    const angle = yaw - half + (2 * half * step) / 24;
+    arcPoints.push(new THREE.Vector3(
+      distance * Math.cos(angle), distance * Math.sin(angle), 0.035));
+  }
+  const arc = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(arcPoints),
+    new THREE.LineDashedMaterial({
+      color: trackColor, dashSize: 0.09, gapSize: 0.07,
+      transparent: true, opacity: 0.38,
+    }),
   );
+  arc.computeLineDistances();
+  state.groups.presence.add(arc);
+  const label = addLabel(
+    `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m`,
+    new THREE.Vector3(x, y, 2.15),
+    index === 0 ? '#8dffc6' : '#9fe8ff',
+    0.82,
+  );
+  label.renderOrder = 1003;
 }
 
 function updateBounds() {
   const box = new THREE.Box3();
   let has = false;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
   for (const point of state.payload?.points || []) {
-    box.expandByPoint(new THREE.Vector3(point.x, point.y, point.z));
-    has = true;
+    minZ = Math.min(minZ, Number(point.z) || 0);
+    maxZ = Math.max(maxZ, Number(point.z) || 0);
   }
   for (const item of state.payload?.boxes || []) {
-    const z0 = Number(item.z_bottom_m) || 0;
-    const z1 = Number(item.z_top_m) || 0.1;
-    box.expandByPoint(new THREE.Vector3(item.cx_m, item.cy_m, z0));
-    box.expandByPoint(new THREE.Vector3(item.cx_m, item.cy_m, z1));
-    has = true;
+    minZ = Math.min(minZ, Number(item.z_bottom_m) || 0);
+    maxZ = Math.max(maxZ, Number(item.z_top_m) || 0.1);
   }
-  for (const point of state.payload?.roomOutline || []) {
-    box.expandByPoint(new THREE.Vector3(point[0], point[1], 0));
+  const outline = (state.payload?.roomOutline || [])
+    .filter(point => Array.isArray(point) && point.length >= 2);
+  if (outline.length >= 3) {
+    // Frame the measured room, not the desk/wardrobe priors outside it.
+    for (const point of outline) {
+      box.expandByPoint(new THREE.Vector3(point[0], point[1], 0));
+    }
     has = true;
+  } else {
+    for (const point of state.payload?.points || []) {
+      box.expandByPoint(new THREE.Vector3(point.x, point.y, point.z));
+      has = true;
+    }
+    for (const item of state.payload?.boxes || []) {
+      box.expandByPoint(new THREE.Vector3(
+        item.cx_m, item.cy_m, Number(item.z_bottom_m) || 0));
+      box.expandByPoint(new THREE.Vector3(
+        item.cx_m, item.cy_m, Number(item.z_top_m) || 0.1));
+      has = true;
+    }
   }
   if (!has) box.set(new THREE.Vector3(-1, -1, 0), new THREE.Vector3(1, 1, 1));
+  if (Number.isFinite(minZ) && Number.isFinite(maxZ)) {
+    box.min.z = Math.min(box.min.z, minZ);
+    box.max.z = Math.max(box.max.z, maxZ);
+  }
   state.bounds.copy(box);
 }
 
@@ -244,7 +290,9 @@ function centerAndRadius() {
 function setCamera(mode = 'iso') {
   if (!state.ready) return;
   const { center, radius } = centerAndRadius();
-  const distance = Math.max(3.2, radius * 2.3);
+  const fov = THREE.MathUtils.degToRad(state.camera.fov);
+  const margin = mode === 'top' ? 1.04 : 0.90;
+  const distance = Math.max(2.4, radius / Math.sin(fov / 2) * margin);
   state.camera.up.set(0, 0, 1);
   if (mode === 'top') {
     state.camera.up.set(0, 1, 0);
@@ -278,7 +326,8 @@ function applyLayers() {
   if (state.groups.objects) state.groups.objects.visible = layers.objects && view !== 'points';
   if (state.groups.labels) state.groups.labels.visible = layers.labels;
   if (state.groups.grid) state.groups.grid.visible = layers.grid;
-  if (state.groups.outline) state.groups.outline.visible = layers.grid;
+  if (state.groups.outline) state.groups.outline.visible = layers.grid
+    && (state.payload?.priorVisible !== false);
   if (state.groups.axes) state.groups.axes.visible = layers.grid
     && (state.payload?.showAxis !== false);
   if (state.groups.presence) state.groups.presence.visible = layers.labels;
@@ -323,14 +372,20 @@ function update(payload) {
   const boxes = state.payload.boxes || [];
   boxes.forEach((box, index) => {
     addBox(box);
-    if (state.layers.labels) {
-      const prior = box.source === 'prior';
-      const text = `#${index + 1} ${box.label}${prior ? ' prior' : ''}`;
+    const prior = box.source === 'prior';
+    const wall = box.label === 'wall' || box.label === 'wall_edge';
+    // Keep the 3D view readable: objects carry a permanent label; walls,
+    // priors and the selected box are labelled only when selected/hovered.
+    if (state.layers.labels && ((!prior && !wall) || box.id === state.payload?.selectedId)) {
+      const distance = Number(wall ? box.nearest_m : box.distance_m);
+      const suffix = !prior && Number.isFinite(distance)
+        ? ` · ${distance.toFixed(2)} m` : '';
+      const text = `#${index + 1} ${box.label}${prior ? ' prior' : ''}${suffix}`;
       addLabel(text, new THREE.Vector3(
         Number(box.cx_m) || 0,
         Number(box.cy_m) || 0,
-        (Number(box.z_top_m) || 0) + 0.14,
-      ), prior ? '#b9ffd0' : '#ffffff', prior ? 0.62 : 0.82);
+        (Number(box.z_top_m) || 0) + 0.10,
+      ), prior ? '#b9ffd0' : '#ffffff', prior ? 0.55 : 0.72);
     }
     if (state.payload.showDistances !== false) addDistanceLine(box, index + 1);
   });
@@ -483,15 +538,6 @@ function init() {
   const axes = new THREE.AxesHelper(1.4);
   axes.position.set(-0.1, -0.9, 0.01);
   state.groups.axes.add(axes);
-  for (const [text, position, tint] of [
-    ['X', new THREE.Vector3(1.35, -0.9, 0.08), '#ff6b6b'],
-    ['Y', new THREE.Vector3(-0.1, 0.6, 0.08), '#6bff9c'],
-    ['Z', new THREE.Vector3(-0.1, -0.9, 1.55), '#6bb6ff'],
-  ]) {
-    const sprite = labelSprite(text, tint, 0.7);
-    sprite.position.copy(position);
-    state.groups.axes.add(sprite);
-  }
 
   state.renderer.domElement.addEventListener('pointerdown', (event) => {
     state.pointerStart = { x: event.clientX, y: event.clientY };
@@ -511,9 +557,31 @@ function init() {
     const hits = raycaster.intersectObjects(state.groups.walls.children
       .concat(state.groups.priors.children, state.groups.objects.children), true);
     if (hits.length && typeof window.selectBoxById === 'function') {
-      const boxId = hits[0].object.userData.boxId
-        || hits[0].object.parent?.userData.boxId;
-      if (boxId) window.selectBoxById(boxId);
+      const candidates = new Map();
+      for (const hit of hits) {
+        const owner = hit.object.userData.boxId ? hit.object : hit.object.parent;
+        const box = owner?.userData?.box;
+        if (!box) continue;
+        const previous = candidates.get(box.id);
+        if (!previous || hit.distance < previous.distance) {
+          candidates.set(box.id, { box, distance: hit.distance });
+        }
+      }
+      const rank = (box) => {
+        if (box.source === 'prior') return 1;
+        if (box.label === 'wall' || box.label === 'wall_edge') return 2;
+        return 0;
+      };
+      const list = [...candidates.values()].sort((a, b) => {
+        const byRank = rank(a.box) - rank(b.box);
+        if (byRank) return byRank;
+        if (Math.abs(a.distance - b.distance) > 1e-4) {
+          return a.distance - b.distance;
+        }
+        return (Number(a.box.length_m) * Number(a.box.width_m))
+          - (Number(b.box.length_m) * Number(b.box.width_m));
+      });
+      if (list.length) window.selectBoxById(list[0].box.id);
     }
   });
   state.renderer.domElement.addEventListener('pointermove', (event) => {

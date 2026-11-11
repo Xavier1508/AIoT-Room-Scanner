@@ -184,6 +184,22 @@ def _clean_annotations(payload):
         raise ValueError("labels must be an object")
     clean_labels = {str(key)[:200]: str(value)[:24]
                     for key, value in labels.items() if value}
+    size_overrides = payload.get("size_overrides") or {}
+    if not isinstance(size_overrides, dict):
+        raise ValueError("size_overrides must be an object")
+    clean_sizes = {}
+    for key, entry in list(size_overrides.items())[:100]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            length = max(0.05, min(10.0, float(entry.get("length_m"))))
+            width = max(0.05, min(10.0, float(entry.get("width_m"))))
+        except (TypeError, ValueError):
+            continue
+        clean_sizes[str(key)[:200]] = {
+            "length_m": round(length, 3),
+            "width_m": round(width, 3),
+        }
     hidden = payload.get("hidden") or []
     if not isinstance(hidden, list):
         raise ValueError("hidden must be a list")
@@ -270,8 +286,11 @@ def _clean_annotations(payload):
                     pass
         if "source" in room:
             clean_room["source"] = str(room["source"])[:40]
+        if "area_source" in room:
+            clean_room["area_source"] = str(room["area_source"])[:40]
     return {
         "labels": clean_labels,
+        "size_overrides": clean_sizes,
         "hidden": clean_hidden,
         "removed": clean_removed,
         "merges": clean_merges,

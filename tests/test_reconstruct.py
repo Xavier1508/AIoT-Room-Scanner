@@ -69,6 +69,24 @@ class Reconstruction(unittest.TestCase):
         self.assertTrue(mirrored["mirror_y"])
         self.assertAlmostEqual(mirrored["mirror_center_m"], 0.0)
 
+    def test_measured_box_size_override(self):
+        rows = []
+        for x in (800, 900, 1000, 1100):
+            for y in (0, 100, 200):
+                rows.append({"x_mm": x, "y_mm": y, "z_mm": 300,
+                             "range_mm": (x * x + y * y) ** 0.5})
+        base = reconstruct.reconstruct_points(rows, map_rotation_deg=0.0)
+        box = base["boxes"][0]
+        locked = reconstruct.reconstruct_points(
+            rows, map_rotation_deg=0.0,
+            annotations={"size_overrides": {
+                box["id"]: {"length_m": 2.0, "width_m": 1.2}}})
+        result = locked["boxes"][0]
+        self.assertAlmostEqual(result["length_m"], 2.0, places=3)
+        self.assertAlmostEqual(result["width_m"], 1.2, places=3)
+        self.assertEqual(result["size_source"], "manual")
+        self.assertIn(box["id"], locked["annotations"]["size_overrides"])
+
     def test_axis_residual_and_wall_snap(self):
         self.assertAlmostEqual(reconstruct._axis_residual_deg(3.0), 3.0)
         self.assertAlmostEqual(reconstruct._axis_residual_deg(87.0), 3.0)

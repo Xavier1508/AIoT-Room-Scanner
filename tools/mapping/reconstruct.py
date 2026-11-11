@@ -293,6 +293,7 @@ def apply_annotations(result, annotations):
     """Apply manual label overrides, hidden boxes and pairwise merges."""
     annotations = annotations or {}
     labels = annotations.get("labels") or {}
+    size_overrides = annotations.get("size_overrides") or {}
     hidden_raw = annotations.get("hidden") or []
     removed_raw = annotations.get("removed") or []
     merges_raw = annotations.get("merges") or []
@@ -313,6 +314,31 @@ def apply_annotations(result, annotations):
         if override:
             box["label"] = override
             box["label_source"] = "manual"
+    # Measured boxes are fitted from a single viewpoint, so the hidden width
+    # can be overestimated. A locked length/width keeps a tape-measured object
+    # (for example a 2.00 x 1.20 m bed) exact without discarding its measured
+    # centre and angle.
+    resolved_sizes = {}
+    for key, override in size_overrides.items():
+        if not isinstance(override, dict):
+            continue
+        target = _resolve_box_id(key, boxes)
+        if not target:
+            continue
+        try:
+            length = max(0.05, min(10.0, float(override.get("length_m"))))
+            width = max(0.05, min(10.0, float(override.get("width_m"))))
+        except (TypeError, ValueError):
+            continue
+        resolved_sizes[target] = {
+            "length_m": round(length, 3),
+            "width_m": round(width, 3),
+        }
+    for box in boxes:
+        override = resolved_sizes.get(str(box.get("id")))
+        if override:
+            box.update(override)
+            box["size_source"] = "manual"
     resolved_merges = []
     for pair in merges_raw:
         if not isinstance(pair, (list, tuple)) or len(pair) != 2:
@@ -372,6 +398,7 @@ def apply_annotations(result, annotations):
     result["boxes"] = boxes
     result["annotations"] = {
         "labels": resolved_labels,
+        "size_overrides": resolved_sizes,
         "hidden": sorted(hidden - removed),
         "removed": sorted(removed),
         "merges": resolved_merges,
@@ -381,8 +408,9 @@ def apply_annotations(result, annotations):
         "point_labels": annotations.get("point_labels") or {},
         "label_catalog": annotations.get("label_catalog") or {},
     }
-    result["annotation_count"] = (len(resolved_labels) + len(hidden)
-                                  + len(resolved_merges) + len(manual_boxes)
+    result["annotation_count"] = (len(resolved_labels) + len(resolved_sizes)
+                                  + len(hidden) + len(resolved_merges)
+                                  + len(manual_boxes)
                                   + sum(len(v) for v in (annotations.get("point_labels") or {}).values()))
     return result
 
