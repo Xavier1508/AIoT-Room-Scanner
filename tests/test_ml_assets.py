@@ -5,8 +5,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 DATA_HEADER = ROOT / "src" / "ml_model_data.h"
 META_HEADER = ROOT / "src" / "ml_model_metadata.h"
-MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v2-logits" / "model.tflite"
-TRAINED_MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v2" / "model.tflite"
+MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v3-logits" / "model.tflite"
+TRAINED_MODEL = ROOT / "research" / "mapping" / "ml" / "model-empty-human-v3" / "model.tflite"
 
 
 class MlAssets(unittest.TestCase):

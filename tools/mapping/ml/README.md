@@ -68,14 +68,14 @@ computes softmax in float32:
 
 ```powershell
 python tools/mapping/ml/strip_softmax.py `
-  --input research/mapping/ml/model-empty-human-v2/model.tflite `
-  --output research/mapping/ml/model-empty-human-v2-logits
+  --input research/mapping/ml/model-empty-human-v3/model.tflite `
+  --output research/mapping/ml/model-empty-human-v3-logits
 ```
 
 Copy the generated `model_data.h` to `src/ml_model_data.h`, copy
 `model_metadata.h` with the `-logits` version suffix to
 `src/ml_model_metadata.h`, and rebuild. The output tensor becomes int8 logits
-(scale `0.04990008`, zero point `-6`); `src/ml_inference.cpp` dequantizes and
+(scale `0.05311970`, zero point `45`); `src/ml_inference.cpp` dequantizes and
 applies a numerically stable 2-class softmax. Host parity against the original
 softmax model: max probability difference **0.0019** over random inputs.
 

@@ -29,8 +29,18 @@ buzzer every 700 ms; rule HLK keeps priority. Artifact:
 `analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
 bytes**, SHA-256
 `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
+
+**`0.9.0-hybrid-alert` is the current firmware.** It retrains the 32-frame model
+on four sessions (v3) and adds the hybrid policy: HLK `moving_energy >= 70` for
+two frames starts a provisional 700 ms beep; the model confirms `human >= 0.80`;
+a confident empty model vetoes after 6.5 s; HLK `moving_energy < 20` for 1 s
+releases. The 30–75 cm parking rule remains active and takes priority while
+beeping. Artifact:
+`analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
+bytes**, SHA-256
+`98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
 It is OTA-installed from `app0` and reports `ready=true`, model
-`hlk-cnn-20261111T035836Z-logits`, arena **5,128 bytes**.
+`hlk-cnn-20261111T162517Z-logits`, arena **5,128 bytes**.
 
 ## Model
 
@@ -41,24 +51,26 @@ It is OTA-installed from `app0` and reports `ready=true`, model
 - Architecture: 1D CNN (16/32 filters, BatchNorm, GlobalAveragePooling,
   Dense 32, Dropout). The deployed TFLite **omits the final Softmax op** and
   exposes the two logits.
-- Quantization: full int8; input scale `0.01664284`, zero point `19`;
-  **logits output** scale `0.04990008`, zero point `-6`; softmax is computed
+- Quantization (v3): full int8; input scale `0.01385301`, zero point `11`;
+  **logits output** scale `0.05311970`, zero point `45`; softmax is computed
   on-device in float32.
 - TFLite size: **14,528 bytes** (logits) from the 14,584-byte softmax model;
   generated headers: `src/ml_model_data.h`, `src/ml_model_metadata.h`.
-- Dataset for v2: 5,576 frames, 1,379 windows from the two original sessions
-  (`20261109T183825Z-empty`, `20261109T190639Z-human`). The expanded master
-  dataset now has **7,784 frames** from four sessions (adds
-  `20261111T152738Z-empty`, 1,079 frames, and `20261111T153448Z-human`, 1,129
-  frames); a v3 retrain is optional.
-- Validation: **contiguous 5-block time split per session**, mean accuracy
-  **97.38% ± 5.24%**. The last block is the hard one (empty recall 90%,
-  human recall 85%); this is reported, not hidden.
-- Artifacts: `research/mapping/ml/model-empty-human-v2/`
+- Dataset: v2 used 5,576 frames from the two original sessions
+  (`20261109T183825Z-empty`, `20261109T190639Z-human`). v3 uses **7,784
+  frames** from four sessions (adds `20261111T152738Z-empty`, 1,079 frames, and
+  `20261111T153448Z-human`, 1,129 frames).
+- Validation: v3 **contiguous 5-block time split per session**, mean accuracy
+  **97.28% ± 4.70%**. The hard fold is 87.96% (empty recall 100%, human recall
+  79.1%); this is reported, not hidden. v2 scored only **57.73%** on the new
+  sessions (227 of 262 empty windows predicted `human`), so the v3 retrain was
+  necessary. v3's 100% on the new sessions is training accuracy, not a
+  generalization claim.
+- Artifacts: `research/mapping/ml/model-empty-human-v3/`
   (`metrics.json`, `model.tflite`, `model.keras`, `labels.json`,
   `normalization.json`, `model_data.h`, `model_metadata.h`) and the deployed
-  logits model in `research/mapping/ml/model-empty-human-v2-logits/`
-  (`model.tflite`, `model_data.h`).
+  logits model in `research/mapping/ml/model-empty-human-v3-logits/`
+  (`model.tflite`, `model_data.h`). The v2 artifacts remain for comparison.
 - PC parity check with firmware-style preprocessing: real human window
   **99.6% human**, real empty window **99.6% empty**
   (`analysis/mapping/ml-deployment-20261111/parity.json`). This is not an
@@ -66,9 +78,9 @@ It is OTA-installed from `app0` and reports `ready=true`, model
 
 ## Firmware behavior
 
-- Version: `0.8.3-ml-alert-logits`.
+- Version: `0.9.0-hybrid-alert`.
 - Library: `nickjgniklu/ESP_TF@2.1.1` (TensorFlow Lite Micro + ESP-NN).
-- Tensor arena: 64 KiB static; the retained build uses **116,544 bytes RAM
+- Tensor arena: 64 KiB static; the retained build uses **116,576 bytes RAM
   (35.6%)** including the model; the live allocator reports only
   **5,128 bytes** used for the logits model.
 - The classifier only runs when:
@@ -79,10 +91,18 @@ It is OTA-installed from `app0` and reports `ready=true`, model
   - a full 32-frame window has been collected.
 - It resets the window after scan/motion/invalid data. After the reset it
   needs about 6.4 s to fill 32 frames at 5 Hz.
-- The **rule-based HLK path keeps priority** when `hlk_alert_on` is active.
-  `ml_alert_on` is the AI-driven mode: class `human`, confidence >= 0.80 and
-  idle/parked actuators produce a 70 ms beep every 700 ms. Both modes are
-  mutually exclusive and are muted during scan/OTA/actuator motion.
+- The **30–75 cm HLK parking rule is independent** and active by default after
+  `sensors_start` (`hlk_alert_off` disables it). Its interval ramps from 150 ms
+  near 30 cm to 2000 ms at 75 cm (closer = faster); while it beeps, the AI alert
+  is muted with `rule_priority`. This is intentional parking-sensor behavior.
+- `ml_alert_on` enables the hybrid AI path: HLK `moving_energy >= 70` for two
+  frames starts a provisional 700 ms beep; model `human >= 0.80` confirms; a
+  confident empty model vetoes after 6.5 s; HLK `moving_energy < 20` for 1 s
+  releases. The beep rhythm continues during the 1 s release hold and stops
+  after it. Both the rule and AI can be enabled at the same time.
+- The model can also start the alert directly when it says `human >= 0.80`,
+  even if HLK movement is below the fast trigger (slow movement). All paths are
+  muted during scan/OTA/actuator motion or when sensors are off.
 
 ## Build
 
@@ -105,14 +125,13 @@ analysis/platformio/build-<utc>/
 ```
 
 The installed artifact is
-`analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
+`analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
 bytes**, SHA-256
-`5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`
-(`0.8.3-ml-alert-logits`). The earlier `0.8.1` artifact
-(`build-20261111T113650019Z`, 940,592 bytes,
-`3d19fa9b…130e`) remains the known-good fallback: `0.8.0` installed but reported
-`ml_init_failed` because the model uses `MEAN` and the resolver did not
-register it; `0.8.1` adds `resolver.AddMean()` and a 10-op resolver.
+`98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`
+(`0.9.0-hybrid-alert`). The earlier `0.8.3` and `0.8.1` artifacts remain as
+known-good fallbacks: `0.8.0` installed but reported `ml_init_failed` because
+the model uses `MEAN` and the resolver did not register it; `0.8.1` adds
+`resolver.AddMean()` and a 10-op resolver.
 
 ## OTA
 
@@ -122,7 +141,7 @@ state, then upload only `firmware.bin`:
 ```powershell
 $py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
 & $py -B .\tools\ops\device.py status
-& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261111T144558526Z\firmware.bin --expect-version 0.8.3-ml-alert-logits
+& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261111T172341526Z\firmware.bin --expect-version 0.9.0-hybrid-alert
 ```
 
 Do not upload `bootloader.bin`, `partitions.bin`, or `boot_app0.bin` through the
@@ -137,7 +156,7 @@ Wait for IDLE and sensors running, then check `/api/status.ml`:
   "enabled": true,
   "ready": true,
   "error": false,
-  "model_version": "hlk-cnn-20261111T035836Z-logits",
+  "model_version": "hlk-cnn-20261111T162517Z-logits",
   "window": 32,
   "features": 6,
   "classes": 2,

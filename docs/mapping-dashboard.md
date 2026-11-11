@@ -250,8 +250,12 @@ to clear both point and block selection. **Middle-drag** pans, right-drag pans,
 wheel zooms and left-drag orbits.
 
 **AI alert and unified dataset:** the AI/Presence tab has an **AI Alert**
-toggle (firmware 0.8.3+). When enabled, the DL class `human` with confidence
->= 0.80 drives the buzzer; rule HLK has priority when enabled. The final
+toggle (firmware 0.9.0+). The hybrid uses HLK `moving_energy >= 70` (2 frames)
+as a fast trigger, the v3 logits model `human >= 0.80` to confirm, a confident
+empty model to veto after 6.5 s, and HLK no-motion for 1 s to release. The
+30–75 cm HLK parking rule remains active with its 150–2000 ms distance ramp and
+takes priority (`rule_priority`) while beeping. The status line shows
+`idle/provisional/confirmed`, the mute reason, and T/C/V/R counters. The final
 dataset can be collected as one long-format CSV
 (`research/mapping/dataset/aiot_room_dataset_v1.csv`) with `record_type`
 `scan_point`/`hlk_frame`, UTC timestamps, labels, session IDs and split.

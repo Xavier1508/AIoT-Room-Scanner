@@ -1,15 +1,16 @@
 # Project state
 
-Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
+Updated: 2026-11-12. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-**`0.8.3-ml-alert-logits` is the current firmware** (device-computed softmax
-over the model logits) and is installed from `app0`; `app1` holds the working
-`0.8.2` logits build from the same fix iteration. The TFLite Micro empty/human
-classifier is live (`ready=true`, arena 5,128 bytes) and the **AI alert** is
-verified end-to-end on the 9V rail: empty → no beep, human → beeps every 700 ms,
-with a measured 4.2 s release delay. `0.8.2-ml-alert` crashed at boot in the ESP_TF
-Softmax Prepare path; the image was read back byte-identical to the artifact,
-so this was a firmware/library layout issue, not a corrupt OTA. The ToF near
+**`0.9.0-hybrid-alert` is the current firmware** (v3 logits model + hybrid
+HLK/AI alert) and is installed from `app0`. The TFLite Micro empty/human
+classifier is live (`ready=true`, model `…-v3-logits`, arena 5,128 bytes). The
+**AI alert** is verified end-to-end on 9V: the HLK 30–75 cm parking rule beeps
+faster as the target approaches; the AI hybrid adds room-presence beeps at
+700 ms beyond the near field, with a fast HLK trigger/release. `0.8.2-ml-alert`
+crashed at boot in the ESP_TF Softmax Prepare path; the image was read back
+byte-identical to the artifact, so this was a firmware/library layout issue, not
+a corrupt OTA. The ToF near
 reflector was the
 protective lens cover; after removal, ToF is valid at ~2.4 m. The **canonical
 full reference scan** `20261110T184241Z` completed **475/475 points (473 valid,
@@ -50,14 +51,18 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.8.3-ml-alert-logits`**, installed through real LAN OTA
-  on 2026-11-11 from `app0`. Artifact:
-  `analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
+- **Running firmware: `0.9.0-hybrid-alert`**, installed through real LAN OTA
+  on 2026-11-12 from `app0`. Artifact:
+  `analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
   bytes**, SHA-256
-  `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
-  ML is `ready=true`, model `hlk-cnn-20261111T035836Z-logits`, arena
-  **5,128 bytes**. The AI alert is verified end-to-end on 9V: sensors `OK`,
-  empty = no beep, human = 700 ms beeps, release delay **4.2 s**.
+  `98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
+  ML is `ready=true`, model `hlk-cnn-20261111T162517Z-logits`, arena
+  **5,128 bytes**. Hybrid alert: HLK `moving_energy >= 70` for 2 frames starts
+  a provisional 700 ms beep, model `human >= 0.80` confirms, confident empty
+  vetoes after 6.5 s, HLK `moving_energy < 20` for 1 s releases; the 30–75 cm
+  parking rule remains active and has priority while beeping. Sensors `OK`;
+  empty = no AI beep; the rule's near-field interval is intentionally
+  distance-dependent (150–2000 ms).
 - **Known-good `0.8.1` artifact:** `0.8.1-ml-empty-human`,
   `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
   bytes**, SHA-256
@@ -338,6 +343,13 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   because the ESP_TF Softmax Prepare path aborted on this board; softmax is
   computed in float32 on-device. Arena **5,128 bytes**. Adds `ml_alert_on/off`
   (human + confidence >= 0.80, 700 ms beep, rule HLK priority).
+- **v3 retrain (`0.9.0-hybrid-alert`):** 32-frame model retrained on four
+  sessions (7,784 frames); CV **97.28% ± 4.70%** (hard fold 87.96%, human recall
+  79.1%). v2 scored only **57.73%** on the new sessions (227/262 empty windows
+  predicted `human`), so v3 replaces it. Deployed logits model:
+  `research/mapping/ml/model-empty-human-v3-logits/`. Hybrid policy: HLK fast
+  trigger/release, model confirm/veto, parking rule priority. Tests: **102 C++
+  + 64 Python**.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.

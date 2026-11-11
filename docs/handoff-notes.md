@@ -1,14 +1,15 @@
 # Handoff notes — AIoT ESP32-S3 room scanner
 
-Updated: 2026-11-11. Current firmware: `0.8.3-ml-alert-logits` (TFLite Micro
-empty/human classifier, deployed as logits with on-device softmax), ML live
-(`ready=true`, arena 5,128 bytes), AI alert verified end-to-end on 9V
-(empty = no beep, human = 700 ms beeps, 4.2 s release delay). `0.8.2-ml-alert`
-crashed at boot in the ESP_TF TFLite-Micro Softmax Prepare path; the OTA image
-read back byte-identical to the artifact, so it was a library/layout issue, not
-corruption. The fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`)
-and computes softmax in float32 on the ESP32. The two 30-point validation scans
-are dirty (operator active); the clean full scan is deferred.
+Updated: 2026-11-12. Current firmware: `0.9.0-hybrid-alert` (v3 logits model +
+hybrid HLK/AI alert). ML live (`ready=true`, model `…-v3-logits`, arena 5,128
+bytes). The AI hybrid is verified on 9V: HLK `moving_energy >= 70` starts a
+provisional 700 ms beep, model `human >= 0.80` confirms, HLK no-motion releases
+after 1 s; the 30–75 cm parking rule remains active and has priority with a
+distance-dependent 150–2000 ms interval (closer = faster). The earlier
+`0.8.2-ml-alert` crash was the ESP_TF Softmax Prepare path, not corruption; the
+fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`) and computes
+softmax in float32 on the ESP32. The two 30-point validation scans are dirty
+(operator active); the clean full scan is deferred.
 A unified master dataset exists at
 `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259 rows, timestamped,
 labels empty/human). The current
@@ -26,9 +27,11 @@ rotation `-1.1°`, measured bed/fan labels and no prior bed; see
 - Local 3D/2D mapping dashboard, per-scan priors, Mirror Y, auto-align, PLY
   export and a **TFLite Micro empty/human classifier**. The rule HLK path
   remains the buzzer/safety fallback.
-- Installed firmware: `0.8.3-ml-alert-logits`, 942,032 bytes (including the
-  14,528-byte logits model), RAM 116,544 bytes (35.6%), SHA-256
-  `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
+- Installed firmware: `0.9.0-hybrid-alert`, 945,280 bytes (including the
+  14,528-byte v3 logits model), RAM 116,576 bytes (35.6%), SHA-256
+  `98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
+  The `0.8.3` and `0.8.1` artifacts remain as fallbacks. See
+  `docs/ml-deployment.md`.
   The earlier `0.8.1` artifact (940,592 bytes, SHA-256 `3d19fa9b…130e`) is the
   known-good fallback image. See `docs/ml-deployment.md`.
 - USB-only power keeps the board web/API online but does not power the 5V
@@ -103,10 +106,11 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Record new empty/human sessions (3–5 min each) with the fan/lights in their
-   demo state, regenerate the unified master dataset, and optionally train/compare
-   `v3`. When the operator confirms the room is empty, run a clean full scan and
-   regenerate the PLY + dataset manifest.
+1. Empty/human sessions are recorded and v3 is deployed. Optional: run a new
+   **8-sample** clean scan for a fresh canonical map (the 2-sample fast scan
+   `20261111T154814Z` is a coverage/timing check). Keep the fan OFF for the AI
+   demo; the 30–75 cm HLK parking rule is intentional. When the operator
+   confirms the room is empty, regenerate the PLY + dataset manifest.
 2. Confirm `/api/status.ml` becomes ready after ~6.4 s, record latency,
    arena use and the live empty/human result; check no brownout.
 3. Verify the final scan `20261110T184241Z`: Mirror Y ON, auto-align `-1.1°`,

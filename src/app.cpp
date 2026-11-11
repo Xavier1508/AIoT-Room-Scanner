@@ -76,6 +76,7 @@ void App::stopAll() {
   hlkAlertEnabled_ = false;
   mlAlertEnabled_ = false;
   mlAlertActive_ = false;
+  mlAlertPolicy_.reset();
   mlAlertMuteReason_ = "disabled";
   safety_.stop();
 }
@@ -162,36 +163,34 @@ void App::maybeHlkAlert(uint32_t now) {
   ++hlkAlertCount_;
 }
 void App::maybeMlAlert(uint32_t now) {
-  auto mute = [this](const char* reason) {
-    mlAlertActive_ = false;
-    mlAlertNextMs_ = 0;
-    mlAlertMuteReason_ = reason;
-  };
-  if (!mlAlertEnabled_) { mute("disabled"); return; }
-  if (hlkAlertEnabled_) { mute("rule_alert_priority"); return; }
-  if (scanMode_) { mute("scan_mode"); return; }
-  if (otaActive()) { mute("ota"); return; }
-  if (!sensors_.running()) { mute("sensors_off"); return; }
-  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
-    mute("actuator_test");
-    return;
+  MlAlertInputs in;
+  in.now = now;
+  in.enabled = mlAlertEnabled_;
+  if (scanMode_) { in.muted = true; in.muteReason = "scan_mode"; }
+  else if (otaActive()) { in.muted = true; in.muteReason = "ota"; }
+  else if (!sensors_.running()) { in.muted = true; in.muteReason = "sensors_off"; }
+  else if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
+    in.muted = true; in.muteReason = "actuator_test";
+  } else if (stepper_.active() || stepperMovePending_ || servo_.active()) {
+    in.muted = true; in.muteReason = "actuator_motion";
   }
-  if (stepper_.active() || stepperMovePending_ || servo_.active()) {
-    mute("actuator_motion");
-    return;
+  const auto& reading = hlk_.reading();
+  const bool fresh = hlkEnabled_ && reading.received &&
+      uint32_t(now - reading.timestampMs) <= config::hlkStaleMs;
+  in.movingEnergy = fresh ? reading.movingEnergy : 0;
+  in.hlkTimestampMs = fresh ? reading.timestampMs : 0;
+  in.ruleActive = hlkAlertActive_;
+  in.modelReady = ml_.ready();
+  in.windowReady = ml_.windowReady();
+  in.modelHuman = ml_.label() == "human";
+  in.confidence = ml_.confidence();
+  const MlAlertOutput out = mlAlertPolicy_.update(in);
+  mlAlertActive_ = out.active;
+  mlAlertMuteReason_ = out.reason;
+  if (out.beep) {
+    buzzer_.alert(now, config::hlkAlertBeepMs);
+    ++mlAlertCount_;
   }
-  if (!ml_.ready() || !ml_.windowReady()) { mute("window_not_ready"); return; }
-  if (ml_.label() != "human" || ml_.confidence() < config::mlAlertConfidence) {
-    mute("empty_or_low_confidence");
-    return;
-  }
-  mlAlertActive_ = true;
-  mlAlertMuteReason_ = "active";
-  if (buzzer_.active()) return;
-  if (mlAlertNextMs_ && int32_t(now - mlAlertNextMs_) < 0) return;
-  buzzer_.alert(now, config::hlkAlertBeepMs);
-  mlAlertNextMs_ = now + config::mlAlertIntervalMs;
-  ++mlAlertCount_;
 }
 void App::clearQueue() {
   CommandRequest discarded;
@@ -298,7 +297,6 @@ String App::execute(Command command) {
   if (command == Command::HlkAlertOn || command == Command::HlkAlertOff) {
     if (command == Command::HlkAlertOn && !hlkEnabled_) return result(false, "hlk_not_enabled");
     hlkAlertEnabled_ = command == Command::HlkAlertOn;
-    if (hlkAlertEnabled_) mlAlertEnabled_ = false;
     event(hlkAlertEnabled_ ? "hlk_proximity_alert_enabled" : "hlk_proximity_alert_disabled");
     return result(true, hlkAlertEnabled_ ? "hlk_alert_enabled" : "hlk_alert_disabled");
   }
@@ -307,7 +305,7 @@ String App::execute(Command command) {
       return result(false, "ml_not_ready");
     }
     mlAlertEnabled_ = command == Command::MlAlertOn;
-    if (mlAlertEnabled_) hlkAlertEnabled_ = false;
+    mlAlertPolicy_.reset();
     event(mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
     return result(true, mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
   }
@@ -572,11 +570,18 @@ void App::publish(uint32_t now) {
         ",\"last_energy\":" + hlkAlertLastEnergy_ + "}";
    s += String(",\"ml_alert\":{\"enabled\":") + (mlAlertEnabled_ ? "true" : "false") +
         ",\"active\":" + (mlAlertActive_ ? "true" : "false") +
+        ",\"mode\":" + jsonQuote(mlAlertModeName(mlAlertPolicy_.mode())) +
         ",\"mute_reason\":" + jsonQuote(mlAlertMuteReason_) +
         ",\"class\":" + jsonQuote(ml_.label()) +
         ",\"confidence\":" + String(ml_.confidence(), 3) +
         ",\"threshold\":" + String(config::mlAlertConfidence, 2) +
         ",\"interval_ms\":" + config::mlAlertIntervalMs +
+        ",\"trigger_count\":" + mlAlertPolicy_.triggerCount() +
+        ",\"confirm_count\":" + mlAlertPolicy_.confirmCount() +
+        ",\"veto_count\":" + mlAlertPolicy_.vetoCount() +
+        ",\"release_count\":" + mlAlertPolicy_.releaseCount() +
+        ",\"unconfirmed_count\":" + mlAlertPolicy_.unconfirmedCount() +
+        ",\"last_transition_ms\":" + mlAlertPolicy_.lastTransitionMs() +
         ",\"count\":" + mlAlertCount_ + "}";
    s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +

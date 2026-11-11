@@ -2,16 +2,17 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware terpasang: **0.8.3-ml-alert-logits**. Versi ini menambahkan mode
-**AI alert** (`ml_alert_on/off`: buzzer mengikuti prediksi DL `human` dengan
-confidence ≥ 0,80) dan memakai classifier 1D-CNN **empty/human** di ESP32-S3
-melalui TensorFlow Lite Micro. Model int8 **14.528 byte** dikirim sebagai
-**logits**; softmax dihitung di firmware (float32) karena jalur Softmax TFLite
-Micro lama abort saat boot. Rule HLK tetap menjadi prioritas/fallback
-buzzer-safety. Fitur lain: pemilihan SSID pasif, sensor health/error-rate, HLK,
+Firmware terpasang: **0.9.0-hybrid-alert**. Versi ini memakai classifier
+1D-CNN **empty/human v3** (4 sesi, 7.784 frame) di ESP32-S3 melalui TensorFlow
+Lite Micro. Model int8 **14.528 byte** dikirim sebagai **logits**; softmax
+dihitung di firmware (float32) karena jalur Softmax TFLite Micro lama abort saat
+boot. **AI alert hybrid** (`ml_alert_on/off`): HLK memberi edge cepat
+(trigger/release), model mengonfirmasi `human` dengan confidence ≥ 0,80 dan
+buzzer 700 ms; rule parkir HLK **30–75 cm tetap aktif** dengan interval
+150–2000 ms (semakin dekat semakin cepat) dan menjadi prioritas saat aktif.
+Fitur lain: pemilihan SSID pasif, sensor health/error-rate, HLK,
 fine jog 5°/25 µs, scan envelope **±60°/500–950 µs**, sequential power guard
-(servo/stepper tidak bergerak bersamaan), dan buzzer parkir 75→30 cm yang mute
-saat scan.
+(servo/stepper tidak bergerak bersamaan), dan buzzer parkir yang mute saat scan.
 Dashboard PC terpisah untuk kalibrasi, scan, point cloud 3D/2D, Mirror Y,
 auto-align dinding, editor prior, dan ekspor PLY:
 [docs/mapping-dashboard.md](docs/mapping-dashboard.md). Deploy model TFLite

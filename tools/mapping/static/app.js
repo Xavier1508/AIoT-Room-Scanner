@@ -393,8 +393,10 @@ function renderPresence() {
     mlAlertButton.disabled = !state.health?.esp || mlAlert.enabled == null;
   }
   if (mlAlert.enabled != null) {
-    setText('ml-alert-status', `${mlAlert.active ? 'BEEP' : 'idle'} · ${mlAlert.class || '—'} `
-      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% · ${mlAlert.mute_reason || '—'} · count ${mlAlert.count ?? 0}`);
+    setText('ml-alert-status',
+      `${String(mlAlert.mode || 'idle').toUpperCase()} | ${mlAlert.active ? 'BEEP' : 'idle'} | ${mlAlert.class || '-'} `
+      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% | ${mlAlert.mute_reason || '-'} | beep ${mlAlert.count ?? 0}`
+      + ` | T${mlAlert.trigger_count ?? 0} C${mlAlert.confirm_count ?? 0} V${mlAlert.veto_count ?? 0} R${mlAlert.release_count ?? 0}`);
   } else {
     setText('ml-alert-status', 'AI alert belum tersedia');
   }

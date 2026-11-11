@@ -10,6 +10,7 @@
 #include "commands.h"
 #include "console.h"
 #include "hlk_protocol.h"
+#include "ml_alert_policy.h"
 #include "ml_inference.h"
 #include "network.h"
 #include "safety.h"
@@ -71,7 +72,8 @@ class App {
   uint8_t hlkAlertLastEnergy_ = 0;
   String hlkAlertMuteReason_ = "idle";
   bool mlAlertActive_ = false;
-  uint32_t mlAlertNextMs_ = 0, mlAlertCount_ = 0;
+  uint32_t mlAlertCount_ = 0;
+  MlAlertPolicy mlAlertPolicy_;
   String mlAlertMuteReason_ = "disabled";
   String poseReferenceSource_ = "migration_default_1024";
   String servoBaseSource_ = "default_800";
