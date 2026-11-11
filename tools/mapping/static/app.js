@@ -281,7 +281,8 @@ function renderScans() {
   list.append(table);
   const preferred = scans
     .filter(scan => !scan.error && (scan.points || 0) > 0)
-    .sort((a, b) => ((b.points || 0) - (a.points || 0))
+    .sort((a, b) => (((b.config || {}).samples || 0) - ((a.config || {}).samples || 0))
+      || ((b.points || 0) - (a.points || 0))
       || String(b.scan_id).localeCompare(String(a.scan_id)))[0] || scans[0];
   const preferredConfig = preferred.config || {};
   setText('last-scan', `${preferred.scan_id} · ${preferred.points} points · ${preferred.valid_points} valid · ${preferred.tof_points} ToF · ${preferred.hc_points} HC · yaw ±${preferredConfig.yaw_limit_deg ?? '—'}° · tilt ${preferredConfig.tilt_min_us ?? '—'}–${preferredConfig.tilt_max_us ?? '—'} µs`);
@@ -3574,7 +3575,8 @@ syncSnapButton();
   await refreshDatasetIndex();
   const preferred = (state.scans || [])
     .filter(scan => !scan.error && (scan.points || 0) > 0)
-    .sort((a, b) => ((b.points || 0) - (a.points || 0))
+    .sort((a, b) => (((b.config || {}).samples || 0) - ((a.config || {}).samples || 0))
+      || ((b.points || 0) - (a.points || 0))
       || String(b.scan_id).localeCompare(String(a.scan_id)))[0]
     || (state.scans || [])[0];
   if (preferred) {

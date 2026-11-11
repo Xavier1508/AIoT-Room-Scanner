@@ -11,8 +11,8 @@ with a measured 4.2 s release delay. `0.8.2-ml-alert` crashed at boot in the ESP
 Softmax Prepare path; the image was read back byte-identical to the artifact,
 so this was a firmware/library layout issue, not a corrupt OTA. The ToF near
 reflector was the
-protective lens cover; after removal, ToF is valid at ~2.4 m. The **current
-full fine scan** `20261110T184241Z` completed **475/475 points (473 valid,
+protective lens cover; after removal, ToF is valid at ~2.4 m. The **canonical
+full reference scan** `20261110T184241Z` completed **475/475 points (473 valid,
 452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
 over 500–950 µs, **8 samples/point**, dwell 500 ms and 250 ms sample interval.
 Reconstruction with **yaw 1.00**, **Mirror Y ON**, and **auto-align rotation
@@ -28,7 +28,14 @@ outline is **2.70×2.51 m** with **8.6 m² total including the bathroom**
 prior layout was transferred from `20261110T124935Z` with a translation of
 **dx=-0.039 m, dy=+0.137 m**. **Mirror Y is ON by default** because the scanner
 yaw axis is opposite the prior/2D frame: the scan is flipped about the prior
-room centre (`y=0.356 m`). The dashboard renders full-width 3D/2D views,
+room centre (`y=0.356 m`). A **clean fast full scan `20261111T154814Z`** then
+completed **475/475 points (470 valid)** in **13.6 min** at 5°/25°, 2 samples,
+100 ms interval and 200 ms dwell. It is a coverage/timing check, not the map:
+the 2-sample reconstruction is noisier (bed 19 points at 20.4°, ceiling 126,
+mount 33) than the 8-sample reference (bed 68 at -1.2°, ceiling 60, mount 23),
+so `20261110T184241Z` and its PLY remain canonical. The dashboard now prefers
+the higher-sample scan when several full scans exist. The dashboard renders
+full-width 3D/2D views,
 wall-first reconstruction, per-scan priors, custom labels, auto-align,
 wall-constrained object fit, box/point selection, a rule-based human capsule and
 the live DL classifier. ToF is `OK` (`near_reflector=false`); scans use ToF with
@@ -519,16 +526,17 @@ PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
 and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. **0.8.3-ml-alert-logits**
 is installed and ML is live (logits model, arena 5,128 bytes); the AI alert
-command is verified, but the buzzer/sensor acceptance test needs the 9V rail.
-The two 30-point validation scans (`20261111T114928Z`,
+passed the 9V acceptance test (empty = no beep, human = 700 ms beeps, 4.2 s
+release). The two 30-point validation scans (`20261111T114928Z`,
 `20261111T115125Z`) are **dirty** because the operator was active in the room;
 they are timing/health checks, not mapping evidence. A unified master dataset
-was generated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (6,051
-rows = 475 mapping points + 5,576 HLK frames, timestamped, labels empty/human;
-SHA-256 `6b3f8e02…f440`) and will be regenerated after the new empty/human
-sessions. Remaining work: switch to the 9V jack, verify sensors + AI alert,
-record the new empty and human sessions, retrain/compare if desired, then run
-the first **clean** full scan and regenerate the master dataset + PLY. The final mapping PLY is
+was regenerated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259
+rows = 475 mapping points + 7,784 HLK frames from four sessions, timestamped,
+labels empty/human; SHA-256 `25ad558d…89b3`). New sessions:
+`20261111T152738Z-empty` (1,079 frames, 5 min) and
+`20261111T153448Z-human` (1,129 frames, 5 min). Remaining work: optionally
+retrain/compare `v3`, then run the first **clean** full scan and regenerate the
+master dataset + PLY. The final mapping PLY is
 `research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
 auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
 12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is

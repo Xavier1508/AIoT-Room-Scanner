@@ -96,6 +96,12 @@ tilt 500..950 microseconds in 25-microsecond steps. A coarse run uses 10
 degrees and 50 microseconds; a denser room run uses 10 degrees and 25
 microseconds.
 
+**Full-scan preference:** when several full scans exist, the dashboard prefers
+the scan with the most samples per point, then the most points, then the newest
+ID. The 8-sample `20261110T184241Z` reference therefore stays the default over
+the clean 2-sample fast `20261111T154814Z` coverage check, whose reconstruction
+is noisier (bed 19 points/20.4° vs 68/-1.2°, ceiling 126 vs 60).
+
 **Measured power strategy (2026-11-09):** two early scans browned out when the
 servo moved quickly with the stepper held. With the 0.1 s servo step delay,
 stepper released during the sweep, 0.5 s cooldown and park-before-detach, the
