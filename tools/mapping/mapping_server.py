@@ -191,15 +191,20 @@ def _clean_annotations(payload):
     for key, entry in list(size_overrides.items())[:100]:
         if not isinstance(entry, dict):
             continue
-        try:
-            length = max(0.05, min(10.0, float(entry.get("length_m"))))
-            width = max(0.05, min(10.0, float(entry.get("width_m"))))
-        except (TypeError, ValueError):
-            continue
-        clean_sizes[str(key)[:200]] = {
-            "length_m": round(length, 3),
-            "width_m": round(width, 3),
-        }
+        clean_entry = {}
+        for field, lower, upper in (("length_m", 0.05, 10.0),
+                                    ("width_m", 0.05, 10.0),
+                                    ("z_bottom_m", 0.0, 4.0),
+                                    ("z_top_m", 0.05, 4.0)):
+            if field not in entry:
+                continue
+            try:
+                clean_entry[field] = round(
+                    max(lower, min(upper, float(entry[field]))), 3)
+            except (TypeError, ValueError):
+                continue
+        if clean_entry:
+            clean_sizes[str(key)[:200]] = clean_entry
     hidden = payload.get("hidden") or []
     if not isinstance(hidden, list):
         raise ValueError("hidden must be a list")
@@ -396,6 +401,15 @@ def _list_scans():
                 "config": metadata.get("config", {}),
             })
     return items
+
+
+def _sensor_height_m(scan_id):
+    metadata = read_json(_scan_directory(scan_id) / "metadata.json", {}) or {}
+    try:
+        height_mm = float(metadata.get("sensor_height_mm", 770))
+    except (TypeError, ValueError):
+        height_mm = 770.0
+    return round(max(0.20, min(3.0, height_mm / 1000.0)), 3)
 
 
 def _points(scan_id):
@@ -611,6 +625,7 @@ class Handler(BaseHTTPRequestHandler):
                     map_rotation_deg=map_rotation, annotations=annotations,
                     mirror_y=mirror_y, mirror_center_m=mirror_center,
                     snap_wall_objects=snap_wall)
+                reconstruction["sensor_height_m"] = _sensor_height_m(scan_id)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})
@@ -670,6 +685,7 @@ class Handler(BaseHTTPRequestHandler):
                     map_rotation_deg=map_rotation, annotations=annotations,
                     mirror_y=mirror_y, mirror_center_m=mirror_center,
                     snap_wall_objects=snap_wall)
+                reconstruction["sensor_height_m"] = _sensor_height_m(scan_id)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
                                         "reconstruction": reconstruction})

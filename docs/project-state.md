@@ -454,7 +454,8 @@ buzzer/safety fallback.
   sidecar under `research/mapping/scenes/<scan>/` with filtered scan points and
   all measured/prior boxes (8 vertices + 12 triangles each). Partition prior is
   centred at `(-0.10, 0.50)` with `0.20 x 0.60 x 2.40 m`, between the WC door
-  and the desk niche. Every save/nudge/resize/export action shows a busy spinner
+  and the desk niche; the final demo lowers its top to **0.76 m** so the sensor
+  at 0.77 m sits on top and stays visible (W50). Every save/nudge/resize/export action shows a busy spinner
   and a success/error toast; static JS/HTML/CSS are served with `charset=utf-8`.
   **Dataset export:** per-run CSV under
   `research/mapping/dataset/clean|dirty/<scan>/<run>/` with `points.csv`,
@@ -484,9 +485,13 @@ and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Remaining work:
 when the board is back, OTA `0.8.0-ml-empty-human`, verify live DL empty/human,
 record screenshots/metrics, then export the first **clean** dataset run. The
 final mapping PLY is
-`research/mapping/scenes/20261110T184241Z/20261111T083800Z.ply` (Mirror Y ON,
-auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, 12 boxes, 450
-points, SHA-256 `ff53528d…e807`). The DL model is
+`research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
+auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
+12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The displayed sensor origin is
+`(0, 2×0.3555) = (0, 0.711)`, inside the partition; 2D/3D axes, FOV, distance
+leaders and presence marks use it, and the 3D axes sit at sensor height 0.77 m.
+The UI calls prior boxes **Rencana** (gambaran tambahan, bukan hasil ukur) and
+shows a grouped distance/size legend below the 3D view. The DL model is
 `research/mapping/ml/model-empty-human-v2/`; deployment steps are in
 `docs/ml-deployment.md`. The rule path remains the buzzer/safety fallback.
 

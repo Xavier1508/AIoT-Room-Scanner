@@ -31,6 +31,8 @@ const state = {
   payload: null,
   hasPayload: false,
   autoRotate: false,
+  axes: null,
+  selectionDrag: null,
 };
 
 function color(value) {
@@ -101,6 +103,28 @@ function labelSprite(text, textColor = '#ffffff', scale = 1) {
   return sprite;
 }
 
+function axisLabel(text, textColor) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = 'bold 44px system-ui, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = textColor;
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture, transparent: true, depthTest: false, depthWrite: false,
+    toneMapped: false,
+  }));
+  sprite.scale.set(0.28, 0.14, 1);
+  sprite.renderOrder = 1005;
+  return sprite;
+}
+
 function addBox(box) {
   const length = Math.max(0.05, Number(box.length_m) || 0.05);
   const width = Math.max(0.05, Number(box.width_m) || 0.05);
@@ -158,7 +182,9 @@ function addLabel(text, position, textColor = '#ffffff', scale = 1) {
 }
 
 function addDistanceLine(box, index) {
-  const origin = new THREE.Vector3(0, 0, 0.025);
+  const sensor = state.payload?.sensorOrigin || { x: 0, y: 0 };
+  const origin = new THREE.Vector3(Number(sensor.x) || 0,
+    Number(sensor.y) || 0, 0.025);
   const end = new THREE.Vector3(Number(box.cx_m) || 0, Number(box.cy_m) || 0, 0.025);
   if (origin.distanceTo(end) < 0.08) return;
   const geometry = new THREE.BufferGeometry().setFromPoints([origin, end]);
@@ -173,9 +199,12 @@ function addDistanceLine(box, index) {
 function addPresenceTrack(track, index, yawDeg) {
   const distance = Number(track.distance_cm) / 100;
   if (!Number.isFinite(distance) || distance <= 0) return;
-  const yaw = THREE.MathUtils.degToRad(Number(yawDeg) || 0);
-  const x = distance * Math.cos(yaw);
-  const y = distance * Math.sin(yaw);
+  const sensor = state.payload?.sensorOrigin || { x: 0, y: 0 };
+  const rawYaw = THREE.MathUtils.degToRad(Number(yawDeg) || 0)
+    + THREE.MathUtils.degToRad(Number(state.payload?.mapRotationDeg) || 0);
+  const yaw = state.payload?.mirrorY === false ? rawYaw : -rawYaw;
+  const x = Number(sensor.x) + distance * Math.cos(yaw);
+  const y = Number(sensor.y) + distance * Math.sin(yaw);
   const trackColor = index === 0 ? COLORS.presence : 0x66d9ff;
   const geometry = new THREE.CapsuleGeometry(0.23, 1.05, 5, 10);
   const material = new THREE.MeshStandardMaterial({
@@ -201,7 +230,8 @@ function addPresenceTrack(track, index, yawDeg) {
   ring.position.set(x, y, 0.025);
   state.groups.presence.add(ring);
   const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0, 0.03), new THREE.Vector3(x, y, 0.03),
+    new THREE.Vector3(Number(sensor.x), Number(sensor.y), 0.03),
+    new THREE.Vector3(x, y, 0.03),
   ]);
   state.groups.presence.add(new THREE.Line(
     lineGeometry,
@@ -218,7 +248,8 @@ function addPresenceTrack(track, index, yawDeg) {
   for (let step = 0; step <= 24; step += 1) {
     const angle = yaw - half + (2 * half * step) / 24;
     arcPoints.push(new THREE.Vector3(
-      distance * Math.cos(angle), distance * Math.sin(angle), 0.035));
+      Number(sensor.x) + distance * Math.cos(angle),
+      Number(sensor.y) + distance * Math.sin(angle), 0.035));
   }
   const arc = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(arcPoints),
@@ -236,6 +267,112 @@ function addPresenceTrack(track, index, yawDeg) {
     0.64,
   );
   label.renderOrder = 1003;
+}
+
+function updateSensorVisuals() {
+  const payload = state.payload || {};
+  const origin = payload.sensorOrigin || { x: 0, y: 0 };
+  const height = Number(payload.sensorHeightM) || 0.77;
+  const fov = THREE.MathUtils.degToRad(Number(payload.fovLimitDeg) || 60);
+  const mapRotation = THREE.MathUtils.degToRad(Number(payload.mapRotationDeg) || 0);
+  const facing = payload.mirrorY === false ? mapRotation : -mapRotation;
+  clearGroup('sensor');
+  clearGroup('scanFov');
+  if (state.axes) {
+    state.axes.position.set(Number(origin.x) || 0, Number(origin.y) || 0, height);
+  }
+  const sensorGroup = state.groups.sensor;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.11, 0.16, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x8dffc6, transparent: true, opacity: 0.85,
+      side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  ring.position.set(Number(origin.x) || 0, Number(origin.y) || 0, 0.012);
+  sensorGroup.add(ring);
+  const mastGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(Number(origin.x) || 0, Number(origin.y) || 0, 0.02),
+    new THREE.Vector3(Number(origin.x) || 0, Number(origin.y) || 0, height),
+  ]);
+  const mast = new THREE.Line(mastGeometry, new THREE.LineDashedMaterial({
+    color: 0x8dffc6, dashSize: 0.07, gapSize: 0.05,
+    transparent: true, opacity: 0.55,
+  }));
+  mast.computeLineDistances();
+  sensorGroup.add(mast);
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 16, 10),
+    new THREE.MeshStandardMaterial({
+      color: 0x8dffc6, emissive: 0x5affb0, emissiveIntensity: 1.2,
+      toneMapped: false,
+    }),
+  );
+  sphere.position.set(Number(origin.x) || 0, Number(origin.y) || 0, height);
+  sensorGroup.add(sphere);
+
+  const outline = (payload.roomOutline || [])
+    .filter(point => Array.isArray(point) && point.length >= 2);
+  let radius = 2.4;
+  for (const [x, y] of outline) {
+    radius = Math.max(radius, Math.hypot(
+      Number(x) - Number(origin.x), Number(y) - Number(origin.y)) * 1.04);
+  }
+  const segments = 40;
+  const vertices = [Number(origin.x) || 0, Number(origin.y) || 0, 0.012];
+  const indices = [];
+  for (let step = 0; step <= segments; step += 1) {
+    const angle = facing - fov + (2 * fov * step) / segments;
+    vertices.push(
+      (Number(origin.x) || 0) + radius * Math.cos(angle),
+      (Number(origin.y) || 0) + radius * Math.sin(angle),
+      0.012,
+    );
+    if (step < segments) indices.push(0, step + 1, step + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  const sector = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    color: 0x66d9ff, transparent: true, opacity: 0.10,
+    side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
+  }));
+  sector.renderOrder = 2;
+  state.groups.scanFov.add(sector);
+  const arcPoints = [];
+  for (let step = 0; step <= segments; step += 1) {
+    const angle = facing - fov + (2 * fov * step) / segments;
+    arcPoints.push(new THREE.Vector3(
+      (Number(origin.x) || 0) + radius * Math.cos(angle),
+      (Number(origin.y) || 0) + radius * Math.sin(angle),
+      0.016,
+    ));
+  }
+  const arc = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(arcPoints),
+    new THREE.LineDashedMaterial({
+      color: 0x66d9ff, dashSize: 0.10, gapSize: 0.08,
+      transparent: true, opacity: 0.55,
+    }),
+  );
+  arc.computeLineDistances();
+  state.groups.scanFov.add(arc);
+  for (const angle of [facing - fov, facing + fov]) {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(Number(origin.x) || 0, Number(origin.y) || 0, 0.016),
+        new THREE.Vector3(
+          (Number(origin.x) || 0) + radius * Math.cos(angle),
+          (Number(origin.y) || 0) + radius * Math.sin(angle),
+          0.016,
+        ),
+      ]),
+      new THREE.LineBasicMaterial({
+        color: 0x66d9ff, transparent: true, opacity: 0.42,
+      }),
+    );
+    state.groups.scanFov.add(line);
+  }
 }
 
 function updateBounds() {
@@ -330,6 +467,9 @@ function applyLayers() {
     && (state.payload?.priorVisible !== false);
   if (state.groups.axes) state.groups.axes.visible = layers.grid
     && (state.payload?.showAxis !== false);
+  if (state.groups.scanFov) state.groups.scanFov.visible = layers.grid
+    && (state.payload?.showAxis !== false);
+  if (state.groups.sensor) state.groups.sensor.visible = layers.grid;
   if (state.groups.presence) state.groups.presence.visible = layers.labels;
   if (state.groups.distances) state.groups.distances.visible = layers.labels
     && (state.payload?.showDistances !== false);
@@ -339,7 +479,7 @@ function update(payload) {
   if (!state.ready) return;
   state.payload = payload || {};
   for (const name of ['points', 'walls', 'priors', 'objects', 'labels',
-    'presence', 'outline', 'distances']) clearGroup(name);
+    'presence', 'outline', 'distances', 'scanFov', 'sensor']) clearGroup(name);
 
   const points = state.payload.points || [];
   if (points.length) {
@@ -366,7 +506,9 @@ function update(payload) {
       depthWrite: false,
       toneMapped: false,
     });
-    state.groups.points.add(new THREE.Points(geometry, material));
+    const pointCloud = new THREE.Points(geometry, material);
+    pointCloud.userData.pointIndices = points.map(point => point.pointIndex);
+    state.groups.points.add(pointCloud);
   }
 
   const boxes = state.payload.boxes || [];
@@ -380,7 +522,9 @@ function update(payload) {
       const distance = Number(wall ? box.nearest_m : box.distance_m);
       const suffix = !prior && Number.isFinite(distance)
         ? ` · ${distance.toFixed(2)} m` : '';
-      const text = `#${index + 1} ${box.label}${prior ? ' prior' : ''}${suffix}`;
+      const name = box.label === 'prior' ? 'rencana' : box.label;
+      const planned = prior && name !== 'rencana' ? ' · rencana' : '';
+      const text = `#${index + 1} ${name}${planned}${suffix}`;
       addLabel(text, new THREE.Vector3(
         Number(box.cx_m) || 0,
         Number(box.cy_m) || 0,
@@ -405,6 +549,7 @@ function update(payload) {
   const tracks = state.payload.tracks || [];
   tracks.forEach((track, index) => addPresenceTrack(
     track, index, state.payload.presenceYawDeg || 0));
+  updateSensorVisuals();
 
   const previousBounds = state.bounds.clone();
   updateBounds();
@@ -481,6 +626,42 @@ function demo() {
   }
 }
 
+function updateSelectionOverlay(drag) {
+  const box = state.selectionBox;
+  if (!box) return;
+  const left = Math.min(drag.x0, drag.x1);
+  const top = Math.min(drag.y0, drag.y1);
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+  box.style.width = `${Math.abs(drag.x1 - drag.x0)}px`;
+  box.style.height = `${Math.abs(drag.y1 - drag.y0)}px`;
+}
+
+function pickPointIndices(drag) {
+  const cloud = state.groups.points?.children?.find(child => child.isPoints);
+  if (!cloud) return [];
+  const indices = cloud.userData.pointIndices || [];
+  const attribute = cloud.geometry?.getAttribute('position');
+  if (!attribute) return [];
+  const rect = state.renderer.domElement.getBoundingClientRect();
+  const minX = Math.min(drag.x0, drag.x1);
+  const maxX = Math.max(drag.x0, drag.x1);
+  const minY = Math.min(drag.y0, drag.y1);
+  const maxY = Math.max(drag.y0, drag.y1);
+  const vector = new THREE.Vector3();
+  const result = [];
+  for (let index = 0; index < attribute.count; index += 1) {
+    vector.fromBufferAttribute(attribute, index).project(state.camera);
+    if (vector.z < -1 || vector.z > 1) continue;
+    const x = (vector.x * 0.5 + 0.5) * rect.width;
+    const y = (-vector.y * 0.5 + 0.5) * rect.height;
+    if (x < minX || x > maxX || y < minY || y > maxY) continue;
+    const pointIndex = Number(indices[index]);
+    if (Number.isFinite(pointIndex)) result.push(pointIndex);
+  }
+  return result;
+}
+
 function init() {
   const container = document.getElementById('cloud3d');
   if (!container) return;
@@ -499,6 +680,10 @@ function init() {
   state.renderer.outputColorSpace = THREE.SRGBColorSpace;
   state.renderer.setClearColor(0x0a1019, 1);
   container.appendChild(state.renderer.domElement);
+  state.selectionBox = document.createElement('div');
+  state.selectionBox.className = 'scene3d-selectbox';
+  state.selectionBox.hidden = true;
+  container.appendChild(state.selectionBox);
 
   state.scene = new THREE.Scene();
   state.scene.background = new THREE.Color(0x0a1019);
@@ -510,7 +695,18 @@ function init() {
   state.controls.minDistance = 0.4;
   state.controls.maxDistance = 20;
   state.controls.target.set(1.0, 0.2, 0.8);
-  state.controls.addEventListener('start', () => { state.autoRotate = false; });
+  state.controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.PAN,
+    RIGHT: THREE.MOUSE.PAN,
+  };
+  state.controls.addEventListener('start', () => {
+    state.autoRotate = false;
+    state.renderer.domElement.style.cursor = 'grabbing';
+  });
+  state.controls.addEventListener('end', () => {
+    state.renderer.domElement.style.cursor = 'grab';
+  });
 
   state.scene.add(new THREE.HemisphereLight(0xddeeff, 0x18283a, 1.4));
   const sun = new THREE.DirectionalLight(0xffffff, 1.3);
@@ -518,7 +714,7 @@ function init() {
   state.scene.add(sun);
 
   for (const name of ['points', 'walls', 'priors', 'objects', 'labels',
-    'presence', 'grid', 'outline', 'axes', 'distances']) {
+    'presence', 'grid', 'outline', 'axes', 'distances', 'scanFov', 'sensor']) {
     makeGroup(name);
   }
 
@@ -536,17 +732,78 @@ function init() {
   state.groups.grid.add(floor);
 
   const axes = new THREE.AxesHelper(1.4);
-  axes.position.set(-0.1, -0.9, 0.01);
+  axes.traverse((child) => {
+    if (!child.material) return;
+    child.material.depthTest = false;
+    child.material.transparent = true;
+    child.material.opacity = 0.95;
+  });
+  axes.renderOrder = 1004;
+  state.axes = axes;
   state.groups.axes.add(axes);
+  for (const [text, position, tint] of [
+    ['X', new THREE.Vector3(1.52, 0, 0), '#ff6b6b'],
+    ['Y', new THREE.Vector3(0, 1.52, 0), '#6bff9c'],
+    ['Z', new THREE.Vector3(0, 0, 1.52), '#6bb6ff'],
+  ]) {
+    const sprite = axisLabel(text, tint);
+    sprite.position.copy(position);
+    axes.add(sprite);
+  }
 
+  const canvasPointLocal = (event) => {
+    const rect = state.renderer.domElement.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
   state.renderer.domElement.addEventListener('pointerdown', (event) => {
     state.pointerStart = { x: event.clientX, y: event.clientY };
-  });
+    if (event.button === 0 && (event.shiftKey || event.altKey)) {
+      event.preventDefault();
+      const local = canvasPointLocal(event);
+      state.controls.enabled = false;
+      state.selectionDrag = {
+        x0: local.x, y0: local.y, x1: local.x, y1: local.y,
+        pointerId: event.pointerId,
+      };
+      state.selectionBox.hidden = false;
+      updateSelectionOverlay(state.selectionDrag);
+      state.renderer.domElement.setPointerCapture(event.pointerId);
+      state.renderer.domElement.style.cursor = 'crosshair';
+    }
+  }, true);
   state.renderer.domElement.addEventListener('pointerup', (event) => {
+    if (state.selectionDrag) {
+      const drag = state.selectionDrag;
+      const local = canvasPointLocal(event);
+      drag.x1 = local.x;
+      drag.y1 = local.y;
+      state.selectionDrag = null;
+      state.selectionBox.hidden = true;
+      state.controls.enabled = true;
+      state.renderer.domElement.style.cursor = 'grab';
+      try {
+        state.renderer.domElement.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        // Pointer capture may already be released.
+      }
+      const tiny = Math.abs(drag.x1 - drag.x0) < 4
+        && Math.abs(drag.y1 - drag.y0) < 4;
+      if (!tiny) {
+        const indices = pickPointIndices(drag);
+        const mode = event.altKey ? 'subtract'
+          : ((event.ctrlKey || event.metaKey) ? 'add' : 'replace');
+        window.applyPointSelection?.(indices, mode);
+        state.pointerStart = null;
+        return;
+      }
+    }
     if (!state.pointerStart) return;
     const moved = Math.hypot(event.clientX - state.pointerStart.x,
       event.clientY - state.pointerStart.y);
-    if (moved > 5) return;
+    if (moved > 5) {
+      state.pointerStart = null;
+      return;
+    }
     const rect = state.renderer.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -581,10 +838,28 @@ function init() {
         return (Number(a.box.length_m) * Number(a.box.width_m))
           - (Number(b.box.length_m) * Number(b.box.width_m));
       });
-      if (list.length) window.selectBoxById(list[0].box.id);
+      if (list.length) {
+        window.selectBoxById(list[0].box.id);
+      } else {
+        window.clearAllSelection?.();
+      }
+    } else {
+      window.clearAllSelection?.();
     }
+    state.pointerStart = null;
   });
   state.renderer.domElement.addEventListener('pointermove', (event) => {
+    if (state.selectionDrag) {
+      const local = canvasPointLocal(event);
+      state.selectionDrag.x1 = local.x;
+      state.selectionDrag.y1 = local.y;
+      updateSelectionOverlay(state.selectionDrag);
+      return;
+    }
+    if (event.shiftKey || event.altKey) {
+      state.renderer.domElement.style.cursor = 'crosshair';
+      return;
+    }
     const rect = state.renderer.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -595,6 +870,12 @@ function init() {
     const hits = raycaster.intersectObjects(state.groups.walls.children
       .concat(state.groups.priors.children, state.groups.objects.children), true);
     state.renderer.domElement.style.cursor = hits.length ? 'pointer' : 'grab';
+  });
+  state.renderer.domElement.addEventListener('pointercancel', () => {
+    state.selectionDrag = null;
+    state.selectionBox.hidden = true;
+    state.controls.enabled = true;
+    state.pointerStart = null;
   });
 
   state.ready = true;

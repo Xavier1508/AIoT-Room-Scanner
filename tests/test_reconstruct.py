@@ -80,10 +80,12 @@ class Reconstruction(unittest.TestCase):
         locked = reconstruct.reconstruct_points(
             rows, map_rotation_deg=0.0,
             annotations={"size_overrides": {
-                box["id"]: {"length_m": 2.0, "width_m": 1.2}}})
+                box["id"]: {"length_m": 2.0, "width_m": 1.2,
+                            "z_bottom_m": 0.0, "z_top_m": 0.76}}})
         result = locked["boxes"][0]
         self.assertAlmostEqual(result["length_m"], 2.0, places=3)
         self.assertAlmostEqual(result["width_m"], 1.2, places=3)
+        self.assertAlmostEqual(result["z_top_m"], 0.76, places=3)
         self.assertEqual(result["size_source"], "manual")
         self.assertIn(box["id"], locked["annotations"]["size_overrides"])
 

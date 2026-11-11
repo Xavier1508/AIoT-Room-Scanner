@@ -219,7 +219,28 @@ toggles for points, walls, priors, objects, labels and grid, click-to-select
 box labels, a floor grid and a 2D-canvas fallback if WebGL is unavailable. The
 **Demo** button activates all layers, sets the isometric camera and closes the
 sidebar. The 2D editor remains a canvas because it is the precise
-resize/prior editor.
+resize/rencana editor.
+
+**Sensor origin and FOV:** the displayed frame is mirrored, so the scanner is
+not at `(0,0)`; it is at `(0, 2×0.3555) = (0, 0.711)`, inside the partition.
+The 2D X/Y axes, FOV triangle, scan labels, HLK dot, distance leaders and
+presence marks use that origin. In 3D the X/Y/Z axes are placed at the same
+plan position at sensor height **0.77 m**, with a floor FOV sector/arc and a
+dashed mast to the floor. Occluded sectors are computed around the sensor, not
+around the raw origin. The partition block is **0.76 m** tall by default; any
+auto box can also be height-locked through `Z bawah` / `Z atas`.
+
+**3D distance legend:** a compact grouped legend below the 3D view lists
+**Terukur sensor** and **Rencana** (gambaran tambahan, bukan hasil ukur) with
+distance and L×W×H per row. Clicking a row selects that block; the **Jarak**
+button hides/shows the legend. The UI uses **Rencana** instead of the technical
+term "prior".
+
+**3D selection and navigation:** click a block to select it; **Shift+drag**
+draws a rectangle and selects the projected points (Shift+Ctrl adds, Alt
+subtracts); click empty space, click outside the 3D view, or press **Escape**
+to clear both point and block selection. **Middle-drag** pans, right-drag pans,
+wheel zooms and left-drag orbits.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least

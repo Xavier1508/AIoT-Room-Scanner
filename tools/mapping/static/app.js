@@ -144,7 +144,7 @@ async function undoLast() {
   const next = JSON.parse(snapshot);
   try {
     await withBusy($('undo-annotations'),
-      () => saveAnnotations(next, 'Undo berhasil. Prior, label, dan daftar hapus dipulihkan.',
+      () => saveAnnotations(next, 'Undo berhasil. Rencana, label, dan daftar hapus dipulihkan.',
         state.selectedBoxId, { skipUndo: true }), 'Undo...');
     updateUndoButton();
     showToast('Undo berhasil.', 'success');
@@ -789,7 +789,10 @@ function boxColor(box) {
 }
 
 function boxName(box) {
-  if (box.source === 'prior') return `${box.label} (prior)`;
+  if (box.source === 'prior') {
+    const name = box.label === 'prior' ? 'rencana' : box.label;
+    return name === 'rencana' ? 'rencana' : `${name} · rencana`;
+  }
   return `${box.label}${box.label_source === 'manual' ? '*' : ''}`;
 }
 
@@ -862,7 +865,7 @@ function renderRoomInfo() {
     setText('room-info', `Outline ${Number(room.width_m).toFixed(2)}×${Number(room.depth_m).toFixed(2)} m`
       + ` · total ${Number(total).toFixed(2)} m²${areaSource}`);
   } else {
-    setText('room-info', 'Prior ruangan belum diisi.');
+    setText('room-info', 'Rencana ruangan belum diisi.');
   }
 }
 
@@ -974,7 +977,7 @@ function renderSelectedSummary() {
   const color = boxColor(box);
   element.style.borderLeftColor = `rgb(${color[0]},${color[1]},${color[2]})`;
   element.innerHTML = `<b>#${index} ${escapeHtml(boxName(box))}</b> · `
-    + `${box.source === 'prior' ? 'prior' : (box.label_source === 'manual' ? 'manual' : 'auto')}<br>`
+    + `${box.source === 'prior' ? 'rencana' : (box.label_source === 'manual' ? 'manual' : 'auto')}<br>`
     + `${formatMeters(boxDistance(box))} · `
     + `${Number(box.length_m).toFixed(2)}×${Number(box.width_m).toFixed(2)}×${Number(box.z_top_m).toFixed(2)} m`
     + ` · ${box.points} pts`;
@@ -1027,7 +1030,7 @@ function renderBlockList() {
   const count = $('block-count');
   if (count) count.textContent = String(boxes.length);
   const toggle = $('block-sidebar-toggle');
-  if (toggle) toggle.textContent = `Blok / Prior (${boxes.length})`;
+  if (toggle) toggle.textContent = `Blok / Rencana (${boxes.length})`;
   renderSelectedSummary();
   if (!boxes.length) {
     container.textContent = 'Tidak ada blok untuk ditampilkan.';
@@ -1067,8 +1070,8 @@ function renderBlockList() {
       name.textContent = boxName(box);
       const meta = document.createElement('span');
       meta.className = 'meta';
-      const source = box.source === 'prior' ? 'P'
-        : (box.label_source === 'manual' ? 'M' : 'A');
+      const source = box.source === 'prior' ? 'rencana'
+        : (box.label_source === 'manual' ? 'manual' : 'auto');
       meta.textContent = `${formatMeters(boxDistance(box))} · `
         + `${Number(box.length_m).toFixed(1)}×${Number(box.width_m).toFixed(1)} · ${source}`;
       row.append(swatch, number, name, meta);
@@ -1113,18 +1116,19 @@ function syncPriorFields() {
                'prior-length', 'prior-width', 'prior-angle'];
   if (!box) {
     ids.forEach(id => { if ($(id)) $(id).value = ''; });
-    setText('prior-status', 'Pilih blok prior untuk diedit.');
+    setText('prior-status', 'Pilih blok rencana untuk diedit.');
     return;
   }
   const editable = isEditableBox(box);
   updatePriorFieldValues(box);
   ids.forEach(id => {
     if (!$(id)) return;
-    $(id).disabled = !editable && id !== 'prior-length' && id !== 'prior-width';
+    $(id).disabled = !editable
+      && !['prior-length', 'prior-width', 'prior-z0', 'prior-z1'].includes(id);
   });
   setText('prior-status', editable
     ? `Edit ${box.label} (${box.source || 'manual'}). Pivot putih = pusat objek; drag handle = ubah satu sisi.`
-    : `Auto box ${box.label}: panjang/lebar bisa dikunci sesuai ukuran meteran; posisi/sudut tetap dari sensor.`);
+    : `Auto box ${box.label}: panjang/lebar/tinggi bisa dikunci; posisi/sudut tetap dari sensor.`);
 }
 
 async function addPrior() {
@@ -1145,9 +1149,9 @@ async function addPrior() {
   });
   ensureLabelCatalog(next, 'prior');
   try {
-    await withBusy($('add-prior'), () => saveAnnotations(next, 'Prior baru ditambahkan. Geser dengan drag/arrow.', id), 'Menambah...');
+    await withBusy($('add-prior'), () => saveAnnotations(next, 'Rencana baru ditambahkan. Geser dengan drag/arrow.', id), 'Menambah...');
   } catch (error) {
-    setText('prior-status', `Gagal menambah prior: ${error.message}`);
+    setText('prior-status', `Gagal menambah rencana: ${error.message}`);
   }
 }
 
@@ -1160,13 +1164,13 @@ async function deletePrior() {
   const next = annotationsClone();
   try {
     if (isEditableBox(box)) {
-      if (!window.confirm(`Hapus prior "${box.label}"?`)) return;
+      if (!window.confirm(`Hapus rencana "${box.label}"?`)) return;
       next.manual_boxes = (next.manual_boxes || [])
         .filter(item => String(item.id) !== String(box.id));
       delete next.labels[box.id];
       next.hidden = (next.hidden || []).filter(id => String(id) !== String(box.id));
       await withBusy($('delete-prior'),
-        () => saveAnnotations(next, `Prior ${box.label} dihapus.`), 'Menghapus...');
+        () => saveAnnotations(next, `Rencana ${box.label} dihapus.`), 'Menghapus...');
     } else {
       next.removed = Array.from(new Set([...(next.removed || []), box.id]));
       next.hidden = (next.hidden || []).filter(id => String(id) !== String(box.id));
@@ -1184,7 +1188,7 @@ async function convertToPrior() {
   const box = selectedBox();
   if (!box) return;
   if (isEditableBox(box)) {
-    setText('prior-status', 'Blok ini sudah prior/manual.');
+    setText('prior-status', 'Blok ini sudah rencana/manual.');
     return;
   }
   const next = annotationsClone();
@@ -1206,9 +1210,9 @@ async function convertToPrior() {
   ensureLabelCatalog(next, box.label || 'object');
   try {
     await withBusy($('convert-prior'), () => saveAnnotations(next,
-      `Blok ${box.label} dijadikan prior editable; auto box disembunyikan.`, id), 'Mengubah...');
+      `Blok ${box.label} dijadikan rencana editable; auto box disembunyikan.`, id), 'Mengubah...');
   } catch (error) {
-    setText('prior-status', `Gagal menjadikan prior: ${error.message}`);
+    setText('prior-status', `Gagal menjadikan rencana: ${error.message}`);
   }
 }
 
@@ -1231,7 +1235,7 @@ async function promoteBoxToPrior(box) {
   next.hidden = Array.from(new Set([...(next.hidden || []), box.id]));
   next.removed = (next.removed || []).filter(item => String(item) !== String(box.id));
   ensureLabelCatalog(next, box.label || 'object');
-  await saveAnnotations(next, `Blok ${box.label} dijadikan prior; lanjut resize.`, id);
+  await saveAnnotations(next, `Blok ${box.label} dijadikan rencana; lanjut resize.`, id);
   return currentBoxes().find(item => String(item.id) === String(id)) || null;
 }
 
@@ -1244,13 +1248,18 @@ async function applyPriorFields() {
   if (!isEditableBox(box)) {
     const length = Math.max(0.05, Number($('prior-length').value) || 0.05);
     const width = Math.max(0.05, Number($('prior-width').value) || 0.05);
+    const z0 = Math.max(0, Number($('prior-z0').value) || 0);
+    const z1 = Math.max(z0 + 0.05, Number($('prior-z1').value) || 0.05);
     const next = annotationsClone();
     next.size_overrides = next.size_overrides || {};
-    next.size_overrides[box.id] = { length_m: length, width_m: width };
+    next.size_overrides[box.id] = {
+      length_m: length, width_m: width,
+      z_bottom_m: z0, z_top_m: z1,
+    };
     try {
       await withBusy($('apply-prior'),
         () => saveAnnotations(next,
-          `Ukuran ${box.label} dikunci ${length.toFixed(2)}×${width.toFixed(2)} m.`,
+          `Ukuran ${box.label} dikunci ${length.toFixed(2)}×${width.toFixed(2)}×${(z1 - z0).toFixed(2)} m.`,
           box.id), 'Menyimpan...');
     } catch (error) {
       setText('prior-status', `Gagal menyimpan ukuran: ${error.message}`);
@@ -1273,17 +1282,17 @@ async function applyPriorFields() {
     angle_deg: Number($('prior-angle').value) || 0,
   });
   try {
-    await withBusy($('apply-prior'), () => saveAnnotations(next, 'Prior disimpan.', box.id), 'Menyimpan...');
+    await withBusy($('apply-prior'), () => saveAnnotations(next, 'Rencana disimpan.', box.id), 'Menyimpan...');
   } catch (error) {
-    setText('prior-status', `Gagal menyimpan prior: ${error.message}`);
+    setText('prior-status', `Gagal menyimpan rencana: ${error.message}`);
   }
 }
 
 async function nudgePrior(direction, button = null) {
   const box = selectedBox();
   if (!box || !isEditableBox(box)) {
-    showToast('Pilih prior/manual box dulu.', 'warn');
-    setText('prior-status', 'Pilih prior/manual box dulu.');
+    showToast('Pilih rencana/manual box dulu.', 'warn');
+    setText('prior-status', 'Pilih rencana/manual box dulu.');
     return;
   }
   const next = annotationsClone();
@@ -1306,10 +1315,10 @@ async function nudgePrior(direction, button = null) {
   if (direction === 'rot+') manual.angle_deg = Number(manual.angle_deg || 0) + 5;
   try {
     await withBusy(button,
-      () => saveAnnotations(next, 'Prior digeser.', box.id),
+      () => saveAnnotations(next, 'Rencana digeser.', box.id),
       'Menggeser...');
   } catch (error) {
-    setText('prior-status', `Gagal menggeser prior: ${error.message}`);
+    setText('prior-status', `Gagal menggeser rencana: ${error.message}`);
     showToast(`Gagal menggeser: ${error.message}`, 'error', 4500);
   }
 }
@@ -1407,7 +1416,7 @@ async function mergeSelectedBoxes() {
 }
 
 async function resetAnnotations() {
-  if (!window.confirm('Reset label, sembunyi sementara, merge, dan label titik? Prior dan blok yang sudah dihapus permanen tetap dipertahankan.')) {
+  if (!window.confirm('Reset label, sembunyi sementara, merge, dan label titik? Rencana dan blok yang sudah dihapus permanen tetap dipertahankan.')) {
     return;
   }
   const next = annotationsClone();
@@ -1417,7 +1426,7 @@ async function resetAnnotations() {
   next.point_labels = {};
   next.removed = state.annotations?.removed || [];
   try {
-    await withBusy($('reset-annotations'), () => saveAnnotations(next, 'Label, sembunyi, merge, dan point label direset; prior + hapus permanen tetap.'), 'Reset...');
+    await withBusy($('reset-annotations'), () => saveAnnotations(next, 'Label, sembunyi, merge, dan point label direset; rencana + hapus permanen tetap.'), 'Reset...');
   } catch (error) {
     setText('annotation-status', `Gagal reset anotasi: ${error.message}`);
   }
@@ -1471,7 +1480,7 @@ function renderDatasetIndex() {
       run.run_utc, run.scan_id, run.run_label || '-',
       String(run.clean).toLowerCase() === 'true' ? 'ya' : 'tidak',
       `${run.points_total || '-'} / ${run.points_valid || '-'}`,
-      `${run.boxes_total || '-'} (${run.measured_boxes || 0}M/${run.prior_boxes || 0}P)`,
+      `${run.boxes_total || '-'} (${run.measured_boxes || 0}M/${run.prior_boxes || 0}R)`,
       run.folder || '-',
     ]) {
       const cell = document.createElement('td');
@@ -1515,7 +1524,7 @@ async function exportDataset() {
     setText('export-status',
       `OK ${data.folder}\n`
       + `points ${data.counts.points_total} (valid ${data.counts.points_valid}, ToF ${data.counts.tof_points}, HC ${data.counts.hc_points})\n`
-      + `boxes ${data.counts.boxes_total} (measured ${data.counts.measured_boxes}, prior ${data.counts.prior_boxes})\n`
+      + `boxes ${data.counts.boxes_total} (measured ${data.counts.measured_boxes}, rencana ${data.counts.prior_boxes})\n`
       + `clean=${data.clean} · run_label=${data.run_label || '-'}`);
     showToast(`Export selesai: ${data.folder}`, 'success', 4200);
     await refreshDatasetIndex();
@@ -1542,7 +1551,7 @@ async function saveScene() {
     setText('scene-status',
       `OK ${data.file}\n`
       + `${data.counts.points} points · ${data.counts.boxes} boxes `
-      + `(${data.counts.measured_boxes} measured / ${data.counts.prior_boxes} prior) · `
+      + `(${data.counts.measured_boxes} measured / ${data.counts.prior_boxes} rencana) · `
       + `${data.counts.faces} faces · ${sizeKb} KB\n`
       + `metadata: ${data.metadata_file}`);
     showToast(`3D tersimpan: ${data.file}`, 'success', 6000);
@@ -1698,6 +1707,21 @@ function scaledPoint(point) {
   return { ...point, x_mm: rx, y_mm: ry };
 }
 
+function sensorOriginMeters() {
+  const center = Number(state.mirrorCenter);
+  return {
+    x: 0,
+    y: state.mirrorY && Number.isFinite(center) ? 2.0 * center : 0,
+  };
+}
+
+function displaySensorAngle(angle) {
+  // The points are rotated by map rotation and then mirrored; the sensor
+  // direction must follow the same two steps.
+  const rotated = angle + Number(state.mapRotation || 0) * Math.PI / 180;
+  return state.mirrorY ? -rotated : rotated;
+}
+
 function visibleCloudPoints(requireZ = false) {
   const hidden = state.mountRows instanceof Set
     ? state.mountRows
@@ -1724,7 +1748,7 @@ function syncMirrorButton() {
   button.classList.toggle('active', state.mirrorY);
   button.textContent = state.mirrorY ? 'Mirror Y: ON' : 'Mirror Y: OFF';
   button.title = state.mirrorY
-    ? 'Hasil scan dibalik vertikal terhadap prior. Klik untuk mematikan.'
+    ? 'Hasil scan dibalik vertikal terhadap rencana. Klik untuk mematikan.'
     : 'Hasil scan mengikuti arah sensor. Klik untuk membalik vertikal.';
 }
 
@@ -1930,13 +1954,16 @@ function drawTag(ctx, x, y, text, color, scale = 1) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawOccludedWedges(ctx, toScreen, origin, extent, occluded, fovLimit) {
+function drawOccludedWedges(ctx, toScreen, sensor, radius, occluded, fovLimit) {
   for (const [start, end] of occluded || []) {
     if (!Number.isFinite(Number(start)) || !Number.isFinite(Number(end))) continue;
     const a0 = Number(start) * Math.PI / 180;
     const a1 = Number(end) * Math.PI / 180;
-    const p1 = toScreen(Math.cos(a0) * extent, Math.sin(a0) * extent);
-    const p2 = toScreen(Math.cos(a1) * extent, Math.sin(a1) * extent);
+    const p1 = toScreen(sensor.x + Math.cos(a0) * radius,
+      sensor.y + Math.sin(a0) * radius);
+    const p2 = toScreen(sensor.x + Math.cos(a1) * radius,
+      sensor.y + Math.sin(a1) * radius);
+    const origin = toScreen(sensor.x, sensor.y);
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
     ctx.lineTo(p1.x, p1.y);
@@ -1950,14 +1977,15 @@ function drawOccludedWedges(ctx, toScreen, origin, extent, occluded, fovLimit) {
     ctx.stroke();
     ctx.setLineDash([]);
     const mid = (a0 + a1) / 2;
-    const label = toScreen(Math.cos(mid) * extent * 0.82, Math.sin(mid) * extent * 0.82);
+    const label = toScreen(sensor.x + Math.cos(mid) * radius * 0.82,
+      sensor.y + Math.sin(mid) * radius * 0.82);
     ctx.fillStyle = 'rgba(255,150,150,0.72)';
     ctx.font = '10px system-ui';
     ctx.fillText('no data', label.x - 18, label.y);
   }
 }
 
-function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
+function drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale = 1) {
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)
       || presence.gate === 'beyond_wall') return;
@@ -1965,12 +1993,15 @@ function drawHumanTopDown(ctx, toScreen, origin, scale, labelScale = 1) {
     ? presence.tracks
     : [{ id: 'H1', distance_cm: presence.distance_cm,
       confidence: presence.confidence, source: 'combined' }];
-  const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
+  const origin = toScreen(sensor.x, sensor.y);
+  const yaw = displaySensorAngle(
+    Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180);
   const colors = [[90, 255, 170], [102, 217, 255], [255, 209, 102]];
   tracks.forEach((track, index) => {
     const distance = Number(track.distance_cm) / 100;
     if (!Number.isFinite(distance) || distance <= 0) return;
-    const point = toScreen(distance * Math.cos(yaw), distance * Math.sin(yaw));
+    const point = toScreen(sensor.x + distance * Math.cos(yaw),
+      sensor.y + distance * Math.sin(yaw));
     const size = 0.42 * scale;
     const color = colors[index % colors.length];
     const half = (Number(presence.occupancy_uncertainty_deg) || 60) * Math.PI / 180;
@@ -2240,25 +2271,38 @@ function drawTopDown() {
     ctx.fillText(text, 20, 22);
     ctx.textBaseline = 'alphabetic';
   }
-  const origin = toScreen(0, 0);
+  const sensor = sensorOriginMeters();
+  const origin = toScreen(sensor.x, sensor.y);
   const fovLimit = Number(state.reconstruction?.fov_limit_deg || 60);
-  drawOccludedWedges(ctx, toScreen, origin, extent,
+  const scanRadius = Math.max(extent * 1.1,
+    ...(state.roomOutline || []).map(([x, y]) =>
+      Math.hypot(Number(x) - sensor.x, Number(y) - sensor.y)));
+  drawOccludedWedges(ctx, toScreen, sensor, scanRadius,
     state.reconstruction?.occluded_deg || [], fovLimit);
   const fov = fovLimit * Math.PI / 180;
+  const facing = displaySensorAngle(0);
   ctx.strokeStyle = 'rgba(120,180,255,0.45)';
   ctx.setLineDash([5, 5]);
-  for (const angle of [-fov, fov]) {
-    const end = toScreen(Math.cos(angle) * extent, Math.sin(angle) * extent);
+  for (const angle of [facing - fov, facing + fov]) {
+    const end = toScreen(sensor.x + Math.cos(angle) * scanRadius,
+      sensor.y + Math.sin(angle) * scanRadius);
     ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   }
   ctx.setLineDash([]);
-  const scanStart = toScreen(Math.cos(-fov) * extent * 0.82, Math.sin(-fov) * extent * 0.82);
-  const scanEnd = toScreen(Math.cos(fov) * extent * 0.82, Math.sin(fov) * extent * 0.82);
-  ctx.fillStyle = 'rgba(150,200,255,0.95)';
-  ctx.font = '20px system-ui';
-  ctx.fillText('start −60° (kursi)', scanStart.x - 40, scanStart.y - 14);
-  ctx.fillText('end +60° (kasur/lemari)', scanEnd.x + 8, scanEnd.y - 14);
-  ctx.fillText('scan searah jarum jam', origin.x + 14, origin.y + 34);
+  const startAngle = displaySensorAngle(-fov);
+  const endAngle = displaySensorAngle(fov);
+  const labelRadius = Math.min(scanRadius * 0.58, 0.72);
+  const scanStart = toScreen(sensor.x + Math.cos(startAngle) * labelRadius,
+    sensor.y + Math.sin(startAngle) * labelRadius);
+  const scanEnd = toScreen(sensor.x + Math.cos(endAngle) * labelRadius,
+    sensor.y + Math.sin(endAngle) * labelRadius);
+  drawTag(ctx, scanStart.x, scanStart.y - 18,
+    'start −60° (kursi)', 'rgba(150,200,255,0.98)', 0.82);
+  drawTag(ctx, scanEnd.x, scanEnd.y - 18,
+    'end +60° (kasur/lemari)', 'rgba(150,200,255,0.98)', 0.82);
+  drawTag(ctx, origin.x + 0.22 * scale, origin.y + 0.2 * scale,
+    state.mirrorY ? 'scan berlawanan arah jarum jam' : 'scan searah jarum jam',
+    'rgba(150,200,255,0.9)', 0.72);
   drawRoomOutline2D(ctx, toScreen);
   if (state.viewMode !== 'blocks') {
     const selected = selectedPointSet();
@@ -2305,7 +2349,7 @@ function drawTopDown() {
           `SELECTED #${boxIndex + 1} ${boxName(box)}`, '#ffffff', labelScale);
       }
       const label = toScreen(Number(box.cx_m), Number(box.cy_m));
-      if (box.label === 'wall' || box.label === 'wall_edge' || box.source === 'prior') {
+      if (box.label === 'wall' || box.label === 'wall_edge') {
         ctx.beginPath();
         ctx.arc(label.x, label.y, 16 * labelScale, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.96)`;
@@ -2319,14 +2363,19 @@ function drawTopDown() {
         ctx.textBaseline = 'alphabetic';
       } else {
         const shortName = box.label === 'door-wc' ? 'WC'
-          : box.label === 'door-exit' ? 'exit' : box.label;
-        const text = `#${boxIndex + 1} ${shortName}`;
-        ctx.font = `bold ${20 * labelScale}px system-ui`;
-        ctx.lineWidth = 4 * labelScale;
+          : box.label === 'door-exit' ? 'exit'
+            : (box.label === 'prior' ? 'rencana' : box.label);
+        const prior = box.source === 'prior';
+        const text = `#${boxIndex + 1} ${shortName}`
+          + (prior && box.label !== 'prior' ? ' · rencana' : '');
+        const fontScale = prior ? 0.82 : 1.0;
+        const labelY = label.y - 6 - (prior ? (boxIndex % 2) * 15 : 0);
+        ctx.font = `bold ${20 * labelScale * fontScale}px system-ui`;
+        ctx.lineWidth = 4 * labelScale * fontScale;
         ctx.strokeStyle = 'rgba(10,17,28,0.92)';
-        ctx.strokeText(text, label.x + 6, label.y - 6);
+        ctx.strokeText(text, label.x + 6, labelY);
         ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-        ctx.fillText(text, label.x + 6, label.y - 6);
+        ctx.fillText(text, label.x + 6, labelY);
       }
       if (box.source === 'prior' || state.selectedBoxId === box.id) {
         drawBoxPivot2D(ctx, box, toScreen, state.selectedBoxId === box.id);
@@ -2372,7 +2421,7 @@ function drawTopDown() {
         `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
     }
   }
-  drawHumanTopDown(ctx, toScreen, origin, scale, labelScale);
+  drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale);
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(origin.x, origin.y, 6, 0, Math.PI * 2); ctx.fill();
   ctx.font = '20px system-ui';
@@ -2392,8 +2441,10 @@ function drawTopDown() {
   ctx.textAlign = 'start';
   if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
-    const yaw = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180;
-    const screen = toScreen(hlkRadius * Math.cos(yaw), hlkRadius * Math.sin(yaw));
+    const yaw = displaySensorAngle(
+      Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180);
+    const screen = toScreen(sensor.x + hlkRadius * Math.cos(yaw),
+      sensor.y + hlkRadius * Math.sin(yaw));
     ctx.fillStyle = gated ? 'rgba(255,170,70,0.22)' : 'rgba(255,80,200,0.28)';
     ctx.strokeStyle = gated ? 'rgba(255,190,90,0.85)' : 'rgba(255,120,220,0.85)';
     ctx.beginPath(); ctx.arc(screen.x, screen.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -2473,6 +2524,7 @@ function update3DScene() {
         y: Number(point.y_mm) / 1000,
         z: Number(point.z_mm) / 1000,
         source: point.range_source,
+        pointIndex: Number(point.point_index),
         color: selected ? [255, 255, 255] : base,
       };
     });
@@ -2493,6 +2545,7 @@ function update3DScene() {
         confidence: Number(presence.confidence || 0),
       }] : []);
   }
+  const sensor = sensorOriginMeters();
   window.Room3D.update({
     points,
     boxes,
@@ -2506,8 +2559,68 @@ function update3DScene() {
     occupancyLabel: (tracks.length && presence?.occupancy_label) || '',
     presenceUncertaintyDeg: Number(presence?.occupancy_uncertainty_deg || 60),
     presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
+    sensorOrigin: sensor,
+    sensorHeightM: Number(state.reconstruction?.sensor_height_m || 0.77),
+    mirrorY: Boolean(state.mirrorY),
+    mapRotationDeg: Number(state.mapRotation || 0),
+    fovLimitDeg: Number(state.reconstruction?.fov_limit_deg || 60),
   });
+  render3DLegend(boxes);
   return true;
+}
+
+function render3DLegend(boxes) {
+  const element = $('scene3d-legend');
+  if (!element) return;
+  element.replaceChildren();
+  if (!state.showDistances || !boxes.length) {
+    element.hidden = true;
+    return;
+  }
+  element.hidden = false;
+  const measured = boxes.filter(box => box.source !== 'prior');
+  const planned = boxes.filter(box => box.source === 'prior');
+  const makeGroup = (title, note, items) => {
+    const group = document.createElement('section');
+    group.className = 'scene3d-legend-group';
+    const heading = document.createElement('h4');
+    heading.textContent = `${title} (${items.length})`;
+    group.append(heading);
+    if (note) {
+      const subtitle = document.createElement('p');
+      subtitle.className = 'note';
+      subtitle.textContent = note;
+      group.append(subtitle);
+    }
+    for (const box of items) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'scene3d-legend-row';
+      button.dataset.boxId = box.id;
+      const name = document.createElement('span');
+      const label = box.source === 'prior' && box.label === 'prior'
+        ? 'rencana' : box.label;
+      name.textContent = `#${box.index} ${label}`;
+      const distance = document.createElement('span');
+      distance.textContent = formatMeters(boxDistance(box));
+      const size = document.createElement('span');
+      size.className = 'scene3d-legend-size';
+      size.textContent = `${Number(box.length_m).toFixed(2)}×`
+        + `${Number(box.width_m).toFixed(2)}×`
+        + `${(Number(box.z_top_m) - Number(box.z_bottom_m || 0)).toFixed(2)} m`;
+      button.append(name, distance, size);
+      button.addEventListener('click', () => selectBoxById(box.id));
+      group.append(button);
+    }
+    return group;
+  };
+  if (measured.length) {
+    element.append(makeGroup('Terukur sensor', '', measured));
+  }
+  if (planned.length) {
+    element.append(makeGroup('Rencana',
+      'Gambaran tambahan, bukan hasil ukur sensor.', planned));
+  }
 }
 
 function drawCloud() {
@@ -2629,7 +2742,8 @@ function topDownTransform(canvas) {
       for (const point of boxCorners(box)) add(point.x_mm / 1000, point.y_mm / 1000);
     }
   }
-  add(0, 0);
+  const sensor = sensorOriginMeters();
+  add(sensor.x, sensor.y);
   if (!xs.length) {
     xs.push(-1, 1);
     ys.push(-1, 1);
@@ -2748,6 +2862,20 @@ function selectPointsInRect(canvasId, rect, mode = 'replace') {
   drawTopDown();
 }
 
+function applyPointSelection(indices, mode = 'replace') {
+  const selected = new Set(mode === 'replace'
+    ? [] : (state.selectedPointIndices || []).map(Number));
+  for (const value of indices || []) {
+    const index = Number(value);
+    if (!Number.isFinite(index)) continue;
+    if (mode === 'subtract') selected.delete(index); else selected.add(index);
+  }
+  state.selectedPointIndices = Array.from(selected).sort((a, b) => a - b);
+  updateSelectionStatus();
+  drawCloud();
+  drawTopDown();
+}
+
 function updateSelectionStatus() {
   const count = (state.selectedPointIndices || []).length;
   setText('selection-status', `${count} titik terpilih`);
@@ -2757,6 +2885,22 @@ function clearSelection() {
   state.selectedPointIndices = [];
   state.selectionRect = null;
   updateSelectionStatus();
+  drawCloud();
+  drawTopDown();
+}
+
+function clearAllSelection() {
+  state.selectedPointIndices = [];
+  state.selectedBoxId = null;
+  state.selectionRect = null;
+  state.lastBoxPick = null;
+  updateSelectionStatus();
+  const select = $('box-select');
+  if (select) select.value = '';
+  syncBoxLabel();
+  syncPriorFields();
+  renderBlockList();
+  renderSelectedSummary();
   drawCloud();
   drawTopDown();
 }
@@ -3004,7 +3148,7 @@ window.addEventListener('keydown', event => {
 $('prior-edit-mode').addEventListener('change', () => {
   state.priorEditMode = $('prior-edit-mode').checked;
   setText('prior-status', state.priorEditMode
-    ? 'Mode geser aktif: drag box prior di 2D.'
+    ? 'Mode geser aktif: drag box rencana di 2D.'
     : 'Mode geser nonaktif: drag 2D untuk seleksi titik.');
 });
 $('show-axis').addEventListener('change', () => {
@@ -3166,8 +3310,8 @@ function bindTopDown() {
               mode = 'resize-prior';
             } catch (error) {
               mode = null;
-              setText('prior-status', `Gagal menjadikan prior: ${error.message}`);
-              showToast(`Gagal menjadikan prior: ${error.message}`, 'error', 4500);
+              setText('prior-status', `Gagal menjadikan rencana: ${error.message}`);
+              showToast(`Gagal menjadikan rencana: ${error.message}`, 'error', 4500);
             }
             canvas.style.cursor = cursorForHandle(handle);
             return;
@@ -3262,7 +3406,7 @@ function bindTopDown() {
       const boxId = dragBox.id;
       dragBox = null;
       resizeState = null;
-      saveAnnotations(next, 'Ukuran prior diubah; sisi lawan tetap.', boxId).catch(error => {
+      saveAnnotations(next, 'Ukuran rencana diubah; sisi lawan tetap.', boxId).catch(error => {
         setText('prior-status', `Gagal menyimpan resize: ${error.message}`);
         showToast(`Gagal menyimpan resize: ${error.message}`, 'error', 4500);
       });
@@ -3278,7 +3422,7 @@ function bindTopDown() {
       dragBox = null;
       dragStart = null;
       dragOrigin = null;
-      saveAnnotations(next, 'Prior digeser dengan drag.', boxId).catch(error => {
+      saveAnnotations(next, 'Rencana digeser dengan drag.', boxId).catch(error => {
         setText('prior-status', `Gagal menyimpan drag: ${error.message}`);
       });
     } else if (mode === 'select' && state.selectionRect) {
@@ -3326,6 +3470,24 @@ window.selectBoxById = selectBoxById;
 window.setSidebarOpen = setSidebarOpen;
 window.showToast = showToast;
 window.drawCloud = drawCloud;
+window.applyPointSelection = applyPointSelection;
+window.clearAllSelection = clearAllSelection;
+document.addEventListener('pointerdown', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const wrap = document.querySelector('.scene3d-wrap');
+  if (wrap && wrap.contains(target)) return;
+  if (target.closest('.block-sidebar, #block-sidebar-toggle, .scene3d-legend, .scene3d-hint')) return;
+  if (target.closest('button, input, select, textarea, label, a')) return;
+  if (!state.selectedBoxId && !(state.selectedPointIndices || []).length) return;
+  clearAllSelection();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (event.target instanceof Element
+      && event.target.closest('input, textarea, select')) return;
+  clearAllSelection();
+});
 bindCanvas();
 bindTopDown();
 try {
@@ -3358,4 +3520,6 @@ syncSnapButton();
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);
 })();
+
+
 

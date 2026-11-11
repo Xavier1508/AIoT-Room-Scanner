@@ -325,19 +325,27 @@ def apply_annotations(result, annotations):
         target = _resolve_box_id(key, boxes)
         if not target:
             continue
-        try:
-            length = max(0.05, min(10.0, float(override.get("length_m"))))
-            width = max(0.05, min(10.0, float(override.get("width_m"))))
-        except (TypeError, ValueError):
-            continue
-        resolved_sizes[target] = {
-            "length_m": round(length, 3),
-            "width_m": round(width, 3),
-        }
+        resolved = {}
+        for field, lower, upper in (("length_m", 0.05, 10.0),
+                                    ("width_m", 0.05, 10.0),
+                                    ("z_bottom_m", 0.0, 4.0),
+                                    ("z_top_m", 0.05, 4.0)):
+            if field not in override:
+                continue
+            try:
+                resolved[field] = round(
+                    max(lower, min(upper, float(override[field]))), 3)
+            except (TypeError, ValueError):
+                continue
+        if resolved:
+            resolved_sizes[target] = resolved
     for box in boxes:
         override = resolved_sizes.get(str(box.get("id")))
         if override:
             box.update(override)
+            z0 = float(box.get("z_bottom_m", 0.0) or 0.0)
+            z1 = float(box.get("z_top_m", z0 + 0.05) or (z0 + 0.05))
+            box["z_top_m"] = round(max(z0 + 0.05, z1), 3)
             box["size_source"] = "manual"
     resolved_merges = []
     for pair in merges_raw:
@@ -701,15 +709,20 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
     occluded = []
     bin_size = 10
     fov_int = int(round(effective_fov_deg))
+    # The displayed map is mirrored into the prior frame, so the scanner is
+    # not at (0, 0); it sits at the mirror image of the raw origin.
+    sensor_y = 2.0 * float(mirror_center_m) if mirror_y else 0.0
+    facing_deg = (-math.degrees(map_rotation) if mirror_y
+                  else math.degrees(map_rotation))
     for start in range(-fov_int, fov_int, bin_size):
         count = 0
         for point in points:
             x, y = point[0], point[1]
-            yaw = math.degrees(math.atan2(y, x))
+            yaw = math.degrees(math.atan2(y - sensor_y, x)) - facing_deg
             if start <= yaw < start + bin_size:
                 count += 1
         if count < 2:
-            occluded.append([start, start + bin_size])
+            occluded.append([start + facing_deg, start + bin_size + facing_deg])
     result = {
         "cell_m": cell_m,
         "eps_m": eps_m,

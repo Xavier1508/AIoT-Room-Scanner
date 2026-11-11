@@ -351,6 +351,52 @@ button.busy::after {
   color: #ffffff;
 }
 .scene3d-toolbar button:hover { filter: brightness(1.15); }
+.scene3d-selectbox {
+  position: absolute;
+  z-index: 5;
+  border: 1px dashed rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+.scene3d-legend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid #26384e;
+  border-radius: 8px;
+  background: rgba(9, 16, 26, 0.72);
+}
+.scene3d-legend[hidden] { display: none; }
+.scene3d-legend-group { min-width: 0; }
+.scene3d-legend-group h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #cfe4ff;
+}
+.scene3d-legend-group p.note { margin: 0 0 5px; font-size: 10px; }
+.scene3d-legend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) auto auto;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 5px;
+  margin: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #b8cce4;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.scene3d-legend-row:hover { background: rgba(80, 150, 230, 0.18); }
+.scene3d-legend-row span:nth-child(2) { color: #e8f4ff; }
+.scene3d-legend-size { color: #8098b3; font-size: 10px; white-space: nowrap; }
+@media (max-width: 800px) {
+  .scene3d-legend { grid-template-columns: 1fr; }
+}
 .scene3d-status {
   position: absolute;
   left: 9px;
