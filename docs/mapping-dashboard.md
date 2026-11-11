@@ -221,14 +221,15 @@ box labels, a floor grid and a 2D-canvas fallback if WebGL is unavailable. The
 sidebar. The 2D editor remains a canvas because it is the precise
 resize/rencana editor.
 
-**Sensor origin and FOV:** the displayed frame is mirrored, so the scanner is
-not at `(0,0)`; it is at `(0, 2×0.3555) = (0, 0.711)`, inside the partition.
-The 2D X/Y axes, FOV triangle, scan labels, HLK dot, distance leaders and
-presence marks use that origin. In 3D the X/Y/Z axes are placed at the same
-plan position at sensor height **0.77 m**, with a floor FOV sector/arc and a
-dashed mast to the floor. Occluded sectors are computed around the sensor, not
-around the raw origin. The partition block is **0.76 m** tall by default; any
-auto box can also be height-locked through `Z bawah` / `Z atas`.
+**Sensor origin and FOV:** the raw scanner is at `(0,0)`; Mirror Y maps it to
+`(0, 2×0.3555) = (0, 0.711)`. The dashboard uses an explicit
+`sensor_origin_m = (-0.139, 0.637, 0.77)` so the axes sit at the **centre of
+the partition block**; backend occluded sectors use the same anchor. The 2D
+X/Y axes, FOV triangle, scan labels, HLK dot, distance leaders and presence
+marks use that origin. In 3D the X/Y/Z axes are placed at the same plan
+position at sensor height **0.77 m**, with a floor FOV sector/arc and a dashed
+mast to the floor. The partition block is **0.76 m** tall by default; any auto
+box can also be height-locked through `Z bawah` / `Z atas`.
 
 **3D distance legend:** a compact grouped legend below the 3D view lists
 **Terukur sensor** and **Rencana** (gambaran tambahan, bukan hasil ukur) with

@@ -293,6 +293,14 @@ def _clean_annotations(payload):
             clean_room["source"] = str(room["source"])[:40]
         if "area_source" in room:
             clean_room["area_source"] = str(room["area_source"])[:40]
+        origin = room.get("sensor_origin_m")
+        if isinstance(origin, (list, tuple)) and len(origin) >= 2:
+            try:
+                values = [round(float(origin[index]), 3)
+                          for index in range(min(3, len(origin)))]
+                clean_room["sensor_origin_m"] = values
+            except (TypeError, ValueError):
+                pass
     return {
         "labels": clean_labels,
         "size_overrides": clean_sizes,

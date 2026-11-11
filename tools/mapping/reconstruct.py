@@ -18,6 +18,36 @@ from collections import defaultdict
 WALL_LABELS = ("wall", "wall_edge")
 
 
+def _sensor_anchor(annotations, mirror_y, mirror_center_m):
+    """Return the scanner (x, y) in the displayed/prior frame.
+
+    The raw scanner is at (0, 0); Mirror Y maps it to (0, 2*center). The
+    dashboard can override this anchor, and otherwise uses the centre of the
+    partition block so the axes visibly sit on the sensor mount.
+    """
+    room = (annotations or {}).get("room") or {}
+    configured = room.get("sensor_origin_m")
+    if isinstance(configured, (list, tuple)) and len(configured) >= 2:
+        try:
+            x = float(configured[0])
+            y = float(configured[1])
+            if math.isfinite(x) and math.isfinite(y):
+                return x, y
+        except (TypeError, ValueError):
+            pass
+    for item in (annotations or {}).get("manual_boxes") or []:
+        if not isinstance(item, dict) or str(item.get("label")) != "partition":
+            continue
+        try:
+            x = float(item.get("cx_m"))
+            y = float(item.get("cy_m"))
+            if math.isfinite(x) and math.isfinite(y):
+                return x, y
+        except (TypeError, ValueError):
+            continue
+    return 0.0, (2.0 * float(mirror_center_m) if mirror_y else 0.0)
+
+
 def _percentile(values, fraction):
     if not values:
         return 0.0
@@ -710,15 +740,16 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
     bin_size = 10
     fov_int = int(round(effective_fov_deg))
     # The displayed map is mirrored into the prior frame, so the scanner is
-    # not at (0, 0); it sits at the mirror image of the raw origin.
-    sensor_y = 2.0 * float(mirror_center_m) if mirror_y else 0.0
+    # not at (0, 0); it sits at the mirror image of the raw origin or at the
+    # configured/partition anchor.
+    sensor_x, sensor_y = _sensor_anchor(annotations, mirror_y, mirror_center_m)
     facing_deg = (-math.degrees(map_rotation) if mirror_y
                   else math.degrees(map_rotation))
     for start in range(-fov_int, fov_int, bin_size):
         count = 0
         for point in points:
             x, y = point[0], point[1]
-            yaw = math.degrees(math.atan2(y - sensor_y, x)) - facing_deg
+            yaw = math.degrees(math.atan2(y - sensor_y, x - sensor_x)) - facing_deg
             if start <= yaw < start + bin_size:
                 count += 1
         if count < 2:

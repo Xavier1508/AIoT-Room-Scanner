@@ -2,9 +2,9 @@
 
 Updated: 2026-11-11. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-Installed firmware is `0.7.3-tof-obstruction`; **prepared firmware
-`0.8.0-ml-empty-human`** adds the TFLite Micro empty/human classifier and is
-ready for OTA when the board is back online. The ToF near reflector was the
+Installed firmware is **`0.8.1-ml-empty-human`**; the TFLite Micro
+empty/human classifier is live (`ready=true`, `human` 99.6%, 4 ms, 5,248-byte
+arena) and sensors run with overall **OK**. The ToF near reflector was the
 protective lens cover; after removal, ToF is valid at ~2.4 m. The **current
 full fine scan** `20261110T184241Z` completed **475/475 points (473 valid,
 452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
@@ -37,22 +37,32 @@ buzzer/safety fallback.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.7.3-tof-obstruction`**, installed through real LAN OTA.
-  Current application artifact:
+- **Running firmware: `0.8.1-ml-empty-human`**, installed through real LAN OTA
+  on 2026-11-11. Artifact:
+  `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
+  bytes**, SHA-256
+  `3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
+  `0.8.0` failed `ml_init_failed` because the TFLite Micro resolver was missing
+  `MEAN`; `0.8.1` adds it, ML is `ready=true`, live `human` 99.6%, latency
+  **4 ms**, arena **5,248 bytes**. Sensors are running with overall **OK**
+  (HC/ToF/HLK all OK).
+- **Previous firmware (superseded): `0.7.3-tof-obstruction`**.
+  Artifact:
   `analysis/platformio/build-20261110T115036698Z/firmware.bin`.
   Size **838144 bytes** / OTA slot **6553600 bytes**. Application SHA-256:
   `53b3526446dead24ff85ae95c17b59f73bd023a1d126f1b41eab1d61bdef9291`.
   It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
   sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
   test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
-- **Prepared firmware: `0.8.0-ml-empty-human`**, build
-  `analysis/platformio/build-20261111T044748131Z/firmware.bin`, **935,552
+- **Installed firmware: `0.8.1-ml-empty-human`**, build
+  `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
   bytes**, SHA-256
-  `109ddfaccf522b38e3914dd6a78158a7bc6a37a0de5f910b0df787a2ee32e763`.
+  `3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
   It adds ESP_TF 2.1.1 / TFLite Micro, a 64 KiB tensor arena and the int8
-  empty/human 1D-CNN (14,584 bytes). RAM **116,480 bytes (35.5%)**, flash
-  **14.3%**. OTA/live verification is pending because the board was offline;
-  see `docs/ml-deployment.md`.
+  empty/human 1D-CNN (14,584 bytes). RAM **116,520 bytes (35.6%)**, flash
+  **14.3%**. `0.8.0` OTA succeeded but `ml_init_failed` because the resolver
+  omitted the model's `MEAN` op; `0.8.1` adds `AddMean()` and live inference is
+  verified (`human` 99.6%, 4 ms, arena 5,248 bytes).
 - On the previous `0.1.4-usb` baseline, the user performed a USB-only physical
   power cycle. Full status then reported
   POWERON reset code 1, IDLE, no arms, buzzer OFF, coils released, servo detached,
@@ -72,7 +82,7 @@ buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 63 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 64 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -289,13 +299,13 @@ buzzer/safety fallback.
   rule-separable; the DL model is **not deployed** as the primary detector.
   Artifacts: `research/mapping/ml/model-empty-human/`; evidence:
   `analysis/mapping/ml-training-20261109T193000Z/`.
-- **v2 binary model prepared for deployment:** 32-frame/6-feature 1D CNN,
-  contiguous 5-block validation **97.38% ± 5.24%**, int8 **14,584 bytes**,
-  classes `empty/human`. Firmware `0.8.0-ml-empty-human` uses ESP_TF 2.1.1 /
-  TFLite Micro with a 64 KiB arena; `/api/status.ml` exposes class, confidence,
-  latency, inference count, arena use and mute reason. Rule HLK remains the
-  buzzer/safety fallback. OTA/live verification pending because the board was
-  offline; see `docs/ml-deployment.md`.
+- **v2 binary model deployed:** 32-frame/6-feature 1D CNN, contiguous 5-block
+  validation **97.38% ± 5.24%**, int8 **14,584 bytes**, classes
+  `empty/human`. Firmware `0.8.1-ml-empty-human` uses ESP_TF 2.1.1 / TFLite
+  Micro with a 64 KiB arena; `/api/status.ml` exposes class, confidence,
+  latency, inference count, arena use and mute reason. Live after OTA:
+  `ready=true`, `human` **99.6%**, latency **4 ms**, arena **5,248 bytes**.
+  Rule HLK remains the buzzer/safety fallback; see `docs/ml-deployment.md`.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -413,8 +423,9 @@ buzzer/safety fallback.
   actuator status, a live energy/distance trend and rule-vs-DL metrics. The 3D
   view draws a 1.7 m human capsule; the top-down view draws a highlighted box,
   leader and live distance. Scan mode suppresses the marker. This marker is the
-  rule baseline; the separate v2 DL empty/human classifier is prepared for
-  firmware 0.8.0 and does not drive the marker/buzzer. UI check screenshots:
+  rule baseline; the separate v2 DL empty/human classifier is deployed in
+  firmware 0.8.1 and live, but does not drive the marker/buzzer. UI check
+  screenshots:
   `analysis/mapping/dashboard-20261110Tpresence/human-capsule-ui-check-v2.png`
   and `analysis/mapping/dashboard-20261110Tpresence/ai-presence-human-ui-check-v2.png`.
 - A 5°/50 µs dense attempt stopped at 40/250 with `expired_no_action`; the PC
@@ -464,7 +475,7 @@ buzzer/safety fallback.
   prior labels, `is_mount`/`is_ceiling` and sample aggregates. **Presence gate:**
   HLK beyond wall+50 cm -> `beyond_wall`, human capsule suppressed, orange
   diagnostic dot; no-target hold 2.5 s, stable distance 3 frames, Clear
-  presence. Tests: 87 C++ + 63 Python pass. Evidence:
+  presence. Tests: 87 C++ + 64 Python pass. Evidence:
   `analysis/mapping/dashboard-20261110T124935Z/prior-pivot-handles.png`,
   `prior-pivot-handles-2d.png`, `save-3d-scene.png`; final scene
   `research/mapping/scenes/20261110T124935Z/20261110T173621Z.ply` (531 vertices,
@@ -481,15 +492,18 @@ per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
 PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
-and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Remaining work:
-when the board is back, OTA `0.8.0-ml-empty-human`, verify live DL empty/human,
-record screenshots/metrics, then export the first **clean** dataset run. The
+and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. Firmware `0.8.1`
+is installed and ML is live; sensors are running with overall **OK**. The two
+30-point validation scans (`20261111T114928Z`, `20261111T115125Z`) are **dirty**
+because the operator was active in the room; they are timing/health checks, not
+mapping evidence. Remaining work: run the first **clean** full scan when the
+operator confirms the room is empty, then export the clean dataset run. The
 final mapping PLY is
 `research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
 auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
-12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The displayed sensor origin is
-`(0, 2×0.3555) = (0, 0.711)`, inside the partition; 2D/3D axes, FOV, distance
-leaders and presence marks use it, and the 3D axes sit at sensor height 0.77 m.
+12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is
+`(-0.139, 0.637, 0.77)` (partition centre); 2D/3D axes, FOV, distance leaders
+and presence marks use it, and the 3D axes sit at sensor height 0.77 m.
 The UI calls prior boxes **Rencana** (gambaran tambahan, bukan hasil ukur) and
 shows a grouped distance/size legend below the 3D view. The DL model is
 `research/mapping/ml/model-empty-human-v2/`; deployment steps are in

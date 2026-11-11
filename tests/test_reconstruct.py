@@ -89,6 +89,20 @@ class Reconstruction(unittest.TestCase):
         self.assertEqual(result["size_source"], "manual")
         self.assertIn(box["id"], locked["annotations"]["size_overrides"])
 
+    def test_sensor_anchor_uses_configured_or_partition_center(self):
+        configured = {"room": {"sensor_origin_m": [-0.139, 0.637, 0.77]}}
+        self.assertEqual(
+            reconstruct._sensor_anchor(configured, True, 0.3555),
+            (-0.139, 0.637))
+        partition = {"manual_boxes": [
+            {"label": "partition", "cx_m": -0.10, "cy_m": 0.50}]}
+        self.assertEqual(
+            reconstruct._sensor_anchor(partition, True, 0.3555),
+            (-0.10, 0.50))
+        self.assertEqual(
+            reconstruct._sensor_anchor({}, True, 0.3555),
+            (0.0, 0.711))
+
     def test_axis_residual_and_wall_snap(self):
         self.assertAlmostEqual(reconstruct._axis_residual_deg(3.0), 3.0)
         self.assertAlmostEqual(reconstruct._axis_residual_deg(87.0), 3.0)

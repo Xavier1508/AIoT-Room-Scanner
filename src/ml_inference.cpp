@@ -34,13 +34,14 @@ bool MlClassifier::begin() {
     muteReason_ = "model_schema_mismatch";
     return false;
   }
-  static tflite::MicroMutableOpResolver<9> resolver;
+  static tflite::MicroMutableOpResolver<10> resolver;
   resolver.AddExpandDims();
   resolver.AddConv2D();
   resolver.AddMul();
   resolver.AddAdd();
   resolver.AddReshape();
   resolver.AddMaxPool2D();
+  resolver.AddMean();
   resolver.AddSoftmax();
   resolver.AddFullyConnected();
   resolver.AddSqueeze();

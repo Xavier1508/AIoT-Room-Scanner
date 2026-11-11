@@ -262,8 +262,11 @@ function renderScans() {
     const row = document.createElement('tr');
     const config = scan.config || {};
     const bounds = `${config.yaw_limit_deg ?? '—'}° / ${config.tilt_min_us ?? '—'}–${config.tilt_max_us ?? '—'} µs`;
+    const labelText = String(config.label || '').toLowerCase();
+    const status = scan.error ? 'ERROR'
+      : (labelText.includes('validation') ? 'VALIDASI' : 'OK');
     for (const value of [scan.scan_id, scan.points, scan.valid_points, scan.tof_points,
-                         scan.hc_points, bounds, scan.error ? 'ERROR' : 'OK']) {
+                         scan.hc_points, bounds, status]) {
       const td = document.createElement('td');
       td.textContent = value ?? '—';
       row.append(td);
@@ -271,15 +274,19 @@ function renderScans() {
     table.append(row);
     const option = document.createElement('option');
     option.value = scan.scan_id;
-    option.textContent = `${scan.scan_id} · ${scan.points} pts`;
+    option.textContent = `${scan.scan_id} · ${scan.points} pts`
+      + (labelText.includes('validation') ? ' · validasi' : '');
     select.append(option);
   }
   list.append(table);
-  const latest = scans.find(scan => !scan.error && (scan.points || 0) > 0) || scans[0];
-  const latestConfig = latest.config || {};
-  setText('last-scan', `${latest.scan_id} · ${latest.points} points · ${latest.valid_points} valid · ${latest.tof_points} ToF · ${latest.hc_points} HC · yaw ±${latestConfig.yaw_limit_deg ?? '—'}° · tilt ${latestConfig.tilt_min_us ?? '—'}–${latestConfig.tilt_max_us ?? '—'} µs`);
+  const preferred = scans
+    .filter(scan => !scan.error && (scan.points || 0) > 0)
+    .sort((a, b) => ((b.points || 0) - (a.points || 0))
+      || String(b.scan_id).localeCompare(String(a.scan_id)))[0] || scans[0];
+  const preferredConfig = preferred.config || {};
+  setText('last-scan', `${preferred.scan_id} · ${preferred.points} points · ${preferred.valid_points} valid · ${preferred.tof_points} ToF · ${preferred.hc_points} HC · yaw ±${preferredConfig.yaw_limit_deg ?? '—'}° · tilt ${preferredConfig.tilt_min_us ?? '—'}–${preferredConfig.tilt_max_us ?? '—'} µs`);
   if (!state.loadedScan) {
-    select.value = latest.scan_id;
+    select.value = preferred.scan_id;
   } else {
     select.value = state.loadedScan;
   }
@@ -538,6 +545,8 @@ async function refreshScanStatus() {
   try {
     const data = await api('/api/mapping/scan/status');
     const job = data.job;
+    const previousState = state.scanJobState;
+    state.scanJobState = job.state;
     state.scanJob = job;
     const total = Math.max(1, Number(job.total) || 1);
     const points = Number(job.points) || 0;
@@ -545,7 +554,8 @@ async function refreshScanStatus() {
     setText('scan-status', JSON.stringify(job, null, 2));
     $('start-scan').disabled = job.state === 'running';
     $('stop-scan').disabled = job.state !== 'running';
-    if (job.state === 'done' && job.scan_id && job.scan_id !== state.loadedScan) {
+    if (job.state === 'done' && previousState === 'running'
+        && job.scan_id && job.scan_id !== state.loadedScan) {
       await refreshHealth();
       $('scan-select').value = job.scan_id;
       await loadPoints(job.scan_id);
@@ -1708,10 +1718,29 @@ function scaledPoint(point) {
 }
 
 function sensorOriginMeters() {
+  const configured = state.room?.sensor_origin_m;
+  if (Array.isArray(configured) && configured.length >= 2) {
+    const x = Number(configured[0]);
+    const y = Number(configured[1]);
+    const z = Number(configured[2]);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      return { x, y, z: Number.isFinite(z) ? z : null };
+    }
+  }
+  const partition = (state.reconstruction?.boxes || [])
+    .find(box => box.label === 'partition' && box.source === 'prior');
+  if (partition) {
+    return {
+      x: Number(partition.cx_m) || 0,
+      y: Number(partition.cy_m) || 0,
+      z: null,
+    };
+  }
   const center = Number(state.mirrorCenter);
   return {
     x: 0,
     y: state.mirrorY && Number.isFinite(center) ? 2.0 * center : 0,
+    z: null,
   };
 }
 
@@ -2560,7 +2589,7 @@ function update3DScene() {
     presenceUncertaintyDeg: Number(presence?.occupancy_uncertainty_deg || 60),
     presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
     sensorOrigin: sensor,
-    sensorHeightM: Number(state.reconstruction?.sensor_height_m || 0.77),
+    sensorHeightM: Number(sensor.z ?? state.reconstruction?.sensor_height_m ?? 0.77),
     mirrorY: Boolean(state.mirrorY),
     mapRotationDeg: Number(state.mapRotation || 0),
     fovLimitDeg: Number(state.reconstruction?.fov_limit_deg || 60),
@@ -3509,10 +3538,14 @@ syncSnapButton();
   await refreshMlStatus();
   await refreshPresence();
   await refreshDatasetIndex();
-  const latest = (state.scans || []).find(scan => !scan.error && (scan.points || 0) > 0) || (state.scans || [])[0];
-  if (latest) {
-    $('scan-select').value = latest.scan_id;
-    await loadPoints(latest.scan_id);
+  const preferred = (state.scans || [])
+    .filter(scan => !scan.error && (scan.points || 0) > 0)
+    .sort((a, b) => ((b.points || 0) - (a.points || 0))
+      || String(b.scan_id).localeCompare(String(a.scan_id)))[0]
+    || (state.scans || [])[0];
+  if (preferred) {
+    $('scan-select').value = preferred.scan_id;
+    await loadPoints(preferred.scan_id);
   }
   setInterval(refreshScans, 3000);
   setInterval(refreshHealth, 2000);

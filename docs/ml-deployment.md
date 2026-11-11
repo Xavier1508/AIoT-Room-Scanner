@@ -1,9 +1,10 @@
 # Deploying the empty/human 1D-CNN on the ESP32-S3
 
-This page is the reproducible deployment path for the on-device classifier. The
-board was offline when this build was prepared; the artifact and tests are
-ready, but the OTA/live result must be recorded after the board is connected
-again.
+This page is the reproducible deployment path for the on-device classifier.
+**0.8.1-ml-empty-human is OTA-installed and live-verified** on 2026-11-11:
+`ready=true`, `human` 99.6%, 4 ms, 5,248-byte arena. Version `0.8.0` failed
+`ml_init_failed` because its resolver omitted the model's `MEAN` op; `0.8.1`
+registers `AddMean()` and uses a 10-op resolver.
 
 ## Model
 
@@ -32,10 +33,11 @@ again.
 
 ## Firmware behavior
 
-- Version: `0.8.0-ml-empty-human`.
+- Version: `0.8.1-ml-empty-human`.
 - Library: `nickjgniklu/ESP_TF@2.1.1` (TensorFlow Lite Micro + ESP-NN).
-- Tensor arena: 64 KiB static; the retained build uses **116,480 bytes RAM
-  (35.5%)** and **935,552 bytes flash (14.3%)** including the model.
+- Tensor arena: 64 KiB static; the retained build uses **116,520 bytes RAM
+  (35.6%)** and **940,592 bytes flash (14.3%)** including the model; the live
+  allocator reports only **5,248 bytes** used for this model.
 - The classifier only runs when:
   - sensors are running,
   - HLK is valid and fresh,
@@ -68,10 +70,13 @@ analysis/platformio/build-<utc>/
   usage.txt
 ```
 
-The prepared artifact is
-`analysis/platformio/build-20261111T044748131Z/firmware.bin`,
-935,552 bytes, SHA-256
-`109ddfaccf522b38e3914dd6a78158a7bc6a37a0de5f910b0df787a2ee32e763`.
+The installed artifact is
+`analysis/platformio/build-20261111T113650019Z/firmware.bin`,
+940,592 bytes, SHA-256
+`3d19fa9b94df42e50b36605a2753408a027e0441b72149c0f2d9cef541b1130e`.
+`0.8.0` installed but reported `ml_init_failed`; the model uses `MEAN` and the
+resolver did not register it. `0.8.1` adds `resolver.AddMean()` and increases
+the resolver to 10 ops.
 
 ## OTA when the board is back
 
@@ -81,7 +86,7 @@ state, then upload only `firmware.bin`:
 ```powershell
 $py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
 & $py -B .\tools\ops\device.py status
-& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261111T044748131Z\firmware.bin --expect-version 0.8.0-ml-empty-human
+& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261111T113650019Z\firmware.bin --expect-version 0.8.1-ml-empty-human
 ```
 
 Do not upload `bootloader.bin`, `partitions.bin`, or `boot_app0.bin` through the
@@ -102,10 +107,10 @@ Wait for IDLE and sensors running, then check `/api/status.ml`:
   "classes": 2,
   "window_ready": true,
   "class": "human",
-  "confidence": 0.97,
-  "latency_ms": 12,
-  "inferences": 42,
-  "arena_used_bytes": 32000,
+  "confidence": 0.996,
+  "latency_ms": 4,
+  "inferences": 228,
+  "arena_used_bytes": 5248,
   "mute_reason": "ok"
 }
 ```

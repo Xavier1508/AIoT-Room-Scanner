@@ -2,10 +2,10 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware terpasang saat ini: **0.7.3-tof-obstruction**. Build siap OTA:
-**0.8.0-ml-empty-human**, yang menambahkan classifier 1D-CNN **empty/human** di
-ESP32-S3 melalui TensorFlow Lite Micro (model int8 14.584 byte, rule HLK tetap
-menjadi fallback buzzer/safety), di samping
+Firmware terpasang saat ini: **0.8.1-ml-empty-human**. Firmware ini menambahkan
+classifier 1D-CNN **empty/human** di ESP32-S3 melalui TensorFlow Lite Micro
+(model int8 14.584 byte, rule HLK tetap menjadi fallback buzzer/safety), di
+samping
 pemilihan SSID pasif, sensor health/error-rate, HLK, fine jog 5°/25 µs,
 scan envelope **±60°/500–950 µs**, sequential power guard (servo/stepper tidak
 bergerak bersamaan), dan buzzer parkir 75→30 cm yang mute saat scan.

@@ -27,7 +27,7 @@
     </section>
     <section class="card"><h2>Pose</h2><div id="pose" class="big">—</div><p id="pose-detail" class="note">—</p><p id="alert" class="note">—</p></section>
   </div>
-  <section class="card"><h2>Scan terakhir</h2><div id="last-scan" class="note">Belum ada scan.</div></section>
+  <section class="card"><h2>Scan acuan</h2><div id="last-scan" class="note">Belum ada scan.</div></section>
 </section>
 
 <section id="tab-scan" class="tab">
@@ -42,11 +42,11 @@
       <label class="note">Tilt min / max (µs)</label>
       <div class="row"><input id="tilt-min" type="number" value="500" min="500" max="949"><input id="tilt-max" type="number" value="950" min="501" max="950"></div>
       <label class="note">Servo step delay (s)</label><input id="servo-delay" type="number" value="0.1" min="0.05" max="0.5" step="0.01">
-      <label class="note">Column cooldown (s)</label><input id="cooldown" type="number" value="0.5" min="0" max="5" step="0.1">
-      <label class="note">Sample interval (ms)</label><input id="sample-interval" type="number" value="250" min="50" max="1000">
+      <label class="note">Column cooldown (s)</label><input id="cooldown" type="number" value="0.1" min="0" max="5" step="0.1">
+      <label class="note">Sample interval (ms)</label><input id="sample-interval" type="number" value="100" min="50" max="1000">
       <div class="row"><button id="preset-validation" type="button">Validation ±10°</button><button id="preset-coarse" type="button">Coarse ±60°</button><button id="preset-fine" type="button">Fine ±60°</button></div>
-      <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="400" min="100" max="2000">
-      <label class="note">Samples / point</label><input id="samples" type="number" value="5" min="1" max="10">
+      <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="200" min="100" max="2000">
+      <label class="note">Samples / point</label><input id="samples" type="number" value="2" min="1" max="10">
       <label class="note"><input id="release-stepper" type="checkbox" checked> Lepas stepper selama sweep servo (hemat arus; di-hold lagi sebelum pindah yaw).</label>
       <label class="note"><input id="power-confirm" type="checkbox"> Saya sudah memperbaiki dan mengukur suplai servo/5V di bawah beban.</label>
       <div class="row"><button id="start-scan">Start scan</button><button id="stop-scan" class="danger">Stop scan</button></div>
