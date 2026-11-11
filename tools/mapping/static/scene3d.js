@@ -363,13 +363,15 @@ function update(payload) {
     setCamera('iso');
   }
   applyLayers();
-  updateStatus(points.length, boxes.length, tracks.length);
+  updateStatus(points.length, boxes.length, tracks.length,
+    state.payload.occupancyLabel);
 }
 
-function updateStatus(points, boxes, tracks) {
+function updateStatus(points, boxes, tracks, occupancyLabel) {
   const element = document.getElementById('scene3d-status');
   if (!element) return;
-  element.textContent = `WebGL · ${points} titik · ${boxes} blok · ${tracks} track`;
+  const occupancy = occupancyLabel ? ` · ${occupancyLabel}` : '';
+  element.textContent = `WebGL · ${points} titik · ${boxes} blok · ${tracks} track${occupancy}`;
 }
 
 function setLayer(name, active) {
@@ -432,7 +434,7 @@ function init() {
     state.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
-      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance',
     });
   } catch (error) {
     container.textContent = `WebGL tidak tersedia: ${error.message}`;

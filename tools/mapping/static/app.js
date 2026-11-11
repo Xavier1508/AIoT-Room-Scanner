@@ -2423,6 +2423,7 @@ function update3DScene() {
     showDistances: state.showDistances,
     showAxis: state.showAxis,
     tracks,
+    occupancyLabel: (tracks.length && presence?.occupancy_label) || '',
     presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
   });
   return true;
