@@ -339,6 +339,17 @@ buzzer/safety fallback.
   now uses +X right, +Y up and +Z up (`center - y2`), with an isometric default
   (`viewYaw -0.65`, `viewPitch 0.55`, zoom 1.4). **Top 3D** switches to a
   near-top view; the legend states X horizontal, Y vertical plan, Z height.
+   The 3D panel is now a local Three.js 0.160 WebGL scene (no CDN): orbit,
+   pan and zoom; Top/Iso/Fit/Full camera presets; layer toggles for points,
+   walls, priors, objects, labels and grid; click-to-select labels; floor
+   grid; a Demo button that restores all layers, closes the sidebar and
+   rotates slowly; and the old canvas as fallback when WebGL is unavailable.
+   The 2D canvas stays the precise resize/prior editor.
+   Presence now derives up to two tracks from the HLK moving and stationary
+   distances when both are valid and at least 40 cm apart, shown as H1/H2 in
+   3D and 2D with an `estimasi orang` badge. This is an occupancy estimate,
+   not a people counter: HLK has no angle, close targets merge, and
+   side-by-side people at the same distance remain one marker.
   The scan is labelled −60° (chair) → +60° (bed/wardrobe), clockwise.
 - **Yaw calibration + responsive layout:** for the older 0.7.1 placement the
   commanded yaw was larger than the effective mechanical yaw; the user-tuned
