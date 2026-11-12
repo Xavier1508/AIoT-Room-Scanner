@@ -1,8 +1,4 @@
-"""Small LAN client for the ESP32 diagnostic API.
-
-Reuses the existing tools/ops/device.py Lan implementation so credentials stay
-in tools/ops/device.local.json (gitignored) and are never exposed to a browser.
-"""
+"""LAN client for the ESP32 diagnostic API."""
 from __future__ import annotations
 
 import sys
@@ -65,8 +61,7 @@ class EspClient:
         current = int(state["actuators"]["relative_half_steps"])
         if current % 57 != 0:
             raise ValueError(f"current position {current} is not aligned to 5-degree steps")
-        # Use 10-degree nudges only when both ends align; otherwise use 5-degree
-        # nudges so the +/-45 degree endpoint (513 half-steps) is reachable.
+        # Use 10-degree nudges only when both ends align; otherwise 5-degree.
         if step_deg == 10 and current % 114 == 0 and target_half_steps % 114 == 0:
             step_half, command_step = 114, 10
         else:
@@ -78,8 +73,7 @@ class EspClient:
             try:
                 result = self.command(name)
             except TimeoutError:
-                # The command may have completed after the observation window.
-                # Check the resulting state; never resend a movement blindly.
+                # Check state after a timeout; never resend a movement blindly.
                 state = self.wait_for(
                     lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
                     int(s["actuators"]["relative_half_steps"]) == expected,
@@ -89,9 +83,7 @@ class EspClient:
             if not result.get("ok"):
                 raise RuntimeError("Stepper nudge rejected: " + str(result.get("message")))
             if fast_wait:
-                # The STEP interval is 10 ms per half-step. Sleep the nominal
-                # move time plus a small margin, then verify once. If the arm
-                # is still moving, fall back to the safe wait path.
+                # Sleep the nominal move time, verify once, then fall back to wait.
                 time.sleep(0.01 * abs(step_half) + 0.12)
                 state = self.status()
                 observed = int(state["actuators"]["relative_half_steps"])

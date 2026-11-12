@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Train a small 1D CNN on HLK windows and export TFLite + C headers.
-
-This script is intentionally run on the PC, not on the ESP32. It expects
-frames.jsonl files produced by collect.py or the Dataset tab. TensorFlow is
-required for training; if it is missing the script prints the install command
-and exits without changing anything.
-
-The reported validation score uses contiguous time blocks from every session,
-not a random adjacent-window split. That is stricter than the old tail split
-and is the number quoted in the report.
-"""
+"""Train the 1D CNN on HLK windows and export TFLite plus C headers."""
 from __future__ import annotations
 
 import argparse

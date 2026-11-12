@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Run a bounded yaw/tilt scan and write points.csv + samples.jsonl.
-
-The ESP32 remains the real-time controller. This PC tool only sends explicit
-nudges, waits for each move, samples status, and stores the result.
-"""
+"""Run a bounded yaw/tilt scan and write points.csv and samples.jsonl."""
 from __future__ import annotations
 
 import argparse
@@ -66,8 +62,7 @@ def _yaw_targets(step_deg: int, limit_deg: int = 45):
     if limit_deg < step_deg:
         raise ValueError("yaw limit must be at least the yaw step")
     stride = YAW_STEP if step_deg == 5 else YAW_STEP * 2
-    # Quantize every limit to the 57-half-step nudge grid; 45 deg = 513,
-    # 50 deg = 570, 55 deg = 627, 60 deg = 684.
+    # Quantize limits to the 57-half-step grid.
     limit_steps = int(round(limit_deg * 4096 / 360 / YAW_STEP)) * YAW_STEP
     limit_steps = max(stride, min(YAW_LIMIT, limit_steps))
     targets = list(range(0, limit_steps + 1, stride))
@@ -240,9 +235,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
                             "total": total,
                             "last_point": point,
                         })
-                # Return to the base pulse before detaching. Re-attaching at
-                # 800 us after a column ended at 950 us caused a large jump and
-                # a measured brownout on the second column.
+                # Return to base before detaching; a 950->800 us jump caused a brownout.
                 client.servo_to(SERVO_PARK_US, step_delay_s=config.servo_step_delay_s)
                 time.sleep(0.2)
                 result = client.command("release_servo")
@@ -308,8 +301,7 @@ def run_scan(client: EspClient, config: ScanConfig, progress=None, stop_event=No
             progress({"phase": "error", "scan_id": scan_id, "error": error, "points": len(points), "total": total})
         raise
     finally:
-        # Sequential power profile: leave the stepper held, but never re-attach
-        # the servo in cleanup. A servo attach brownout was observed.
+        # Sequential power profile; never re-attach the servo in cleanup.
         try:
             client.command("scan_mode_stop")
             if motion_started:

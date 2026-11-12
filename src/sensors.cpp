@@ -11,10 +11,7 @@ constexpr uint16_t tofExpectedModel = 0xEACC;
 constexpr uint32_t tofTargetRate = 0x0A00;
 constexpr uint32_t tofTimingGuardUs = 4528;
 
-// VL53L1X register map. The small implementation below is derived from the
-// ST VL53L1X API register sequence and the BSD-3-Clause Pololu Arduino driver;
-// it keeps this project self-contained and does not install a PlatformIO
-// dependency during bring-up.
+// Minimal VL53L1X register sequence; no external PlatformIO dependency.
 constexpr uint16_t regSoftReset = 0x0000;
 constexpr uint16_t regVhvTimeout = 0x0008;
 constexpr uint16_t regVhvInit = 0x000B;
@@ -84,8 +81,7 @@ void SensorController::begin() {
   pinMode(pins::hcTrig, OUTPUT);
   digitalWrite(pins::hcTrig, LOW);
   pinMode(pins::hcEcho, INPUT);
-  // INT is optional. XSHUT is safe to drive HIGH: it enables a connected
-  // VL53L1X and is harmless when the optional line is left unconnected.
+  // XSHUT/INT are optional; XSHUT is safe to drive HIGH.
   pinMode(pins::tofInt, INPUT);
   pinMode(pins::tofXshut, OUTPUT);
   digitalWrite(pins::tofXshut, HIGH);
@@ -209,8 +205,7 @@ void SensorController::tick(uint32_t now) {
       if (readTofMeasurement(now)) lastTofMeasurementMs_ = now;
     }
     if (tofContinuous_ && elapsed(now, tofLastReadyMs_, config::sensorTofStallRecoverMs)) {
-      // The sensor is still ACKing I2C but has stopped producing data-ready.
-      // Stop polling for a cooldown so a stuck bus cannot starve the main loop.
+      // I2C ACKs but no data-ready; pause polling so the loop is not starved.
       stopTofContinuous();
       tofStallSuspended_ = true;
       tofDisabledUntilMs_ = now + config::sensorTofRecoverCooldownMs;

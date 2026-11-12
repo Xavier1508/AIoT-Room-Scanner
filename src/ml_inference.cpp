@@ -160,9 +160,7 @@ void MlClassifier::update(uint32_t now, const HlkReading& reading,
   latencyMs_ = millis() - start;
   ++inferences_;
   lastInferenceMs_ = now;
-  // The deployed model exposes logits (Softmax stripped at conversion time);
-  // apply softmax in float32 here. This avoids the ESP_TF TFLite-Micro Softmax
-  // Prepare abort on this board while preserving the trained weights.
+  // Deployed model exposes logits; apply softmax here in float32.
   const float outputScale = gOutput->params.scale;
   const int outputZero = gOutput->params.zero_point;
   float logits[ML_CLASSES];

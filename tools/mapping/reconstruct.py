@@ -1,15 +1,5 @@
 ﻿#!/usr/bin/env python3
-"""Reconstruct a top-down occupancy grid and estimated solid boxes.
-
-This is a 2.5D reconstruction from one fixed scanner viewpoint: near-mount
-returns are removed, points are clustered in the x/y plane, each cluster is
-fitted with an oriented rectangle, and the rectangle is extruded from the floor
-to the observed top. Wall-like clusters that contain two surfaces are split at
-the largest gap so a corner does not become one very thick block.
-
-The result is an estimate, not a full mesh; hidden sides are inferred. Manual
-annotations (label override, hide, merge) are applied by ``apply_annotations``.
-"""
+"""Reconstruct a 2.5D occupancy grid and solid boxes from one scanner view."""
 from __future__ import annotations
 
 import math
@@ -19,10 +9,7 @@ from common import RESEARCH, read_json
 
 WALL_LABELS = ("wall", "wall_edge")
 
-# Known object anchors from the clean 8-sample reference scan
-# 20261110T184241Z (Mirror Y ON, map rotation -1.1 deg). They keep the bed and
-# fan at their usual places even when a fast scan has too few points to fit
-# them reliably. research/mapping/object_anchors.json may override these.
+# Bed/fan anchors from the 8-sample reference scan; object_anchors.json overrides.
 DEFAULT_ANCHORS = (
     {"label": "bed", "cx_m": 1.346, "cy_m": 0.004, "angle_deg": -1.2,
      "length_m": 2.0, "width_m": 1.2, "z_bottom_m": 0.0, "z_top_m": 0.62,
@@ -34,12 +21,7 @@ DEFAULT_ANCHORS = (
 
 
 def _sensor_anchor(annotations, mirror_y, mirror_center_m):
-    """Return the scanner (x, y) in the displayed/prior frame.
-
-    The raw scanner is at (0, 0); Mirror Y maps it to (0, 2*center). The
-    dashboard can override this anchor, and otherwise uses the centre of the
-    partition block so the axes visibly sit on the sensor mount.
-    """
+    """Return the scanner origin in the displayed frame."""
     room = (annotations or {}).get("room") or {}
     configured = room.get("sensor_origin_m")
     if isinstance(configured, (list, tuple)) and len(configured) >= 2:
@@ -102,12 +84,7 @@ def _cluster_indices(points, eps_m, use_z=False):
 
 
 def _fit_geometry(cluster, angle_override=None):
-    """Fit an oriented rectangle to a cluster of (x, y, z, source) points.
-
-    ``angle_override`` is used by the wall-constrained object fit: large low
-    objects near a wall are projected onto the wall direction instead of the
-    PCA direction, which otherwise makes a bed/desk look diagonally crooked.
-    """
+    """Fit an oriented rectangle; angle_override forces a wall-aligned angle."""
     xs = [point[0] for point in cluster]
     ys = [point[1] for point in cluster]
     zs = [point[2] for point in cluster]
@@ -155,8 +132,7 @@ def _classify(geometry):
         return "wall_edge"
     if geometry["z_top"] >= 1.5 and short_side <= 0.60 and long_side >= 0.80:
         return "wall"
-    # A small, thin, tall cluster close to the scanner is the table/mount edge,
-    # not a room object. It is removed from the 3D map.
+    # Near, thin, tall clusters are the mount/table edge.
     if (distance <= 1.30 and long_side <= 0.45 and short_side <= 0.16
             and geometry["z_top"] >= 0.90):
         return "mount"
@@ -169,12 +145,7 @@ def _box_id(geometry):
 
 
 def _split_wall_cluster(cluster, min_points, depth=0, max_depth=2):
-    """Split a wall cluster at its largest along-wall gap.
-
-    A single fixed viewpoint can see two wall surfaces that touch inside the
-    clustering radius (for example the far wall and the left wall). One thick
-    box for both is misleading, so split them when a real gap exists.
-    """
+    """Split a wall cluster at a real along-wall gap."""
     geometry = _fit_geometry(cluster)
     if depth >= max_depth or _classify(geometry) != "wall":
         return [cluster]
@@ -214,9 +185,7 @@ def _box_from_cluster(cluster, force_label=None, wall_angles=None,
     geometry = _fit_geometry(cluster)
     label = force_label or _classify(geometry)
     angle_source = "pca"
-    # A large, low object next to a wall is almost always parallel to that
-    # wall. PCA alone fits the visible L-shape and makes a bed/desk look
-    # diagonally crooked. Small objects (e.g. the fan) are left untouched.
+    # Large low objects near a wall use the wall angle; small objects use PCA.
     if (snap_wall_objects and label == "object" and wall_angles
             and geometry["length"] >= 1.2 and geometry["z_top"] <= 0.90):
         nearest = min(wall_angles,
@@ -224,8 +193,7 @@ def _box_from_cluster(cluster, force_label=None, wall_angles=None,
         if _angle_distance(geometry["angle"], nearest) <= math.radians(30):
             geometry = _fit_geometry(cluster, angle_override=nearest)
             angle_source = "wall_snap"
-    # HC beam spread makes a wall look 0.5 m thick. Keep the observed width in
-    # metadata but draw the wall with the robust 25-75% spread.
+    # Keep observed width in metadata but draw the robust wall width.
     display_width = geometry["width"]
     if label == "wall":
         display_width = min(display_width, max(0.12, geometry["width_robust"]))
@@ -312,11 +280,7 @@ def _parse_box_key(value):
 
 
 def _resolve_box_id(value, boxes):
-    """Resolve an old annotation id to a current box id.
-
-    Yaw calibration changes box centroids, so a stored key may not match
-    exactly. Fall back to the nearest box within 0.8 m.
-    """
+    """Resolve an old annotation id to the nearest current box."""
     text = str(value)
     if any(str(box.get("id")) == text for box in boxes):
         return text
@@ -345,13 +309,7 @@ def _anchor_items(annotations):
 
 
 def _apply_anchors(boxes, annotations):
-    """Snap the known bed/fan anchors onto measured boxes, or add a prior.
-
-    The anchors are the tape/reference positions from the 8-sample scan. A new
-    scan keeps them even when its point cloud is sparse; a measured box near an
-    anchor is snapped to the reference centre/angle/size so the bed and fan are
-    always placed at their usual positions.
-    """
+    """Snap bed/fan anchors onto measured boxes or add a prior."""
     anchors = _anchor_items(annotations)
     matches = []
     for index, anchor in enumerate(anchors):
@@ -446,10 +404,7 @@ def apply_annotations(result, annotations, add_anchors=False):
         if override:
             box["label"] = override
             box["label_source"] = "manual"
-    # Measured boxes are fitted from a single viewpoint, so the hidden width
-    # can be overestimated. A locked length/width keeps a tape-measured object
-    # (for example a 2.00 x 1.20 m bed) exact without discarding its measured
-    # centre and angle.
+    # Locked sizes keep tape-measured objects exact without moving their centre.
     resolved_sizes = {}
     for key, override in size_overrides.items():
         if not isinstance(override, dict):
@@ -563,16 +518,7 @@ def apply_annotations(result, annotations, add_anchors=False):
 
 def _detect_wall_lines(points, tolerance_m=0.12, min_span_m=0.60,
                        min_inliers=8, bin_m=0.05, min_bin_count=4):
-    """Find dominant axis-aligned wall lines in the x/y plane.
-
-    The dashboard rotation control is used to make the room walls horizontal
-    or vertical, so wall detection works on x-constant and y-constant peaks.
-    A fixed-viewpoint dense scan otherwise connects the whole room perimeter
-    into one cluster; wall-first extraction keeps those long straight
-    surfaces out of the object clustering so furniture does not become one
-    room-sized box. A peak that passes through the scanner (offset near zero)
-    is the yaw-zero scan ray, not a wall, and is rejected.
-    """
+    """Find dominant axis-aligned wall lines."""
     if len(points) < min_inliers:
         return []
     lines = []
@@ -623,8 +569,7 @@ def _detect_wall_lines(points, tolerance_m=0.12, min_span_m=0.60,
             longest = runs[0]
             total_span = ordered[-1][0] - ordered[0][0]
             run_span = longest[-1][0] - longest[0][0]
-            # A real wall is one continuous surface. Scattered furniture or a
-            # sloped ceiling produces short fragments with large gaps.
+            # Ignore short fragments; real walls are continuous.
             if run_span < min_span_m or run_span < 0.75 * total_span:
                 continue
             candidates.append({"ux": ux, "uy": uy, "nx": nx, "ny": ny,
@@ -699,9 +644,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
             continue
         if abs(x) > 20 or abs(y) > 20 or z < -1.0 or z > 5.0:
             continue
-        # The commanded yaw is larger than the effective mechanical yaw. The
-        # dense scan's wall thickness is minimised around 0.65; keep this
-        # adjustable until a known-target calibration confirms it.
+        # Effective yaw is smaller than commanded; keep the scale adjustable.
         yaw_value = row.get("yaw_deg")
         if yaw_scale != 1.0 and yaw_value not in (None, ""):
             try:
@@ -714,19 +657,18 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         if rotation_ca != 1.0 or rotation_sa != 0.0:
             x, y = (x * rotation_ca - y * rotation_sa,
                     x * rotation_sa + y * rotation_ca)
-        # Below-floor returns are floor/arm artefacts, not room geometry.
+        # Drop below-floor and near-mount returns.
         if z < -0.05:
             mount_points += 1
             mount_rows.append(row_index)
             continue
         distance = math.hypot(x, y)
-        # The scanner mount/arm is a near-field return, not the room.
+        # Near-field returns are the mount, not the room.
         if distance < near_field_m:
             mount_points += 1
             mount_rows.append(row_index)
             continue
-        # Low returns inside the mount radius are the table/arm edge that the
-        # downward servo sweep hits. Keep them out of the 3D map.
+        # Low returns near the mount are the table/arm edge.
         if distance < mount_guard_m and z < mount_guard_z_m:
             mount_points += 1
             mount_rows.append(row_index)
@@ -795,9 +737,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                 continue
             cluster = [interior[index] for index in indices]
             geometry = _fit_geometry(cluster)
-            # A surface parallel to a wall and just outside it is the sloped
-            # ceiling above that wall. Extend the wall instead of drawing a
-            # second, thicker wall.
+            # Sloped ceiling just outside a wall: extend the wall instead.
             extension = None
             for line in long_walls:
                 distance = abs(line["nx"] * geometry["cx"]
@@ -855,9 +795,7 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
     occluded = []
     bin_size = 10
     fov_int = int(round(effective_fov_deg))
-    # The displayed map is mirrored into the prior frame, so the scanner is
-    # not at (0, 0); it sits at the mirror image of the raw origin or at the
-    # configured/partition anchor.
+    # The displayed map is mirrored; use the configured sensor anchor.
     sensor_x, sensor_y = _sensor_anchor(annotations, mirror_y, mirror_center_m)
     facing_deg = (-math.degrees(map_rotation) if mirror_y
                   else math.degrees(map_rotation))
@@ -928,9 +866,7 @@ def _wall_score(result, rotation_deg=0.0):
         * float(box.get("width_observed_m", box.get("width_m", 0.0)) or 0.0)
         for box in walls) / total_points
     wall_angles = [float(box.get("angle_deg", 0.0)) for box in walls]
-    # Large low objects (the bed/desk class) should be snap-able to a wall.
-    # This prevents the search from choosing a rotation that straightens the
-    # walls only by hiding a false mid-room wall and leaving the bed diagonal.
+    # Reward large low objects that align with a wall.
     object_bonus = 0.0
     for box in all_boxes:
         if (box.get("label") in WALL_LABELS + ("mount",)
@@ -942,8 +878,7 @@ def _wall_score(result, rotation_deg=0.0):
             math.radians(float(box.get("angle_deg", 0.0))),
             math.radians(angle)) for angle in wall_angles), default=math.pi)
         object_bonus += 20.0 if nearest <= math.radians(25) else -30.0
-    # Do not chase a perfect wall fit by rotating the whole room far away from
-    # the hand-authored prior frame. 1 degree of residual is visually fine.
+    # Keep the room close to the hand-authored prior frame.
     score = (-80.0 * max(0.0, residual - 1.0)
              + 0.05 * total_points
              + 2.0 * length
@@ -969,13 +904,7 @@ def auto_align_rotation(rows, yaw_scale=1.0,
                         mirror_center_m=0.0, search_min=-5.0,
                         search_max=5.0, coarse_step=0.5,
                         refine_step=0.1):
-    """Find the map rotation that makes the measured walls straightest.
-
-    The score is dominated by the weighted residual of wall angles to the
-    nearest 0/90 axis, with wall support/length as tie-breakers. This is a
-    room-frame correction; the selected object angle is handled separately by
-    the wall-constrained object fit.
-    """
+    """Find the map rotation that makes the measured walls straightest."""
     def evaluate(rotation):
         result = reconstruct_points(
             rows, yaw_scale=yaw_scale, map_rotation_deg=rotation,

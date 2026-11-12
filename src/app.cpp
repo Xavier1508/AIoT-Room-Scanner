@@ -22,8 +22,7 @@ void App::begin() {
   // Set safe output latches first, before serial, NVS, Wi-Fi, or any web task.
   buzzer_.begin(); stepper_.begin(); servo_.begin(); sensors_.begin();
   if (!ml_.begin()) event("ml_init_failed");
-  // This SDK has a secondary USB log console. Keep SDK log writers out of the
-  // framed diagnostics channel; application events/status remain available.
+  // Keep SDK logs out of the framed diagnostics channel.
   esp_log_level_set("*", ESP_LOG_NONE);
   pinMode(pins::hlkOut, INPUT_PULLDOWN);
   pinMode(pins::hlkRx, INPUT); pinMode(pins::hlkTx, INPUT);
@@ -40,8 +39,7 @@ void App::begin() {
     stepperReferencePersisted_ = true;
     poseReferenceSource_ = "nvs";
   } else {
-    // The previous firmware reported 1024 while this device was physically
-    // parked. This is only a migration reference, not an absolute position.
+    // Migration reference only; not an absolute position.
     stepper_.setRelativeSteps(config::initialStepperReferenceHalfSteps);
     stepperReferencePersisted_ = settings_.saveStepperReference(config::initialStepperReferenceHalfSteps);
     poseReferenceSource_ = stepperReferencePersisted_ ? "migration_default_saved" : "migration_default_unsaved";
@@ -52,7 +50,7 @@ void App::begin() {
     servoBasePersisted_ = true;
     servoBaseSource_ = "nvs";
   } else {
-    // 0.3.0 migrates the prior tuning value to the corrected user-confirmed 800 us zero.
+    // Migrate the old tuning value to the 800 us zero.
     servoBaseUs_ = config::servoParkPulseUs;
     servoTargetUs_ = servoBaseUs_;
     servoBasePersisted_ = settings_.saveServoParkPulse(servoBaseUs_);
@@ -158,10 +156,7 @@ void App::maybeHlkAlert(uint32_t now) {
     return;
   }
 
-  // AI gate: the v3 classifier decides human/empty. The HLK rule only provides
-  // the range timing, so there is one beep source and no AI beep outside 75 cm.
-  // updateMlGate() runs every tick so the gate also follows the model while the
-  // target is out of range or absent.
+  // The classifier decides human/empty; HLK only supplies range timing.
   if (mlAlertEnabled_) {
     if (!ml_.ready() || !ml_.windowReady()) {
       mute("ai_waiting_window");
@@ -173,8 +168,7 @@ void App::maybeHlkAlert(uint32_t now) {
     }
   }
 
-  // Smooth the raw HLK distance per frame. The interval follows the filtered
-  // value; the range/stop test still uses the raw distance.
+  // Interval uses the filtered distance; range/stop uses the raw value.
   if (reading.timestampMs != hlkDistanceLastFrameMs_) {
     hlkDistanceLastFrameMs_ = reading.timestampMs;
     hlkDistanceHistory_[hlkDistanceIndex_] = distance;
@@ -197,8 +191,7 @@ void App::maybeHlkAlert(uint32_t now) {
         : hlkDistanceFiltered_ * 0.65f + static_cast<float>(median) * 0.35f;
   }
 
-  // In AI mode the stop is strict at 75 cm; the rule-only comparison keeps the
-  // 10 cm hysteresis.
+  // AI mode stops at 75 cm; rule-only keeps the 10 cm hysteresis.
   const uint16_t stopCm = mlAlertEnabled_
       ? config::hlkAlertMaxCm
       : config::hlkAlertMaxCm + config::hlkAlertHysteresisCm;

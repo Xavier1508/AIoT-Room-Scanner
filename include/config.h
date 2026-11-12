@@ -28,8 +28,7 @@ constexpr uint16_t servoCoarseUs = 200;
 constexpr uint16_t servoFineUs = 25;
 constexpr uint16_t servoMinPulseUs = 500;
 constexpr uint16_t servoMaxPulseUs = 1400;
-// Mapping scan envelope requested by the operator. It is enforced only while
-// scan mode is active, so manual tuning retains the wider 500-1400 us range.
+// Scan-mode limit only; manual tuning keeps the wider 500-1400 us range.
 constexpr int scanStepperLimitHalfSteps = 684;          // 12 x 57 = 60.1 deg nominal; cable-safe user limit.
 constexpr uint16_t scanServoMinPulseUs = 500;           // Up.
 constexpr uint16_t scanServoMaxPulseUs = 950;           // Down.

@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Measured human tracking for a range-only HLK radar.
-
-The LD2410C has no angle. The arm rotates the sensor cluster in 5/10 degree
-steps; at each step ToF/HC are compared with the *measured* static scan
-background for that yaw and tilt. A return closer than the scan surface is a
-candidate. Adjacent candidates are clustered before a bearing is computed, so
-a wall return and a real target at another angle can never average into one
-false position.
-
-After the first confirmed bearing the arm parks on that bearing. The lock loop
-keeps sampling ToF/HC without rotating, so the box follows the person moving
-closer/farther. If the beam loses the person, a short local sweep reacquires
-the bearing, then a full sweep is the last resort.
-"""
+"""Measured human bearing from a yaw sweep and a stationary lock."""
 from __future__ import annotations
 
 import csv
@@ -92,12 +79,7 @@ def _ray_box_t(box, ox, oy, dx, dy):
 
 
 class ScanRangeMap:
-    """Static range lookup from the measured scan rows.
-
-    A ray-cast from approximate boxes can be 10-30 cm away from the real wall.
-    That was enough to confirm a wall as a person. The scan CSV contains the
-    actual ToF/HC range for every yaw and servo pulse, so use that directly.
-    """
+    """Static range lookup from the measured scan rows."""
 
     def __init__(self, scan_id, rows):
         self.scan_id = scan_id
@@ -907,8 +889,7 @@ def run_tracking_loop(client, config, progress=None, stop_event=None, on_status=
     sweep_reverse = False
     _prepare_tracking(client, config, on_status=on_status)
     try:
-        # 1. Fast probe at 0 deg. The demo operator usually stands near the
-        # centre, so this can lock in 2-3 s instead of waiting for -60..0.
+        # 1. Fast probe at 0 degrees.
         probe = _sample(client, 0.0, background, config, config.fine_step_deg,
                         on_status=on_status)
         probe_estimate = estimate_track([probe], background, config.threshold_cm)
@@ -921,9 +902,7 @@ def run_tracking_loop(client, config, progress=None, stop_event=None, on_status=
             last_yaw = float(last["scan_yaw_deg"])
             last_tilt = int(last.get("tilt_us") or config.tilt_us)
 
-        # 2. Local +/-20 deg acquisition at 5 deg, then an outer +/-40 ring at
-        # 10 deg. A centre/near target is found in a few positions; the outer
-        # ring only runs if the local pass did not confirm.
+        # 2. Local +/-20 degrees, then an outer +/-40 ring.
         local = None
         if last_yaw is None:
             local_targets = [-5.0, 5.0, -10.0, 10.0,

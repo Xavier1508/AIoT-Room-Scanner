@@ -465,8 +465,7 @@ async function stopTrack() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
   } catch (error) {
-    // The job may already be stopped.
-  }
+    }
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await refreshTrack();
     if (state.track?.state !== 'running') return;
@@ -2461,8 +2460,7 @@ function applyYawScale() {
     localStorage.setItem('mapping.yawScale', yaw.toFixed(2));
     localStorage.setItem('mapping.mapRotation', rotation.toFixed(1));
   } catch (error) {
-    // localStorage can be unavailable in private/embedded contexts.
-  }
+    }
   $('yaw-scale').value = yaw.toFixed(2);
   $('map-rotation').value = rotation.toFixed(1);
   setText('yaw-scale-note', `yaw ${yaw.toFixed(2)} · rotasi ${rotation.toFixed(1)}° · mirror Y ${state.mirrorY ? 'ON' : 'OFF'} · objek lurus ${state.snapWallObjects ? 'ON' : 'OFF'} — sesuaikan sampai dinding lurus.`);

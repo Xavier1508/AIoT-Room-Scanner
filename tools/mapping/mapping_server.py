@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Local PC dashboard for calibration, scan orchestration and 3D point clouds.
-
-Dependency-free: standard-library HTTP server plus a vanilla canvas viewer.
-Run from this directory:
-
-    python mapping_server.py --host 127.0.0.1 --port 8000
-
-The ESP32 diagnostic page remains a separate application. This server proxies
-the ESP32 API so browser code never receives the ESP32 Basic-auth credentials.
-"""
+"""Local PC dashboard for scan, mapping, tracking and dataset export."""
 from __future__ import annotations
 
 import argparse
