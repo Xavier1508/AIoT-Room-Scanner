@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIoT Room Mapping · PC Dashboard</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css?v=20261112">
+<link rel="stylesheet" href="/static/style.css?v=20261120">
 <header class="topbar">
   <div class="brand">
     <h1>AIoT Room Mapping <span class="muted">/ PC dashboard</span></h1>
@@ -16,15 +16,16 @@
   </div>
 </header>
 <div class="tabs">
-  <button data-tab="overview" class="active">Overview</button>
-  <button data-tab="scan">Scan</button>
-  <button data-tab="calibration">Calibration</button>
-  <button data-tab="cloud">Point Cloud 3D</button>
-  <button data-tab="presence">AI / Presence</button>
-  <button data-tab="dataset">Dataset</button>
+  <button data-tab="cloud" class="active">Demo</button>
+  <button data-tab="overview" class="advanced-tab">Overview</button>
+  <button data-tab="scan" class="advanced-tab">Scan</button>
+  <button data-tab="calibration" class="advanced-tab">Calibration</button>
+  <button data-tab="presence" class="advanced-tab">AI / Presence</button>
+  <button data-tab="dataset" class="advanced-tab">Dataset</button>
+  <button id="advanced-toggle" class="tabs-toggle" type="button">Advanced</button>
 </div>
 
-<section id="tab-overview" class="tab active">
+<section id="tab-overview" class="tab">
   <div class="grid">
     <section class="card"><h2>ESP32</h2><div id="esp-summary" class="big">—</div><p id="esp-detail" class="note">—</p><p><a id="manual-link" href="#" target="_blank" rel="noopener">Buka web UI ESP32 (perlu login)</a></p></section>
     <section class="card"><h2>Sensor suite</h2>
@@ -80,9 +81,22 @@
   <section class="card"><h2>Riwayat kalibrasi</h2><div id="cal-table" class="note">Belum ada record.</div></section>
 </section>
 
-<section id="tab-cloud" class="tab">
+<section id="tab-cloud" class="tab active">
+  <div class="status-strip" id="demo-status-strip">
+    <div class="status-item"><span class="status-label">Mode</span><span id="demo-mode" class="status-value dim">OFF</span></div>
+    <div class="status-item"><span class="status-label">Track</span><span id="demo-track" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Human</span><span id="demo-human" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Bearing</span><span id="demo-bearing" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Distance</span><span id="demo-distance" class="status-value dim">—</span></div>
+  </div>
+  <div class="demo-bar">
+    <button id="track-start" class="alt" type="button">Track</button>
+    <button id="guard-start" class="alt" type="button">Guard</button>
+    <button id="demo-stop-main" class="alt" type="button">Stop</button>
+    <span id="demo-status" class="note">—</span>
+  </div>
   <section class="card"><h2>Peta 3D ruangan</h2>
-    <div class="row">
+    <div class="row demo-advanced">
       <label class="note">Scan</label><select id="scan-select"></select>
       <button id="reload-points" class="alt">Muat ulang</button>
       <button id="view-both" class="alt">Points + Blocks</button>
@@ -97,7 +111,7 @@
       <button id="zoom-in" class="alt">+</button><button id="zoom-out" class="alt">−</button>
       <button id="reset-view" class="alt">Reset</button>
     </div>
-    <div class="row annotation-row">
+    <div class="row annotation-row demo-advanced">
       <label class="note">Yaw scale</label>
       <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.76">
       <label class="note">Rotasi</label>
@@ -109,7 +123,7 @@
       <button id="auto-align" class="alt" type="button" title="Cari rotasi yang membuat dinding paling lurus">Auto luruskan</button>
       <span id="yaw-scale-note" class="note">yaw 0.76 · rotasi 10.7° · mirror Y ON · objek lurus ON — sesuaikan sampai dinding lurus.</span>
     </div>
-    <div class="row annotation-row">
+    <div class="row annotation-row demo-advanced">
       <button id="undo-annotations" class="alt" type="button" disabled>Undo (Ctrl+Z)</button>
       <button id="save-scene" type="button">Simpan 3D</button>
       <span id="scene-status" class="note">Simpan PLY berisi titik scan + semua rencana/box ke research/mapping/scenes/.</span>
@@ -152,32 +166,32 @@
           </div>
         </div>
         <p id="cloud-stats" class="note">Belum ada point cloud.</p>
-        <p id="cloud-legend" class="note">Steel-blue = ToF, oranye = HC, abu = dinding estimasi, abu terang putus-putus = wall edge, amber = objek/rencana, sage = presence/human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor redup = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
-        <p class="note"><b>Sumbu:</b> X = horizontal (kanan), Y = vertikal denah (atas), Z = tinggi. <b>Scan:</b> mulai −60° di sisi kursi → kipas → kasur/lemari → +60°, searah jarum jam.</p>
-        <details class="selection-panel">
+        <p id="cloud-legend" class="note demo-advanced">Steel-blue = ToF, oranye = HC, abu = dinding estimasi, abu terang putus-putus = wall edge, amber = objek/rencana, sage = presence/human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor redup = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
+        <p class="note demo-advanced"><b>Sumbu:</b> X = horizontal (kanan), Y = vertikal denah (atas), Z = tinggi. <b>Scan:</b> mulai −60° di sisi kursi → kipas → kasur/lemari → +60°, searah jarum jam.</p>
+        <details class="selection-panel demo-advanced">
           <summary>Seleksi titik &amp; depth</summary>
-          <div class="row annotation-row">
+          <div class="row annotation-row demo-advanced">
             <label class="note">Label titik</label>
             <input id="point-label" list="label-suggestions" placeholder="bed / wardrobe / fan">
             <button id="apply-point-label">Label titik terpilih</button>
             <button id="clear-selection" class="alt">Clear selection</button>
             <span id="selection-status" class="note">0 titik terpilih</span>
           </div>
-          <div class="row annotation-row">
+          <div class="row annotation-row demo-advanced">
             <label class="note">3D depth</label>
             <input id="select-depth-min" type="number" value="-5" step="0.1">
             <input id="select-depth-max" type="number" value="5" step="0.1">
             <label class="note"><input id="select-through" type="checkbox" checked> Through (x-ray)</label>
             <span class="note">Matikan Through untuk memakai rentang depth kamera.</span>
           </div>
-          <div class="row annotation-row">
+          <div class="row annotation-row demo-advanced">
             <button id="create-box" class="alt">Buat box dari selection</button>
             <span id="room-info" class="note">Rencana ruangan belum diisi.</span>
           </div>
         </details>
-        <p class="note">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Rencana (garis putus-putus) adalah gambaran tambahan, bukan hasil ukur sensor, dan tidak dihitung sebagai data training.</p>
+        <p class="note demo-advanced">Anotasi manual disimpan per scan di <code>research/mapping/scans/&lt;id&gt;/annotations.json</code>. Near-field &lt;40 cm dan area mount rendah &lt;75 cm tidak digambar agar kaki meja/mounting tidak menjadi blok palsu. Rencana (garis putus-putus) adalah gambaran tambahan, bukan hasil ukur sensor, dan tidak dihitung sebagai data training.</p>
       </div>
-      <button id="block-sidebar-toggle" class="sidebar-toggle" type="button" aria-expanded="false">Blok / Rencana</button>
+      <button id="block-sidebar-toggle" class="sidebar-toggle demo-advanced" type="button" aria-expanded="false">Blok / Rencana</button>
       <aside class="block-sidebar" id="block-sidebar" hidden>
         <div class="sidebar-head">
           <h3>Blok</h3>
@@ -401,6 +415,6 @@
 <script type="importmap">
 {"imports": {"three": "/static/vendor/three.module.js"}}
 </script>
-<script type="module" src="/static/scene3d.js?v=20261112"></script>
-<script src="/static/app.js?v=20261112"></script>
+<script type="module" src="/static/scene3d.js?v=20261120"></script>
+<script src="/static/app.js?v=20261120"></script>
 </html>

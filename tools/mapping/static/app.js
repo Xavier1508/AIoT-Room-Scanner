@@ -28,6 +28,9 @@ const state = {
   mlAlertBaseCount: null,
   demoBusy: false,
   sensorsBusy: false,
+  track: null,
+  trackBusy: false,
+  trackConfirmed: false,
   scans: [],
   calibration: null,
   points: [],
@@ -230,6 +233,180 @@ function renderTopbar() {
   setText('top-updated', state.healthUpdatedAt ? secondsAgo(state.healthUpdatedAt) : '—');
 }
 
+function renderTrack() {
+  const track = state.track || {};
+  const estimate = track.estimate || {};
+  const running = track.state === 'running';
+  const aiOn = Boolean(state.health?.esp?.ml_alert?.enabled);
+  const ruleOn = Boolean(state.health?.esp?.hlk_alert?.enabled);
+  const mode = running ? 'TRACK' : aiOn ? 'GUARD' : ruleOn ? 'RULE' : 'OFF';
+  const phase = track.progress?.phase || '';
+  const index = track.progress?.index;
+  const total = track.progress?.total;
+  const humanState = running ? String(estimate.state || '').toLowerCase() : '';
+  const confirmed = Boolean(estimate.confirmed) && running;
+  const hasFix = running && (confirmed || humanState === 'predicted' || humanState === 'stale');
+  const bearing = hasFix ? estimate.bearing_deg : null;
+  const distance = hasFix ? estimate.distance_cm : null;
+
+  setTone('demo-mode', mode,
+    mode === 'TRACK' ? 'ok' : mode === 'GUARD' ? 'ok' : mode === 'RULE' ? 'warn' : 'dim');
+  setTone('demo-track',
+    running ? (phase === 'sweeping' && index ? `SWEEP ${index}/${total}` : phase.toUpperCase() || 'RUNNING')
+      : track.state === 'error' ? 'ERROR' : track.state === 'stopped' ? 'STOPPED' : 'IDLE',
+    track.state === 'error' ? 'bad' : running ? 'warn' : 'dim');
+  setTone('demo-human', humanState ? humanState.toUpperCase() : '—',
+    confirmed ? 'ok' : humanState === 'radar' || humanState === 'predicted' ? 'warn' : 'dim');
+  setTone('demo-bearing', bearing != null ? `${Number(bearing).toFixed(1)}°` : '—',
+    confirmed ? 'ok' : 'dim');
+  setTone('demo-distance', distance != null ? `${Number(distance).toFixed(0)} cm` : '—',
+    confirmed ? 'ok' : 'dim');
+
+  let status = 'OFF';
+  if (track.state === 'error') status = `TRACK ERROR · ${track.error || 'unknown'}`;
+  else if (running) {
+    if (confirmed) status = `TRACK · CONFIRMED ${(Number(distance) / 100).toFixed(2)} m / ${Number(bearing).toFixed(1)}°`;
+    else if (humanState === 'radar') status = 'TRACK · RADAR ONLY (belum terkonfirmasi)';
+    else if (phase === 'sweeping') status = `SWEEPING ${index || 0}/${total || 0}`;
+    else status = 'TRACK · SWEEPING';
+  } else if (aiOn) status = 'GUARD · AI GATE';
+  else if (ruleOn) status = 'RULE ONLY · pembanding';
+  else if (track.state === 'stopped') status = 'STOPPED · pilih Track atau Guard';
+  else status = 'OFF · pilih Track atau Guard';
+  setText('demo-status', status);
+
+  const trackButton = $('track-start');
+  if (trackButton) {
+    trackButton.disabled = !state.health?.esp || state.demoBusy || running;
+    trackButton.classList.toggle('active', running);
+  }
+  const guardButton = $('guard-start');
+  if (guardButton) {
+    guardButton.disabled = !state.health?.esp || state.demoBusy;
+    guardButton.classList.toggle('active', aiOn && !running);
+  }
+  const stopButton = $('demo-stop-main');
+  if (stopButton) stopButton.disabled = !state.health?.esp || state.demoBusy
+    || (!running && !aiOn && !ruleOn);
+}
+
+async function refreshTrack() {
+  if (state.trackBusy) return;
+  state.trackBusy = true;
+  try {
+    const data = await api('/api/mapping/track/status');
+    state.track = data.track || state.track;
+    renderTrack();
+    if (document.getElementById('tab-cloud')?.classList.contains('active')) {
+      drawCloud();
+      drawTopDown();
+    }
+  } catch (error) {
+    // Keep the last estimate; the health poll reports the link state.
+  } finally {
+    state.trackBusy = false;
+  }
+}
+
+async function startTrack() {
+  if (state.demoBusy || state.track?.state === 'running') return;
+  if (!state.trackConfirmed) {
+    const ok = window.confirm('Pastikan jack 9V terpasang, arm punya ruang, dan tidak ada scan/OTA. Lanjutkan Track?');
+    if (!ok) return;
+    state.trackConfirmed = true;
+  }
+  state.demoBusy = true;
+  try {
+    const scanId = $('scan-select')?.value || state.loadedScan || '';
+    await withBusy($('track-start'), () => api('/api/mapping/track/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirm_power: true, scan_id: scanId, yaw_limit_deg: 60,
+        tilt_us: 800, samples: 2, dwell_ms: 150, interval_s: 1.0,
+      }),
+    }), 'Track...');
+    await refreshTrack();
+    await refreshHealth();
+    showToast('Track aktif. Arm sweep; buzzer dimute. Gunakan Guard untuk AI buzzer.', 'success');
+  } catch (error) {
+    setText('demo-status', `Gagal Track: ${error.message}`);
+    showToast(`Gagal Track: ${error.message}`, 'error', 5000);
+  } finally {
+    state.demoBusy = false;
+    renderTrack();
+  }
+}
+
+async function stopTrack() {
+  try {
+    await api('/api/mapping/track/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+  } catch (error) {
+    // The job may already be stopped.
+  }
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await refreshTrack();
+    if (state.track?.state !== 'running') return;
+    await sleep(500);
+  }
+}
+
+async function stopMain() {
+  if (state.demoBusy) return;
+  state.demoBusy = true;
+  try {
+    await withBusy($('demo-stop-main'), async () => {
+      await stopTrack();
+      await sendCommand('ml_alert_off');
+      await sendCommand('hlk_alert_off');
+      await refreshHealth();
+    }, 'Stop...');
+    showToast('Track dan aktuator dimatikan.', 'success');
+  } catch (error) {
+    showToast(`Gagal Stop: ${error.message}`, 'error', 4500);
+  } finally {
+    state.demoBusy = false;
+    await refreshTrack();
+    await refreshHealth();
+  }
+}
+
+async function startGuard() {
+  if (state.demoBusy) return;
+  state.demoBusy = true;
+  try {
+    await withBusy($('guard-start'), async () => {
+      await stopTrack();
+      await ensureSensors();
+      await sendCommand('hlk_alert_off');
+      await sendCommand('ml_alert_on');
+      state.mlAlertBaseCount = null;
+      await refreshHealth();
+    }, 'Guard...');
+    showToast('Guard aktif: AI Gate memegang buzzer.', 'success');
+  } catch (error) {
+    setText('demo-status', `Gagal Guard: ${error.message}`);
+    showToast(`Gagal Guard: ${error.message}`, 'error', 5000);
+  } finally {
+    state.demoBusy = false;
+    await refreshTrack();
+    await refreshHealth();
+  }
+}
+
+function toggleAdvanced() {
+  const enabled = !document.body.classList.contains('show-advanced');
+  document.body.classList.toggle('show-advanced', enabled);
+  const button = $('advanced-toggle');
+  if (button) button.classList.toggle('active', enabled);
+  if (!enabled) {
+    const active = document.querySelector('.tab.active');
+    if (active && active.id !== 'tab-cloud') switchTab('cloud');
+  }
+}
+
 let toastTimer = null;
 function showToast(message, type = 'info', ms = 2600) {
   const toast = $('toast');
@@ -320,6 +497,7 @@ async function refreshHealth() {
       state.scans = data.scans || [];
       state.calibration = data.calibration || {};
       state.mlMetrics = data.ml_metrics || state.mlMetrics;
+      state.track = data.track || state.track;
       if (data.presence) state.presence = data.presence;
       state.presenceError = null;
     } else {
@@ -334,6 +512,7 @@ async function refreshHealth() {
     renderTopbar();
     renderHealth();
     renderPresence();
+    renderTrack();
     renderScans();
     renderCalibration();
   } catch (error) {
@@ -637,14 +816,6 @@ function renderPresence() {
     setBadgeTone('model-badge', 'OFF', 'OFF');
   }
 
-  let demoStatus = '—';
-  if (!esp) demoStatus = 'ESP offline';
-  else if (!running) demoStatus = 'Sensors off — nyalakan untuk demo';
-  else if (aiOn && !liveMl?.window_ready) demoStatus = `AI warming · ${liveMl?.mute_reason || 'mengisi window'}`;
-  else if (aiOn) demoStatus = `AI live · gate ${gateOpen ? 'OPEN' : 'CLOSED'} · ${sessionBeeps} beep`;
-  else if (ruleOn) demoStatus = 'Rule-only comparison';
-  else demoStatus = 'Sensors running · pilih mode';
-  setText('demo-status', demoStatus);
 
   const modeAi = $('mode-ai');
   const modeRule = $('mode-rule');
@@ -2294,6 +2465,36 @@ function drawOccludedWedges(ctx, toScreen, sensor, radius, occluded, fovLimit) {
 }
 
 function drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale = 1) {
+  const tracked = state.track?.estimate;
+  if (tracked && tracked.x_m != null
+      && state.track?.state === 'running'
+      && ['confirmed', 'predicted', 'stale'].includes(tracked.state)) {
+    const point = toScreen(Number(tracked.x_m), Number(tracked.y_m));
+    const color = tracked.state === 'confirmed' ? [143, 168, 139] : [217, 164, 65];
+    const width = 0.55 * scale;
+    const depth = 0.35 * scale;
+    ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},0.22)`;
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.95)`;
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash(tracked.state === 'confirmed' ? [] : [7, 5]);
+    ctx.fillRect(point.x - width / 2, point.y - depth / 2, width, depth);
+    ctx.strokeRect(point.x - width / 2, point.y - depth / 2, width, depth);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(toScreen(sensor.x, sensor.y).x, toScreen(sensor.x, sensor.y).y);
+    ctx.lineTo(point.x, point.y);
+    ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.45)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    const distance = Number(tracked.distance_cm) / 100;
+    const bearing = tracked.bearing_deg != null ? `${Number(tracked.bearing_deg).toFixed(0)}°` : '—';
+    const label = `${tracked.state === 'confirmed' ? 'HUMAN CONFIRMED' : `HUMAN ${tracked.state.toUpperCase()}`}`
+      + ` ${distance.toFixed(2)} m · ${bearing}`;
+    drawTag(ctx, point.x, point.y - depth / 2 - 18, label,
+      `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
+    return;
+  }
+  if (state.track?.state === 'running') return;
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)
       || presence.gate === 'beyond_wall') return;
@@ -2747,7 +2948,8 @@ function drawTopDown() {
   ctx.textAlign = 'center';
   ctx.fillText('1 m', barStart.x + scale / 2, barStart.y - 14);
   ctx.textAlign = 'start';
-  if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
+  if (hlkRadius > 0 && state.track?.state === 'running'
+      && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
     const yaw = displaySensorAngle(
       Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180);
@@ -2842,8 +3044,15 @@ function update3DScene() {
     color: boxColor(box),
   }));
   const presence = state.presence;
+  const tracked = state.track?.estimate;
   let tracks = [];
-  if (presence && ['present', 'holding'].includes(presence.state)) {
+  if (state.track?.state === 'running') {
+    tracks = (tracked && tracked.x_m != null
+      && ['confirmed', 'predicted', 'stale'].includes(tracked.state))
+      ? [{ ...tracked, id: 'H1', source: 'sweep', class: 'human',
+        confidence: Number(tracked.confidence || 0) }]
+      : [];
+  } else if (presence && ['present', 'holding'].includes(presence.state)) {
     tracks = Array.isArray(presence.tracks) && presence.tracks.length
       ? presence.tracks
       : (presence.distance_cm != null ? [{
@@ -2864,7 +3073,9 @@ function update3DScene() {
     showDistances: state.showDistances,
     showAxis: state.showAxis,
     tracks,
-    occupancyLabel: (tracks.length && presence?.occupancy_label) || '',
+    occupancyLabel: tracks.length
+      ? (tracks[0].state === 'confirmed' ? '1 target' : 'radar')
+      : '',
     presenceUncertaintyDeg: Number(presence?.occupancy_uncertainty_deg || 60),
     presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
     sensorOrigin: sensor,
@@ -2975,7 +3186,8 @@ function drawCloudCanvas() {
   }
   if (state.viewMode !== 'points') drawBoxes3D(ctx, width, height, maxRadius);
   drawHuman3D(ctx, width, height, maxRadius);
-  if (hlkRadius > 0 && !(presence && ['present', 'holding'].includes(presence.state))) {
+  if (hlkRadius > 0 && state.track?.state === 'running'
+      && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
     const yawDeg = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0);
     const yaw = yawDeg * Math.PI / 180;
@@ -3466,6 +3678,10 @@ $('show-axis').addEventListener('change', () => {
 });
 $('export-run').addEventListener('click', exportDataset);
 $('presence-clear').addEventListener('click', clearPresence);
+if ($('advanced-toggle')) $('advanced-toggle').addEventListener('click', toggleAdvanced);
+if ($('track-start')) $('track-start').addEventListener('click', startTrack);
+if ($('guard-start')) $('guard-start').addEventListener('click', startGuard);
+if ($('demo-stop-main')) $('demo-stop-main').addEventListener('click', stopMain);
 for (const [id, mode] of [['mode-ai', 'ai'], ['mode-rule', 'rule']]) {
   const button = $(id);
   if (button) button.addEventListener('click', () => setActuatorMode(mode, button));
@@ -3826,6 +4042,7 @@ syncSnapButton();
   await refreshCalibration();
   await refreshMlStatus();
   await refreshPresence();
+  await refreshTrack();
   await refreshDatasetIndex();
   const preferred = (state.scans || [])
     .filter(scan => !scan.error && (scan.points || 0) > 0)
@@ -3841,6 +4058,7 @@ syncSnapButton();
   setInterval(refreshHealth, 2000);
   setInterval(renderTopbar, 1000);
   setInterval(refreshPresence, 1500);
+  setInterval(refreshTrack, 1000);
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);
 })();

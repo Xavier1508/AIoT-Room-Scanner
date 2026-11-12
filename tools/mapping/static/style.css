@@ -114,6 +114,26 @@ h3 { margin: 0 0 8px; font-size: .9rem; font-weight: 600; color: var(--text); }
   border-bottom-color: var(--accent);
   background: transparent;
 }
+.tabs .advanced-tab { display: none; }
+body.show-advanced .tabs .advanced-tab { display: inline-block; }
+.tabs-toggle {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  align-self: center;
+}
+.tabs-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+body:not(.show-advanced) .demo-advanced { display: none !important; }
+body:not(.show-advanced) .scene3d-toolbar-left { display: none; }
+body:not(.show-advanced) #scene3d-legend,
+body:not(.show-advanced) .scene3d-hint,
+body:not(.show-advanced) #cloud-stats { display: none; }
 .tab { display: none; }
 .tab.active { display: block; }
 

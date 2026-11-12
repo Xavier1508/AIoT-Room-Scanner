@@ -255,11 +255,11 @@ ke browser. Jalankan:
 ```powershell
 $py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
 Push-Location .\tools\mapping
-& $py -B .\mapping_server.py --host 127.0.0.1 --port 8000
+& $py -B .\mapping_server.py --host 127.0.0.1 --port 8001
 Pop-Location
 ```
 
-Buka `http://127.0.0.1:8000/`. Dashboard menyediakan kalibrasi HC/ToF, scan
+Buka `http://127.0.0.1:8001/`. Dashboard menyediakan kalibrasi HC/ToF, scan
 grid 5°/25 µs atau 10°/50 µs secara **sequential** (stepper hold → servo attach
 → sweep vertikal → servo detach → stepper lagi), penyimpanan
 `research/mapping/scans/`, viewer point cloud 3D **Three.js WebGL** (orbit,
@@ -268,6 +268,8 @@ layer, kamera Top/Iso/Fit/Full, demo) + top-down 2D untuk editing presisi,
 objek besar (kasur/meja), editor prior satu-sisi, Ctrl+Z, ekspor **PLY + JSON**
 ke `research/mapping/scenes/`, overlay presence HLK dengan estimasi dual-track
 H1/H2 (bukan people counter), serta classifier DL empty/human live dari ESP32.
+Tab **Demo** default berisi peta + `Track`/`Guard`/`Stop`; fitur scan,
+kalibrasi, AI, dan dataset ada di balik **Advanced**.
 
 Untuk restart otomatis bila server PC crash, jalankan
 `.\tools\ops\start-mapping.cmd` dan biarkan jendelanya terbuka. Ini **berbeda**

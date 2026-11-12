@@ -43,7 +43,7 @@ limitation), and a static object at 75 cm is not detected by the HLK. See
 - Loaded servo movement and rail current still require operator verification;
   scans have run successfully, but voltage/current were not measured.
 - PC mapping dashboard: `tools/mapping/mapping_server.py` on
-  `http://127.0.0.1:8000/`; see `docs/mapping-dashboard.md`.
+  `http://127.0.0.1:8001/`; see `docs/mapping-dashboard.md`.
 
 ## Pin map (from the latest workbook)
 
@@ -111,6 +111,11 @@ actual breakout labels before powering sensors.
 `Start AI Demo`/`Stop`, `AI Gate`/`Rule Only`, and `Sensors ON/OFF`. The health
 proxy forwards `ml_alert`; v3 metrics are shown; the neutral toast replaces the
 green fill. Screenshots: `analysis/mapping/dashboard-20261112-ui/`.
+
+**Demo tab:** default tab has `Track` / `Guard` / `Stop`; Track is the yaw
+sweep + measured human box (buzzer silent), Guard is the AI-gated beeper.
+Scan/Calibration/AI/Dataset are behind **Advanced**. The track decision and
+limits are in `docs/tracking-sweep.md`.
 
 ## Next steps
 

@@ -120,7 +120,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 66 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 71 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -355,7 +355,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   windows predicted `human`), so v3 replaces it. Deployed logits model:
   `research/mapping/ml/model-empty-human-v3-logits/`. The AI prediction gates
   the rule; the failed distance-regression policy is not deployed. Tests:
-  **87 C++ + 66 Python**.
+  **87 C++ + 71 Python**.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -568,6 +568,16 @@ why the AI button was disabled), `_ml_metrics()` reads v3, and the toast/status
 styling no longer uses green fills. Screenshots:
 `analysis/mapping/dashboard-20261112-ui/`; details:
 `docs/mapping-dashboard.md` and `docs/live-gate-test.md`.
+
+**Demo tab and tracking (2026-11-12):** the default **Demo** tab now has only
+`Track`, `Guard`, and `Stop`. Track runs a bounded yaw sweep with the servo
+attached, compares ToF/HC against the scan background, requires HLK consistency
+and an inside-room point, and draws a standard human box at the measured
+bearing/distance. Radar-only stays an uncertainty arc. Guard is the existing
+AI-gated range beeper; Track is silent. The other tabs are behind **Advanced**.
+Live centre test: confirmed **21.9 deg / 128.5 cm** at `(1.053, 1.117) m`;
+second run **-31.3 deg / 81.7 cm** with the box visible in 3D/2D. See
+`docs/tracking-sweep.md`. Tests: **87 C++ + 71 Python**.
 
 **Next actions:** use `20261110T184241Z` for the cleanest map or
 `20261112T030324Z` for the newest scan; if the tripod/base moved, put it back

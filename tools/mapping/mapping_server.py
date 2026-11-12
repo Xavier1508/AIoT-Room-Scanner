@@ -29,6 +29,7 @@ from presence import PresenceTracker
 from reconstruct import auto_align_rotation, reconstruct_points
 from scan import ScanConfig, run_scan
 from scene_export import export_scene
+from tracking import TrackingConfig, run_tracking_loop
 
 STATIC = Path(__file__).with_name("static")
 JOB_LOCK = threading.Lock()
@@ -48,6 +49,17 @@ ML_JOB = {
     "label": "",
     "frames": 0,
     "path": None,
+    "error": None,
+    "started_utc": None,
+    "thread": None,
+    "stop_event": None,
+}
+TRACK_LOCK = threading.Lock()
+TRACK_JOB = {
+    "state": "idle",
+    "scan_id": None,
+    "estimate": None,
+    "progress": {},
     "error": None,
     "started_utc": None,
     "thread": None,
@@ -138,6 +150,76 @@ def _start_ml(label: str):
 def _stop_ml():
     with ML_LOCK:
         event = ML_JOB.get("stop_event")
+    if event:
+        event.set()
+    return {"ok": True, "message": "stop_requested"}
+
+
+def _public_track():
+    with TRACK_LOCK:
+        return {key: TRACK_JOB[key] for key in
+                ("state", "scan_id", "estimate", "progress", "error", "started_utc")}
+
+
+def _start_track(config):
+    if config.get("confirm_power") is not True:
+        raise ValueError("power confirmation required: 9V and arm clearance must be confirmed")
+    with JOB_LOCK:
+        if JOB["state"] == "running":
+            raise RuntimeError("scan running; stop it before tracking")
+    with ML_LOCK:
+        if ML_JOB["state"] == "running":
+            raise RuntimeError("dataset recording running; stop it before tracking")
+    with TRACK_LOCK:
+        if TRACK_JOB["state"] == "running":
+            raise RuntimeError("tracking already running")
+        stop_event = threading.Event()
+        TRACK_JOB.update({"state": "running", "scan_id": str(config.get("scan_id", ""))[:40],
+                          "estimate": None, "progress": {}, "error": None,
+                          "started_utc": utc_iso(), "stop_event": stop_event})
+    tracking_config = TrackingConfig(
+        scan_id=str(config.get("scan_id", ""))[:40],
+        yaw_limit_deg=max(10, min(60, int(config.get("yaw_limit_deg", 60)))),
+        coarse_step_deg=10,
+        fine_step_deg=5,
+        tilt_us=max(500, min(950, int(config.get("tilt_us", 800)))),
+        samples=max(1, min(3, int(config.get("samples", 2)))),
+        dwell_ms=max(50, min(500, int(config.get("dwell_ms", 150)))),
+        sample_interval_ms=max(50, min(300, int(config.get("sample_interval_ms", 100)))),
+        interval_s=max(0.5, min(5.0, float(config.get("interval_s", 1.0)))),
+        threshold_cm=max(5.0, min(50.0, float(config.get("threshold_cm", 15.0)))),
+    )
+
+    def progress(value):
+        with TRACK_LOCK:
+            TRACK_JOB["progress"] = value
+            estimate = value.get("estimate") or {}
+            if estimate.get("state") in ("confirmed", "predicted", "stale"):
+                TRACK_JOB["estimate"] = estimate
+            background = value.get("background") or {}
+            if background.get("scan_id"):
+                TRACK_JOB["scan_id"] = background["scan_id"]
+
+    def worker():
+        client = EspClient()
+        try:
+            result = run_tracking_loop(client, tracking_config, progress, stop_event)
+            with TRACK_LOCK:
+                TRACK_JOB.update({"state": "stopped" if stop_event.is_set() else "done",
+                                  "estimate": result, "error": None})
+        except Exception as exc:
+            with TRACK_LOCK:
+                TRACK_JOB.update({"state": "error", "error": str(exc)})
+
+    thread = threading.Thread(target=worker, daemon=True)
+    with TRACK_LOCK:
+        TRACK_JOB["thread"] = thread
+    thread.start()
+
+
+def _stop_track():
+    with TRACK_LOCK:
+        event = TRACK_JOB.get("stop_event")
     if event:
         event.set()
     return {"ok": True, "message": "stop_requested"}
@@ -581,6 +663,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "presence": presence["presence"],
                                             "scans": _list_scans(),
                                             "ml_metrics": _ml_metrics(),
+                                            "track": _public_track(),
                                             "calibration": read_json(CALIBRATION, {}) or {}})
                 except Exception as exc:
                     with PRESENCE_LOCK:
@@ -660,6 +743,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "job": _public_job()})
             if path == "/api/mapping/ml/status":
                 return self._send(200, {"ok": True, "job": _public_ml()})
+            if path == "/api/mapping/track/status":
+                return self._send(200, {"ok": True, "track": _public_track()})
             if path == "/api/mapping/calibration":
                 return self._send(200, {"ok": True,
                                         "calibration": read_json(CALIBRATION, {}) or {}})
@@ -791,6 +876,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/mapping/scan/start":
                 _start_scan(body)
                 return self._send(202, {"ok": True, "job": _public_job()})
+            if path == "/api/mapping/track/start":
+                _start_track(body)
+                return self._send(202, {"ok": True, "track": _public_track()})
+            if path == "/api/mapping/track/stop":
+                return self._send(200, _stop_track())
             if path == "/api/mapping/scan/stop":
                 with JOB_LOCK:
                     event = JOB.get("stop_event")

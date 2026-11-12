@@ -197,51 +197,82 @@ function addDistanceLine(box, index) {
 }
 
 function addPresenceTrack(track, index, yawDeg) {
-  const distance = Number(track.distance_cm) / 100;
-  if (!Number.isFinite(distance) || distance <= 0) return;
   const sensor = state.payload?.sensorOrigin || { x: 0, y: 0 };
+  const measured = Number.isFinite(Number(track.x_m)) && Number.isFinite(Number(track.y_m));
+  const distance = Number(track.distance_cm) / 100;
   const rawYaw = THREE.MathUtils.degToRad(Number(yawDeg) || 0)
     + THREE.MathUtils.degToRad(Number(state.payload?.mapRotationDeg) || 0);
   const yaw = state.payload?.mirrorY === false ? rawYaw : -rawYaw;
-  const x = Number(sensor.x) + distance * Math.cos(yaw);
-  const y = Number(sensor.y) + distance * Math.sin(yaw);
-  const trackColor = index === 0 ? COLORS.presence : 0x8fa6b8;
-  const geometry = new THREE.CapsuleGeometry(0.23, 1.05, 5, 10);
-  const material = new THREE.MeshStandardMaterial({
-    color: trackColor,
-    transparent: true,
-    opacity: 0.40,
-    depthWrite: false,
-    emissive: trackColor,
-    emissiveIntensity: 0.34,
-    toneMapped: false,
-  });
-  const capsule = new THREE.Mesh(geometry, material);
-  capsule.rotation.x = Math.PI / 2;
-  capsule.position.set(x, y, 0.85);
-  capsule.userData.track = track;
-  state.groups.presence.add(capsule);
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.22, 0.30, 24),
-    new THREE.MeshBasicMaterial({
-      color: trackColor, transparent: true, opacity: 0.75, side: THREE.DoubleSide,
-    }),
-  );
-  ring.position.set(x, y, 0.025);
-  state.groups.presence.add(ring);
-  const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(Number(sensor.x), Number(sensor.y), 0.03),
-    new THREE.Vector3(x, y, 0.03),
-  ]);
-  state.groups.presence.add(new THREE.Line(
-    lineGeometry,
-    new THREE.LineDashedMaterial({
-      color: trackColor, dashSize: 0.10, gapSize: 0.06,
-      transparent: true, opacity: 0.82,
-    }),
-  ).computeLineDistances());
-  // The radar has no angle: draw the radial uncertainty arc so the marker is
-  // not mistaken for an exact 2D position.
+  const x = measured ? Number(track.x_m)
+    : Number(sensor.x) + distance * Math.cos(yaw);
+  const y = measured ? Number(track.y_m)
+    : Number(sensor.y) + distance * Math.sin(yaw);
+  const confirmed = Boolean(track.confirmed) || track.state === 'confirmed';
+  const predicted = track.state === 'predicted' || track.state === 'stale';
+  const trackColor = confirmed ? COLORS.presence : 0xd9a441;
+  const height = Math.max(0.8, Math.min(2.0, Number(track.height_m) || 1.7));
+  const z0 = Math.max(0, Number(track.z_bottom_m) || 0);
+  const labelColor = confirmed ? '#8fa88b' : '#d9a441';
+
+  if (measured) {
+    const geometry = new THREE.BoxGeometry(0.55, 0.35, height);
+    const material = new THREE.MeshStandardMaterial({
+      color: trackColor,
+      transparent: true,
+      opacity: confirmed ? 0.16 : 0.10,
+      depthWrite: false,
+      emissive: trackColor,
+      emissiveIntensity: confirmed ? 0.25 : 0.12,
+      toneMapped: false,
+    });
+    const box = new THREE.Mesh(geometry, material);
+    box.position.set(x, y, z0 + height / 2);
+    box.userData.track = track;
+    state.groups.presence.add(box);
+    const edgeMaterial = predicted
+      ? new THREE.LineDashedMaterial({
+        color: trackColor, dashSize: 0.08, gapSize: 0.06,
+        transparent: true, opacity: 0.92,
+      })
+      : new THREE.LineBasicMaterial({
+        color: trackColor, transparent: true, opacity: 0.95,
+      });
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
+    edges.position.copy(box.position);
+    if (predicted && edges.computeLineDistances) edges.computeLineDistances();
+    state.groups.presence.add(edges);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.24, 0.32, 24),
+      new THREE.MeshBasicMaterial({
+        color: trackColor, transparent: true, opacity: confirmed ? 0.75 : 0.55,
+        side: THREE.DoubleSide,
+      }),
+    );
+    ring.position.set(x, y, z0 + 0.02);
+    state.groups.presence.add(ring);
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(Number(sensor.x), Number(sensor.y), 0.03),
+      new THREE.Vector3(x, y, 0.03),
+    ]);
+    state.groups.presence.add(new THREE.Line(
+      lineGeometry,
+      new THREE.LineDashedMaterial({
+        color: trackColor, dashSize: 0.10, gapSize: 0.06,
+        transparent: true, opacity: 0.7,
+      }),
+    ).computeLineDistances());
+    const bearing = track.bearing_deg != null ? `${Number(track.bearing_deg).toFixed(0)}°` : '';
+    const label = addLabel(
+      `${confirmed ? 'HUMAN' : 'PREDICTED'} ${Number(track.distance_cm || distance * 100).toFixed(0)} cm ${bearing}`,
+      new THREE.Vector3(x, y, z0 + height + 0.28),
+      labelColor, 0.58,
+    );
+    label.renderOrder = 1003;
+    return;
+  }
+
+  if (!Number.isFinite(distance) || distance <= 0) return;
+  // Radar-only: draw the uncertainty arc, never a precise box.
   const half = THREE.MathUtils.degToRad(
     Number(state.payload?.presenceUncertaintyDeg) || 60);
   const arcPoints = [];
@@ -254,17 +285,16 @@ function addPresenceTrack(track, index, yawDeg) {
   const arc = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(arcPoints),
     new THREE.LineDashedMaterial({
-      color: trackColor, dashSize: 0.09, gapSize: 0.07,
-      transparent: true, opacity: 0.38,
+      color: 0xd9a441, dashSize: 0.09, gapSize: 0.07,
+      transparent: true, opacity: 0.62,
     }),
   );
   arc.computeLineDistances();
   state.groups.presence.add(arc);
   const label = addLabel(
-    `${track.id || (index === 0 ? 'H1' : 'H2')} ${distance.toFixed(2)} m`,
+    `RADAR ${distance.toFixed(2)} m (angle unknown)`,
     new THREE.Vector3(x, y, 2.05),
-    index === 0 ? '#8dffc6' : '#9fe8ff',
-    0.64,
+    '#d9a441', 0.56,
   );
   label.renderOrder = 1003;
 }

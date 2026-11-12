@@ -1,6 +1,6 @@
 param(
     [string]$HostAddress = '127.0.0.1',
-    [int]$Port = 8000
+    [int]$Port = 8001
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent

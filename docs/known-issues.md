@@ -211,6 +211,13 @@ object classifier. Point h must be demonstrated with a moving target the HLK
 can see, and this limitation must be stated. Non-human live markers wait for
 the 3-class model.
 
+**Tracking sweep (2026-11-12):** the Demo `Track` mode rotates the arm over
+±60° and compares ToF/HC with the scan background; a box is drawn only when
+ToF/HC and HLK agree and the point is inside the room. A full sweep takes about
+10–20 s, not 60 fps, and the buzzer is muted while the arm moves. `Guard` is the
+separate AI-gated beeper mode. A true real-time game-style box needs a
+camera/depth/pose sensor; the radar alone has no angle.
+
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%
 positive. A rule `max(moving_energy)>0` reached 100% on the same validation

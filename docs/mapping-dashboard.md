@@ -17,11 +17,11 @@ From the project root, using the existing PlatformIO Python:
 ```powershell
 $py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
 Push-Location .\tools\mapping
-& $py -B .\mapping_server.py --host 127.0.0.1 --port 8000
+& $py -B .\mapping_server.py --host 127.0.0.1 --port 8001
 Pop-Location
 ```
 
-Open `http://127.0.0.1:8000/`.
+Open `http://127.0.0.1:8001/`.
 
 The server reads `tools/ops/device.local.json` (gitignored) and proxies the
 ESP32 API server-side. ESP32 Basic-auth credentials are never sent to the
@@ -34,7 +34,7 @@ There are two independent web applications:
 - **ESP32 dashboard** `http://<ESP-IP>/` — served by the board itself. It starts
   automatically after boot when Wi-Fi connects. If the board is off, brownout
   looping, or Wi-Fi is down, this page is down; the PC cannot keep it alive.
-- **PC mapping dashboard** `http://127.0.0.1:8000/` — served by the PC Python
+- **PC mapping dashboard** `http://127.0.0.1:8001/` — served by the PC Python
   process. It stays up even when the ESP32 is offline (health panel shows an
   error), but it stops if its terminal is closed or the process crashes.
 
@@ -290,6 +290,13 @@ now forwards `esp.ml_alert`; `_ml_metrics()` reads v3 (97.28% +/- 4.70%, hard
 fold 87.96%, human recall 79.1%). Screenshots:
 `analysis/mapping/dashboard-20261112-ui/`. Live evidence:
 `docs/live-gate-test.md`.
+
+**Demo tab (2026-11-12):** the default tab now shows the map and only
+`Track` / `Guard` / `Stop`. **Track** runs the bounded yaw sweep, compares
+ToF/HC with the scan background and draws a measured human box; it is silent
+and the AI gate is off. **Guard** parks the arm and runs the AI-gated range
+beeper. **Stop** stops both. Scan, Calibration, AI/Presence, Overview and
+Dataset are behind **Advanced**. Tracking details: `docs/tracking-sweep.md`.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least
