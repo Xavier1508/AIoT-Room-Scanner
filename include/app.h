@@ -10,7 +10,6 @@
 #include "commands.h"
 #include "console.h"
 #include "hlk_protocol.h"
-#include "ml_alert_policy.h"
 #include "ml_inference.h"
 #include "network.h"
 #include "safety.h"
@@ -47,7 +46,7 @@ class App {
   void releaseStepper();
   void releaseServo();
   void maybeHlkAlert(uint32_t now);
-  void maybeMlAlert(uint32_t now);
+  void updateMlGate();
   Console console_;
   SettingsStore settings_;
   Network network_;
@@ -72,8 +71,18 @@ class App {
   uint8_t hlkAlertLastEnergy_ = 0;
   String hlkAlertMuteReason_ = "idle";
   bool mlAlertActive_ = false;
-  uint32_t mlAlertCount_ = 0;
-  MlAlertPolicy mlAlertPolicy_;
+  uint16_t mlAlertRawCm_ = 0;
+  uint16_t mlAlertIntervalMs_ = 0;
+  float mlAlertDistanceCm_ = 0.0f;
+  uint8_t mlAlertZone_ = 0;
+  uint16_t hlkDistanceHistory_[3] = {};
+  uint8_t hlkDistanceCount_ = 0;
+  uint8_t hlkDistanceIndex_ = 0;
+  uint32_t hlkDistanceLastFrameMs_ = 0;
+  uint32_t hlkAlertLastMlInferences_ = 0;
+  float hlkDistanceFiltered_ = 0.0f;
+  bool mlGate_ = false;
+  uint8_t mlGateConfirm_ = 0, mlGateRelease_ = 0;
   String mlAlertMuteReason_ = "disabled";
   String poseReferenceSource_ = "migration_default_1024";
   String servoBaseSource_ = "default_800";

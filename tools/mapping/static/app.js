@@ -229,7 +229,7 @@ function renderHealth() {
   setText('health', `Overall ${health.overall || '—'} · ToF errors ${stats.tof_i2c_errors ?? '—'} · ${stats.tof_error_rate_per_min ?? '—'}/min · responsive ${tof.responsive ? 'yes' : 'no'}${tof.near_reflector ? ' · NEAR REFLECTOR (~30 cm)' : ''}`);
   setText('pose', `${actuators.servo_attached ? 'servo attached' : 'servo detached'} · ${actuators.stepper_energized ? 'stepper energized' : 'stepper off'}`);
   setText('pose-detail', `servo ${actuators.servo_target_us ?? '—'} µs · stepper ${actuators.relative_half_steps ?? '—'} hsteps · yaw ${fmt(scan.yaw_deg_nominal, '°')}`);
-  setText('alert', `HLK alert ${alert.enabled ? 'ON' : 'OFF'} · ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm · ${alert.state || 'idle'} · ${alert.mute_reason || '—'} · count ${alert.count ?? 0}`);
+  setText('alert', `${alert.ai_gate ? 'AI-gated range' : 'HLK alert'} ${(alert.enabled || alert.ai_gate) ? 'ON' : 'OFF'} · ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm · ${alert.state || 'idle'} · ${alert.mute_reason || '—'} · count ${alert.count ?? 0}`);
   if (document.getElementById('tab-cloud').classList.contains('active')) { drawCloud(); drawTopDown(); }
   renderScans();
 }
@@ -393,10 +393,12 @@ function renderPresence() {
     mlAlertButton.disabled = !state.health?.esp || mlAlert.enabled == null;
   }
   if (mlAlert.enabled != null) {
+    const distance = Number(mlAlert.distance_cm);
     setText('ml-alert-status',
       `${String(mlAlert.mode || 'idle').toUpperCase()} | ${mlAlert.active ? 'BEEP' : 'idle'} | ${mlAlert.class || '-'} `
-      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% | ${mlAlert.mute_reason || '-'} | beep ${mlAlert.count ?? 0}`
-      + ` | T${mlAlert.trigger_count ?? 0} C${mlAlert.confirm_count ?? 0} V${mlAlert.veto_count ?? 0} R${mlAlert.release_count ?? 0}`);
+      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% | ${Number.isFinite(distance) ? distance.toFixed(1) : '-'} cm | `
+      + `${mlAlert.interval_ms || 0} ms | beep ${mlAlert.count ?? 0} | ${mlAlert.mute_reason || '-'}`
+      + ` | gate ${mlAlert.gate ? 'ON' : 'OFF'} | rule ${mlAlert.rule_mode ? 'ON' : 'OFF'}`);
   } else {
     setText('ml-alert-status', 'AI alert belum tersedia');
   }
@@ -3121,7 +3123,7 @@ function applyScanPreset(name) {
   const presets = {
     validation: { yawStep: 10, yawLimit: 10, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
     coarse: { yawStep: 10, yawLimit: 60, tiltStep: 50, dwell: 250, samples: 3, interval: 150 },
-    fine: { yawStep: 5, yawLimit: 60, tiltStep: 25, dwell: 400, samples: 5, interval: 250 },
+    fine: { yawStep: 5, yawLimit: 60, tiltStep: 25, dwell: 500, samples: 8, interval: 250 },
   };
   const preset = presets[name];
   if (!preset) return;

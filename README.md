@@ -2,14 +2,15 @@
 
 Firmware pengujian **buzzer aktif, HLK-LD2410C, HC-SR04, VL53L1X,
 28BYJ-48/ULN2003, dan SG90**.
-Firmware terpasang: **0.9.0-hybrid-alert**. Versi ini memakai classifier
+Firmware terpasang: **0.9.3-ai-gated-rule**. Versi ini memakai classifier
 1D-CNN **empty/human v3** (4 sesi, 7.784 frame) di ESP32-S3 melalui TensorFlow
 Lite Micro. Model int8 **14.528 byte** dikirim sebagai **logits**; softmax
 dihitung di firmware (float32) karena jalur Softmax TFLite Micro lama abort saat
-boot. **AI alert hybrid** (`ml_alert_on/off`): HLK memberi edge cepat
-(trigger/release), model mengonfirmasi `human` dengan confidence ≥ 0,80 dan
-buzzer 700 ms; rule parkir HLK **30–75 cm tetap aktif** dengan interval
-150–2000 ms (semakin dekat semakin cepat) dan menjadi prioritas saat aktif.
+boot. **AI-gated range beeper** (`ml_alert_on/off`): model v3 memutuskan
+`human`/`empty` (confidence ≥ 0,80); buzzer hanya bunyi jika AI `human` **dan**
+target 30–75 cm. Irama dari rule HLK 150–2000 ms (semakin dekat semakin cepat),
+jarak difilter median+EMA; tidak ada bunyi AI di luar 75 cm. `hlk_alert_on`
+adalah **mode pembanding rule-only** (benda apa pun) untuk evaluasi ujian.
 Fitur lain: pemilihan SSID pasif, sensor health/error-rate, HLK,
 fine jog 5°/25 µs, scan envelope **±60°/500–950 µs**, sequential power guard
 (servo/stepper tidak bergerak bersamaan), dan buzzer parkir yang mute saat scan.

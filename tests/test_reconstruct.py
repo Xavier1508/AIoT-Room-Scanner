@@ -230,6 +230,29 @@ class Reconstruction(unittest.TestCase):
         self.assertTrue(merged["boxes"][0]["id"].startswith("merged:"))
         self.assertEqual(merged["boxes"][0]["points"], wall["points"] + obj["points"])
 
+    def test_object_anchors_snap_labelled_box_and_add_prior(self):
+        def measured():
+            return {"boxes": [{
+                "id": "bed-measured", "label": "bed", "label_source": "manual",
+                "cx_m": 1.31, "cy_m": 0.05, "angle_deg": 2.0,
+                "length_m": 1.90, "width_m": 1.00,
+                "z_bottom_m": 0.0, "z_top_m": 0.50, "points": 12,
+            }]}
+        out = reconstruct.apply_annotations(measured(), {}, add_anchors=True)
+        bed = next(box for box in out["boxes"] if box["label"] == "bed")
+        self.assertEqual(bed["id"], "bed-measured")
+        self.assertAlmostEqual(bed["cx_m"], 1.346, places=3)
+        self.assertAlmostEqual(bed["length_m"], 2.0, places=3)
+        self.assertEqual(bed["source"], "anchor")
+        fan = next(box for box in out["boxes"] if box["label"] == "fan")
+        self.assertEqual(fan["points"], 0)
+        self.assertEqual(fan["source"], "anchor")
+        self.assertEqual(len(out["annotations"]["anchor_matches"]), 2)
+
+        plain = reconstruct.apply_annotations(measured(), {})
+        self.assertEqual([box["label"] for box in plain["boxes"]], ["bed"])
+        self.assertEqual(plain["annotations"]["anchors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include "commands.h"
-#include "ml_alert_policy.h"
 #include "safety.h"
 #include "wifi_scan.h"
 #include <stdio.h>
@@ -150,121 +149,6 @@ SelftestResult runSelftests() {
   networks.add("strongest", 9, -1, 11, 3); networks.sortBySignal();
   check(networks.at(0)->rssi == -1 && strcmp(networks.at(0)->ssid, "strongest") == 0);
   check(networks.at(WifiScanList::capacity) == nullptr);
-
-  // Hybrid AI alert policy: trigger -> confirm -> rule priority -> release.
-  {
-    MlAlertPolicy policy;
-    MlAlertInputs in;
-    in.enabled = true;
-    in.modelReady = true;
-    in.windowReady = true;
-    in.modelHuman = false;
-    in.confidence = 0.1f;
-    in.movingEnergy = 0;
-    in.now = 10000;
-    in.hlkTimestampMs = in.now;
-    auto out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle && !out.beep);
-    in.movingEnergy = 80;
-    in.now = 10100;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle);
-    in.now = 10200;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Provisional && out.beep && out.active);
-    in.now = 10300;
-    in.hlkTimestampMs = in.now;
-    in.modelHuman = true;
-    in.confidence = 0.9f;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Confirmed && out.active);
-    in.ruleActive = true;
-    out = policy.update(in);
-    check(!out.active && !out.beep && strcmp(out.reason, "rule_priority") == 0);
-    in.ruleActive = false;
-    in.movingEnergy = 0;
-    in.now = 10400;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Confirmed && !out.beep &&
-          strcmp(out.reason, "release_hold") == 0);
-    in.now = 11100;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Confirmed && out.beep &&
-          strcmp(out.reason, "release_hold") == 0);
-    in.now = 11400;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle && policy.releaseCount() == 1);
-    check(policy.triggerCount() == 1 && policy.confirmCount() == 1);
-  }
-
-  // Confident empty model vetoes a provisional trigger after the delay.
-  {
-    MlAlertPolicy policy;
-    MlAlertInputs in;
-    in.enabled = true;
-    in.modelReady = true;
-    in.windowReady = true;
-    in.modelHuman = false;
-    in.confidence = 0.99f;
-    in.movingEnergy = 80;
-    in.now = 20000;
-    in.hlkTimestampMs = in.now;
-    policy.update(in);
-    in.now = 20100;
-    in.hlkTimestampMs = in.now;
-    auto out = policy.update(in);
-    check(out.mode == MlAlertMode::Provisional);
-    in.now = 26600;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle && policy.vetoCount() == 1 &&
-          strcmp(out.reason, "model_veto") == 0);
-  }
-
-  // No model confirmation: provisional times out instead of beeping forever.
-  {
-    MlAlertPolicy policy;
-    MlAlertInputs in;
-    in.enabled = true;
-    in.modelReady = false;
-    in.windowReady = false;
-    in.movingEnergy = 80;
-    in.now = 30000;
-    in.hlkTimestampMs = in.now;
-    policy.update(in);
-    in.now = 30100;
-    in.hlkTimestampMs = in.now;
-    auto out = policy.update(in);
-    check(out.mode == MlAlertMode::Provisional);
-    in.now = 38100;
-    in.hlkTimestampMs = in.now;
-    out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle && policy.unconfirmedCount() == 1 &&
-          strcmp(out.reason, "unconfirmed") == 0);
-  }
-
-  // Disabled and muted reasons are explicit and never beep.
-  {
-    MlAlertPolicy policy;
-    MlAlertInputs in;
-    in.enabled = false;
-    in.movingEnergy = 100;
-    in.now = 40000;
-    in.hlkTimestampMs = in.now;
-    auto out = policy.update(in);
-    check(out.mode == MlAlertMode::Idle && !out.beep &&
-          strcmp(out.reason, "disabled") == 0);
-    in.enabled = true;
-    in.muted = true;
-    in.muteReason = "sensors_off";
-    out = policy.update(in);
-    check(!out.active && !out.beep && strcmp(out.reason, "sensors_off") == 0);
-  }
 
   return result;
 }

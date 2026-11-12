@@ -93,8 +93,10 @@ inside 500..950 microseconds, servo step delay 0.05–0.5 s, column cooldown
 0–5 s, and sample interval 50–1000 ms. Presets: Validation ±10°, Coarse ±60°,
 Fine ±60°. The default full grid is yaw -60..+60 degrees in 5-degree steps and
 tilt 500..950 microseconds in 25-microsecond steps. A coarse run uses 10
-degrees and 50 microseconds; a denser room run uses 10 degrees and 25
-microseconds.
+degrees and 50 microseconds; the dense room run uses 5 degrees and 25
+microseconds. The **Fine** preset uses **8 samples/point, 500 ms dwell and
+250 ms interval** (about 34 minutes), and the scan form starts with the same
+8/500 defaults, so the default path produces the detailed map.
 
 **Full-scan preference:** when several full scans exist, the dashboard prefers
 the scan with the most samples per point, then the most points, then the newest
@@ -250,12 +252,23 @@ to clear both point and block selection. **Middle-drag** pans, right-drag pans,
 wheel zooms and left-drag orbits.
 
 **AI alert and unified dataset:** the AI/Presence tab has an **AI Alert**
-toggle (firmware 0.9.0+). The hybrid uses HLK `moving_energy >= 70` (2 frames)
-as a fast trigger, the v3 logits model `human >= 0.80` to confirm, a confident
-empty model to veto after 6.5 s, and HLK no-motion for 1 s to release. The
-30–75 cm HLK parking rule remains active with its 150–2000 ms distance ramp and
-takes priority (`rule_priority`) while beeping. The status line shows
-`idle/provisional/confirmed`, the mute reason, and T/C/V/R counters. The final
+toggle (firmware 0.9.3+). `ml_alert_on` is an **AI-gated range beeper**: the v3
+logits model must say `human` with confidence >= 0.80 (two inferences) and the
+raw HLK distance must be 30-75 cm. The interval comes from the distance filtered
+with a 3-frame median + EMA (150 ms near 30 cm, 2000 ms at 75 cm); there is no
+AI beep outside 75 cm. `hlk_alert_on` is the rule-only comparison mode (any
+object, 10 cm hysteresis). The status line shows the AI class/confidence,
+distance, interval, beep count, gate and rule state. **Object anchors** from the
+8-sample reference are stored in `research/mapping/object_anchors.json` with
+defaults in `reconstruct.py`: bed (1.346/0.004 m, -1.2 deg, 2.00x1.20 m) and fan
+(0.822/1.254 m, 81.8 deg). A bed/fan-labelled measured box within the match
+radius is snapped to the anchor; otherwise a prior anchor is added, so the
+bed/fan always appear at their usual positions. Anchors are applied by the
+mapping server and by the scene/dataset exports (`add_anchors=True`); the
+low-level reconstruction default does not add them, so synthetic geometry
+tests are unaffected. The fast 2-sample scan's sparse bed box is forced to the
+anchor; the 8-sample reference remains the map, and a slow 8-sample scan is
+pending an empty-room confirmation. The final
 dataset can be collected as one long-format CSV
 (`research/mapping/dataset/aiot_room_dataset_v1.csv`) with `record_type`
 `scan_point`/`hlk_frame`, UTC timestamps, labels, session IDs and split.

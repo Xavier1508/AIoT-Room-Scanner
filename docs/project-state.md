@@ -2,17 +2,20 @@
 
 Updated: 2026-11-12. USB bring-up, SSID discovery, LAN dashboard access, real
 application OTA, sensor health and the PC mapping dashboard are verified.
-**`0.9.0-hybrid-alert` is the current firmware** (v3 logits model + hybrid
-HLK/AI alert) and is installed from `app0`. The TFLite Micro empty/human
-classifier is live (`ready=true`, model `…-v3-logits`, arena 5,128 bytes). The
-**AI alert** is verified end-to-end on 9V: the HLK 30–75 cm parking rule beeps
-faster as the target approaches; the AI hybrid adds room-presence beeps at
-700 ms beyond the near field, with a fast HLK trigger/release. `0.8.2-ml-alert`
-crashed at boot in the ESP_TF Softmax Prepare path; the image was read back
-byte-identical to the artifact, so this was a firmware/library layout issue, not
-a corrupt OTA. The ToF near
-reflector was the
-protective lens cover; after removal, ToF is valid at ~2.4 m. The **canonical
+**`0.9.3-ai-gated-rule` is the current firmware** (v3 logits model + AI-gated
+range beeper) and is installed from `app0`. The TFLite Micro empty/human
+classifier is live (`ready=true`, model `hlk-cnn-20261111T162517Z-logits`, arena
+5,128 bytes). `ml_alert_on` requires the v3 prediction `human` (confidence >=
+0.80, two inferences) and a raw HLK distance of 30-75 cm; the HLK range rule
+then sets the 150-2000 ms interval from the filtered distance. No AI beep
+occurs outside 75 cm; `hlk_alert_on` is the rule-only comparison mode. The
+distance-regression policy experiment was not deployed because it
+underestimated close range; it is reported as a limitation, not a shipped
+model. `0.8.2-ml-alert` crashed at boot in the ESP_TF Softmax Prepare path; the
+image was read back byte-identical to the artifact, so this was a
+firmware/library layout issue, not a corrupt OTA. The ToF near reflector was the
+protective lens cover; after removal, ToF is valid at ~2.4 m.
+The **canonical
 full reference scan** `20261110T184241Z` completed **475/475 points (473 valid,
 452 ToF + 21 HC)** in **33 min 44 s** with yaw 5 deg over ±60 deg, tilt 25 µs
 over 500–950 µs, **8 samples/point**, dwell 500 ms and 250 ms sample interval.
@@ -34,8 +37,12 @@ completed **475/475 points (470 valid)** in **13.6 min** at 5°/25°, 2 samples,
 100 ms interval and 200 ms dwell. It is a coverage/timing check, not the map:
 the 2-sample reconstruction is noisier (bed 19 points at 20.4°, ceiling 126,
 mount 33) than the 8-sample reference (bed 68 at -1.2°, ceiling 60, mount 23),
-so `20261110T184241Z` and its PLY remain canonical. The dashboard now prefers
-the higher-sample scan when several full scans exist. The dashboard renders
+so `20261110T184241Z` and its PLY remain canonical. **Object anchors** from the
+reference (bed 1.346/0.004 m, -1.2°, 2.00x1.20 m; fan 0.822/1.254 m, 81.8°)
+snap a nearby measured bed/fan box or add a prior, so the bed/fan always appear
+at their usual positions; the fast scan's sparse bed box is forced to the bed
+anchor. The dashboard now prefers the higher-sample scan when several full
+scans exist. The dashboard renders
 full-width 3D/2D views,
 wall-first reconstruction, per-scan priors, custom labels, auto-align,
 wall-constrained object fit, box/point selection, a rule-based human capsule and
@@ -51,18 +58,17 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
 - eFuse reports embedded PSRAM8MB; firmware intentionally does not enable it.
 - Existing `default_16MB.csv` OTA layout read and retained. No full-flash erase.
 - Complete source, LAN UI, authenticated web OTA, local provisioning tool exist.
-- **Running firmware: `0.9.0-hybrid-alert`**, installed through real LAN OTA
+- **Running firmware: `0.9.3-ai-gated-rule`**, installed through real LAN OTA
   on 2026-11-12 from `app0`. Artifact:
-  `analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
+  `analysis/platformio/build-20261112T022751083Z/firmware.bin`, **942,720
   bytes**, SHA-256
-  `98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
+  `c82805bc5c8015e7af1b560bd6eedddadcdfddd4b32210ac68e6299251c0c6fb`.
   ML is `ready=true`, model `hlk-cnn-20261111T162517Z-logits`, arena
-  **5,128 bytes**. Hybrid alert: HLK `moving_energy >= 70` for 2 frames starts
-  a provisional 700 ms beep, model `human >= 0.80` confirms, confident empty
-  vetoes after 6.5 s, HLK `moving_energy < 20` for 1 s releases; the 30–75 cm
-  parking rule remains active and has priority while beeping. Sensors `OK`;
-  empty = no AI beep; the rule's near-field interval is intentionally
-  distance-dependent (150–2000 ms).
+  **5,128 bytes**. AI-gated range beeper: model `human` (confidence >= 0.80,
+  two inferences) + raw distance 30-75 cm; interval 150-2000 ms from a 3-frame
+  median + EMA; strict stop at 75 cm. `hlk_alert_on` is the rule-only
+  comparison (any object, 10 cm hysteresis). Sensors are `stopped` after the
+  OTA; the boot check reports ML `ready`.
 - **Known-good `0.8.1` artifact:** `0.8.1-ml-empty-human`,
   `analysis/platformio/build-20261111T113650019Z/firmware.bin`, **940,592
   bytes**, SHA-256
@@ -79,7 +85,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   It adds `near_reflector`/`near_count` and `health.vl53l1x=OBSTRUCTED` when ToF
   sees a fixed return <500 mm while HC sees >1000 mm for 10 samples. The 8×8 ROI
   test (`0.7.2-tof-roi8`) produced `wrap_target_fail` and was reverted.
-- **Installed firmware: `0.8.3-ml-alert-logits`**, build
+- **Known-good `0.8.3` artifact (superseded): `0.8.3-ml-alert-logits`**, build
   `analysis/platformio/build-20261111T144558526Z/firmware.bin`, **942,032
   bytes**, SHA-256
   `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
@@ -114,7 +120,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 64 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 65 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -343,13 +349,13 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   because the ESP_TF Softmax Prepare path aborted on this board; softmax is
   computed in float32 on-device. Arena **5,128 bytes**. Adds `ml_alert_on/off`
   (human + confidence >= 0.80, 700 ms beep, rule HLK priority).
-- **v3 retrain (`0.9.0-hybrid-alert`):** 32-frame model retrained on four
-  sessions (7,784 frames); CV **97.28% ± 4.70%** (hard fold 87.96%, human recall
-  79.1%). v2 scored only **57.73%** on the new sessions (227/262 empty windows
-  predicted `human`), so v3 replaces it. Deployed logits model:
-  `research/mapping/ml/model-empty-human-v3-logits/`. Hybrid policy: HLK fast
-  trigger/release, model confirm/veto, parking rule priority. Tests: **102 C++
-  + 64 Python**.
+- **v3 retrain (`0.9.3-ai-gated-rule`):** 32-frame model retrained on four
+  sessions (7,784 frames); CV **97.28% +- 4.70%** (hard fold 87.96%, human
+  recall 79.1%). v2 scored only **57.73%** on the new sessions (227/262 empty
+  windows predicted `human`), so v3 replaces it. Deployed logits model:
+  `research/mapping/ml/model-empty-human-v3-logits/`. The AI prediction gates
+  the rule; the failed distance-regression policy is not deployed. Tests:
+  **87 C++ + 65 Python**.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -536,19 +542,21 @@ per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
 PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
-and fan #6 (`fan`, `81.8°`, preserved); prior bed removed. **0.8.3-ml-alert-logits**
-is installed and ML is live (logits model, arena 5,128 bytes); the AI alert
-passed the 9V acceptance test (empty = no beep, human = 700 ms beeps, 4.2 s
-release). The two 30-point validation scans (`20261111T114928Z`,
+and fan #6 (`fan`, 81.8 deg, preserved); prior bed removed.
+**0.8.3-ml-alert-logits** was the first logits deployment and passed its 9V
+acceptance test (empty = no beep, human = 700 ms beeps, 4.2 s release); it is
+superseded by `0.9.3-ai-gated-rule`. The two 30-point validation scans
+The two 30-point validation scans (`20261111T114928Z`,
 `20261111T115125Z`) are **dirty** because the operator was active in the room;
 they are timing/health checks, not mapping evidence. A unified master dataset
 was regenerated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259
 rows = 475 mapping points + 7,784 HLK frames from four sessions, timestamped,
-labels empty/human; SHA-256 `25ad558d…89b3`). New sessions:
+labels empty/human; SHA-256 `007fefc5...9038`). New sessions:
 `20261111T152738Z-empty` (1,079 frames, 5 min) and
-`20261111T153448Z-human` (1,129 frames, 5 min). Remaining work: optionally
-retrain/compare `v3`, then run the first **clean** full scan and regenerate the
-master dataset + PLY. The final mapping PLY is
+`20261111T153448Z-human` (1,129 frames, 5 min). v3 is trained and deployed. The fast full scan is a coverage/timing check, not
+the map: the object anchors snap the bed/fan to the 8-sample reference, and the
+slow 8-sample scan is pending an empty-room confirmation. The master CSV
+includes the rule labels (`rule_beep`, `rule_zone`, `rule_interval_ms`). The final mapping PLY is
 `research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
 auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
 12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is

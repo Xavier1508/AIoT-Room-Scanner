@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 namespace config {
-constexpr char version[] = "0.9.0-hybrid-alert";
+constexpr char version[] = "0.9.3-ai-gated-rule";
 constexpr char hostname[] = "aiot-room";
 constexpr char webUser[] = "admin";
 constexpr uint32_t hlkBaud = 256000;
@@ -40,18 +40,9 @@ constexpr uint8_t hlkAlertEnergy = 40;
 constexpr uint32_t hlkAlertMinIntervalMs = 150;         // Fast beep near 30 cm.
 constexpr uint32_t hlkAlertMaxIntervalMs = 2000;        // Slow beep at 75 cm.
 constexpr uint16_t hlkAlertBeepMs = 70;
-constexpr uint8_t hlkAlertConfirmFrames = 3;
+constexpr uint8_t hlkAlertConfirmFrames = 2;
 constexpr uint32_t hlkAlertParkedStableMs = 1000;      // Re-arm only after the arm is still.
-constexpr uint32_t mlAlertIntervalMs = 700;             // AI-alert beep period.
 constexpr float mlAlertConfidence = 0.80f;              // Minimum human confidence.
-constexpr uint16_t mlAlertTriggerEnergy = 70;           // HLK moving energy fast edge.
-constexpr uint8_t mlAlertTriggerFrames = 2;             // Consecutive HLK frames.
-constexpr uint32_t mlAlertVetoDelayMs = 6500;           // Let the 32-frame window fill.
-constexpr uint32_t mlAlertVetoCooldownMs = 5000;        // No re-trigger after a veto.
-constexpr uint32_t mlAlertProvisionalMs = 8000;         // Max unconfirmed beep time.
-constexpr float mlAlertVetoConfidence = 0.90f;          // Confident empty veto.
-constexpr uint16_t mlAlertReleaseEnergy = 20;           // HLK movement considered stopped.
-constexpr uint32_t mlAlertReleaseHoldMs = 1000;         // Fast release after no movement.
 constexpr int16_t hcOffsetMm = 0;                       // Provisional; refine in PC calibration.
 constexpr int16_t tofOffsetMm = 50;                     // ToF lens is ~5 cm ahead of HC reference.
 constexpr uint16_t tofNearReflectorMm = 500;            // Fixed near return (mount/cover) threshold.

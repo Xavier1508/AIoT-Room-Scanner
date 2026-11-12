@@ -35,7 +35,8 @@ MASTER_COLUMNS = [
     "yaw_half_steps", "yaw_deg", "servo_us", "tilt_deg",
     "hc_raw_mm", "hc_cal_mm", "hc_cm", "hc_valid_rate",
     "tof_raw_mm", "tof_cal_mm", "tof_cm", "tof_valid_rate", "tof_status",
-    "hlk_cm", "hlk_energy", "hlk_valid", "range_mm", "range_source",
+    "hlk_cm", "hlk_energy", "hlk_valid",
+    "rule_beep", "rule_zone", "rule_interval_ms", "range_mm", "range_source",
     "x_mm", "y_mm", "z_mm", "x_m", "y_m", "z_m",
     "is_valid", "is_mount", "is_ceiling",
     "sample_count", "sample_uptime_ms_first", "sample_uptime_ms_last",
@@ -188,6 +189,28 @@ def _ml_rows(session_dir, split="train"):
             if distance_value is not None:
                 previous_distance = distance_value
             label = frame.get("label") or session_dir.name.rsplit("-", 1)[-1]
+            moving = last.get("moving_distance_cm")
+            stationary = last.get("stationary_distance_cm")
+            try:
+                moving_value = float(moving) if moving is not None else 0.0
+                stationary_value = float(stationary) if stationary is not None else 0.0
+                rule_distance = (moving_value if (moving_value and
+                                 (not stationary_value or moving_value < stationary_value))
+                                 else stationary_value)
+                rule_energy = max(float(last.get("moving_energy") or 0.0),
+                                  float(last.get("stationary_energy") or 0.0))
+            except (TypeError, ValueError):
+                rule_distance = 0.0
+                rule_energy = 0.0
+            rule_beep = bool(30.0 <= rule_distance <= 75.0 and rule_energy >= 40.0)
+            if rule_beep:
+                rule_zone = (1 if rule_distance >= 63 else
+                             2 if rule_distance >= 52 else
+                             3 if rule_distance >= 41 else 4)
+                rule_interval = int(round(150 + (rule_distance - 30.0) / 45.0 * 1850))
+            else:
+                rule_zone = 0
+                rule_interval = 0
             rows.append({
                 "dataset_version": "v1",
                 "record_type": "hlk_frame",
@@ -208,6 +231,9 @@ def _ml_rows(session_dir, split="train"):
                 "stationary_energy": last.get("stationary_energy"),
                 "detection_cm": last.get("detection_distance_cm"),
                 "delta_distance_cm": delta,
+                "rule_beep": rule_beep,
+                "rule_zone": rule_zone,
+                "rule_interval_ms": rule_interval,
                 "hc_cm": frame.get("hc_cm"),
                 "tof_cm": frame.get("tof_cm"),
                 "source_file": str(frames_path),

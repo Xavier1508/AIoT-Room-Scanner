@@ -76,8 +76,16 @@ void App::stopAll() {
   hlkAlertEnabled_ = false;
   mlAlertEnabled_ = false;
   mlAlertActive_ = false;
-  mlAlertPolicy_.reset();
+  mlAlertIntervalMs_ = 0;
   mlAlertMuteReason_ = "disabled";
+  hlkDistanceCount_ = 0;
+  hlkDistanceIndex_ = 0;
+  hlkDistanceFiltered_ = 0.0f;
+  hlkDistanceLastFrameMs_ = 0;
+  hlkAlertLastMlInferences_ = 0;
+  mlGate_ = false;
+  mlGateConfirm_ = 0;
+  mlGateRelease_ = 0;
   safety_.stop();
 }
 bool App::beginPose(uint32_t now) {
@@ -107,12 +115,30 @@ void App::maybeHlkAlert(uint32_t now) {
     hlkAlertNextMs_ = 0;
     hlkAlertIntervalMs_ = 0;
     hlkAlertMuteReason_ = reason;
+    mlAlertActive_ = false;
+    mlAlertRawCm_ = 0;
+    mlAlertIntervalMs_ = 0;
+    mlAlertDistanceCm_ = 0.0f;
+    mlAlertZone_ = 0;
+    mlAlertMuteReason_ = reason;
   };
-  if (!hlkAlertEnabled_ || !hlkEnabled_ || !sensors_.running()) { mute("disabled"); return; }
+  if ((!hlkAlertEnabled_ && !mlAlertEnabled_) || !hlkEnabled_ || !sensors_.running()) {
+    mute("disabled");
+    return;
+  }
   if (scanMode_) { mute("scan_mode"); return; }
-  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) { mute("actuator_test"); return; }
-  if (stepper_.active() || stepperMovePending_ || servo_.active()) { mute("actuator_motion"); return; }
-  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < config::hlkAlertParkedStableMs) { mute("settle"); return; }
+  if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
+    mute("actuator_test");
+    return;
+  }
+  if (stepper_.active() || stepperMovePending_ || servo_.active()) {
+    mute("actuator_motion");
+    return;
+  }
+  if (lastMotionMs_ && uint32_t(now - lastMotionMs_) < config::hlkAlertParkedStableMs) {
+    mute("settle");
+    return;
+  }
   const auto& reading = hlk_.reading();
   if (!reading.received || uint32_t(now - reading.timestampMs) > config::hlkStaleMs) {
     mute("no_valid_hlk");
@@ -120,13 +146,64 @@ void App::maybeHlkAlert(uint32_t now) {
   }
   const uint16_t moving = reading.movingCm;
   const uint16_t stationary = reading.stationaryCm;
-  const uint16_t distance = moving && (!stationary || moving < stationary) ? moving : stationary;
-  const uint8_t energy = reading.movingEnergy > reading.stationaryEnergy ?
-      reading.movingEnergy : reading.stationaryEnergy;
-  if (!distance || energy < config::hlkAlertEnergy) { mute("no_target"); return; }
-  const uint16_t stopCm = config::hlkAlertMaxCm + config::hlkAlertHysteresisCm;
+  const uint16_t distance = moving && (!stationary || moving < stationary)
+      ? moving : stationary;
+  const uint8_t energy = reading.movingEnergy > reading.stationaryEnergy
+      ? reading.movingEnergy : reading.stationaryEnergy;
+  if (!distance || energy < config::hlkAlertEnergy) {
+    hlkDistanceCount_ = 0;
+    hlkDistanceIndex_ = 0;
+    hlkDistanceFiltered_ = 0.0f;
+    mute("no_target");
+    return;
+  }
+
+  // AI gate: the v3 classifier decides human/empty. The HLK rule only provides
+  // the range timing, so there is one beep source and no AI beep outside 75 cm.
+  // updateMlGate() runs every tick so the gate also follows the model while the
+  // target is out of range or absent.
+  if (mlAlertEnabled_) {
+    if (!ml_.ready() || !ml_.windowReady()) {
+      mute("ai_waiting_window");
+      return;
+    }
+    if (!mlGate_) {
+      mute("ai_empty");
+      return;
+    }
+  }
+
+  // Smooth the raw HLK distance per frame. The interval follows the filtered
+  // value; the range/stop test still uses the raw distance.
+  if (reading.timestampMs != hlkDistanceLastFrameMs_) {
+    hlkDistanceLastFrameMs_ = reading.timestampMs;
+    hlkDistanceHistory_[hlkDistanceIndex_] = distance;
+    hlkDistanceIndex_ = static_cast<uint8_t>((hlkDistanceIndex_ + 1) % 3);
+    if (hlkDistanceCount_ < 3) ++hlkDistanceCount_;
+    uint16_t a = hlkDistanceHistory_[0];
+    uint16_t b = hlkDistanceHistory_[1];
+    uint16_t c = hlkDistanceHistory_[2];
+    uint16_t median = a;
+    if (hlkDistanceCount_ >= 3) {
+      if (a > b) { const uint16_t t = a; a = b; b = t; }
+      if (b > c) { const uint16_t t = b; b = c; c = t; }
+      if (a > b) { const uint16_t t = a; a = b; b = t; }
+      median = b;
+    } else if (hlkDistanceCount_ == 2) {
+      median = static_cast<uint16_t>((uint32_t(a) + b) / 2);
+    }
+    hlkDistanceFiltered_ = hlkDistanceFiltered_ <= 0.0f
+        ? static_cast<float>(median)
+        : hlkDistanceFiltered_ * 0.65f + static_cast<float>(median) * 0.35f;
+  }
+
+  // In AI mode the stop is strict at 75 cm; the rule-only comparison keeps the
+  // 10 cm hysteresis.
+  const uint16_t stopCm = mlAlertEnabled_
+      ? config::hlkAlertMaxCm
+      : config::hlkAlertMaxCm + config::hlkAlertHysteresisCm;
   if (distance > stopCm) {
-    if (hlkAlertActive_) event("hlk_proximity_alert_ramp_stopped");
+    if (hlkAlertActive_) event("range_alert_ramp_stopped");
     mute("out_of_range");
     return;
   }
@@ -143,54 +220,59 @@ void App::maybeHlkAlert(uint32_t now) {
     }
     hlkAlertActive_ = true;
     hlkAlertNextMs_ = now;
-    event("hlk_proximity_alert_ramp_started");
+    event(mlAlertEnabled_ ? "ai_gate_range_alert_started"
+                          : "hlk_proximity_alert_ramp_started");
   }
-  const uint16_t d = distance < config::hlkAlertMinCm ? config::hlkAlertMinCm :
-      (distance > config::hlkAlertMaxCm ? config::hlkAlertMaxCm : distance);
+  const float filtered = hlkDistanceFiltered_ > 0.0f
+      ? hlkDistanceFiltered_ : static_cast<float>(distance);
+  const float d = filtered < config::hlkAlertMinCm ? config::hlkAlertMinCm
+      : (filtered > config::hlkAlertMaxCm ? config::hlkAlertMaxCm : filtered);
   const uint32_t span = config::hlkAlertMaxCm - config::hlkAlertMinCm;
-  const uint32_t interval = span ?
-      config::hlkAlertMaxIntervalMs -
-      ((config::hlkAlertMaxIntervalMs - config::hlkAlertMinIntervalMs) * (config::hlkAlertMaxCm - d) / span) :
-      config::hlkAlertMinIntervalMs;
+  const uint32_t interval = span
+      ? config::hlkAlertMaxIntervalMs -
+        ((config::hlkAlertMaxIntervalMs - config::hlkAlertMinIntervalMs) *
+         (config::hlkAlertMaxCm - static_cast<uint16_t>(d)) / span)
+      : config::hlkAlertMinIntervalMs;
   hlkAlertIntervalMs_ = static_cast<uint16_t>(interval);
-  hlkAlertLastDistanceCm_ = distance;
+  hlkAlertLastDistanceCm_ = static_cast<uint16_t>(d);
   hlkAlertLastEnergy_ = energy;
   hlkAlertMuteReason_ = "active";
+  if (mlAlertEnabled_) {
+    mlAlertActive_ = true;
+    mlAlertDistanceCm_ = filtered;
+    mlAlertRawCm_ = distance;
+    mlAlertIntervalMs_ = hlkAlertIntervalMs_;
+    mlAlertZone_ = filtered >= 63.0f ? 1
+        : filtered >= 52.0f ? 2
+        : filtered >= 41.0f ? 3 : 4;
+    mlAlertMuteReason_ = "ai_range";
+  }
   if (buzzer_.active()) return;
   if (hlkAlertNextMs_ && int32_t(now - hlkAlertNextMs_) < 0) return;
   buzzer_.alert(now, config::hlkAlertBeepMs);
   hlkAlertNextMs_ = now + interval;
   ++hlkAlertCount_;
 }
-void App::maybeMlAlert(uint32_t now) {
-  MlAlertInputs in;
-  in.now = now;
-  in.enabled = mlAlertEnabled_;
-  if (scanMode_) { in.muted = true; in.muteReason = "scan_mode"; }
-  else if (otaActive()) { in.muted = true; in.muteReason = "ota"; }
-  else if (!sensors_.running()) { in.muted = true; in.muteReason = "sensors_off"; }
-  else if (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked) {
-    in.muted = true; in.muteReason = "actuator_test";
-  } else if (stepper_.active() || stepperMovePending_ || servo_.active()) {
-    in.muted = true; in.muteReason = "actuator_motion";
+void App::updateMlGate() {
+  if (!mlAlertEnabled_ || !ml_.ready() || !ml_.windowReady()) {
+    mlGate_ = false;
+    mlGateConfirm_ = 0;
+    mlGateRelease_ = 0;
+    return;
   }
-  const auto& reading = hlk_.reading();
-  const bool fresh = hlkEnabled_ && reading.received &&
-      uint32_t(now - reading.timestampMs) <= config::hlkStaleMs;
-  in.movingEnergy = fresh ? reading.movingEnergy : 0;
-  in.hlkTimestampMs = fresh ? reading.timestampMs : 0;
-  in.ruleActive = hlkAlertActive_;
-  in.modelReady = ml_.ready();
-  in.windowReady = ml_.windowReady();
-  in.modelHuman = ml_.label() == "human";
-  in.confidence = ml_.confidence();
-  const MlAlertOutput out = mlAlertPolicy_.update(in);
-  mlAlertActive_ = out.active;
-  mlAlertMuteReason_ = out.reason;
-  if (out.beep) {
-    buzzer_.alert(now, config::hlkAlertBeepMs);
-    ++mlAlertCount_;
+  if (ml_.inferences() == hlkAlertLastMlInferences_) return;
+  hlkAlertLastMlInferences_ = ml_.inferences();
+  const bool human = ml_.label() == "human" &&
+      ml_.confidence() >= config::mlAlertConfidence;
+  if (human) {
+    if (mlGateConfirm_ < 255) ++mlGateConfirm_;
+    mlGateRelease_ = 0;
+  } else {
+    mlGateConfirm_ = 0;
+    if (mlGateRelease_ < 255) ++mlGateRelease_;
   }
+  if (!mlGate_ && mlGateConfirm_ >= 2) mlGate_ = true;
+  if (mlGate_ && mlGateRelease_ >= 2) mlGate_ = false;
 }
 void App::clearQueue() {
   CommandRequest discarded;
@@ -264,7 +346,7 @@ String App::execute(Command command) {
         hlkEnabled_ = true;
       }
       sensors_.start(now);
-      hlkAlertEnabled_ = true;
+      hlkAlertEnabled_ = !mlAlertEnabled_;
       event("all_sensor_polling_started_no_actuator_motion");
       return result(true, "sensors_started_check_status_for_validity");
     }
@@ -297,6 +379,12 @@ String App::execute(Command command) {
   if (command == Command::HlkAlertOn || command == Command::HlkAlertOff) {
     if (command == Command::HlkAlertOn && !hlkEnabled_) return result(false, "hlk_not_enabled");
     hlkAlertEnabled_ = command == Command::HlkAlertOn;
+    if (hlkAlertEnabled_) {
+      mlAlertEnabled_ = false;
+      mlGate_ = false;
+      mlGateConfirm_ = 0;
+      mlGateRelease_ = 0;
+    }
     event(hlkAlertEnabled_ ? "hlk_proximity_alert_enabled" : "hlk_proximity_alert_disabled");
     return result(true, hlkAlertEnabled_ ? "hlk_alert_enabled" : "hlk_alert_disabled");
   }
@@ -305,7 +393,13 @@ String App::execute(Command command) {
       return result(false, "ml_not_ready");
     }
     mlAlertEnabled_ = command == Command::MlAlertOn;
-    mlAlertPolicy_.reset();
+    if (mlAlertEnabled_) {
+      hlkAlertEnabled_ = false;
+      mlGate_ = false;
+      mlGateConfirm_ = 0;
+      mlGateRelease_ = 0;
+      mlAlertActive_ = false;
+    }
     event(mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
     return result(true, mlAlertEnabled_ ? "ml_alert_enabled" : "ml_alert_disabled");
   }
@@ -553,6 +647,7 @@ void App::publish(uint32_t now) {
         (stepper_.active() || stepperMovePending_ ? "true" : "false") +
         ",\"alert_muted\":" + (scanMode_ ? "true" : "false") + "}";
    s += String(",\"hlk_alert\":{\"enabled\":") + (hlkAlertEnabled_ ? "true" : "false") +
+        ",\"ai_gate\":" + (mlAlertEnabled_ ? "true" : "false") +
         ",\"state\":" + jsonQuote(hlkAlertActive_ ? "active" : "idle") +
         ",\"mute_reason\":" + jsonQuote(hlkAlertMuteReason_) +
         ",\"min_cm\":" + config::hlkAlertMinCm +
@@ -570,19 +665,18 @@ void App::publish(uint32_t now) {
         ",\"last_energy\":" + hlkAlertLastEnergy_ + "}";
    s += String(",\"ml_alert\":{\"enabled\":") + (mlAlertEnabled_ ? "true" : "false") +
         ",\"active\":" + (mlAlertActive_ ? "true" : "false") +
-        ",\"mode\":" + jsonQuote(mlAlertModeName(mlAlertPolicy_.mode())) +
+        ",\"mode\":" + jsonQuote(mlAlertMuteReason_) +
         ",\"mute_reason\":" + jsonQuote(mlAlertMuteReason_) +
         ",\"class\":" + jsonQuote(ml_.label()) +
         ",\"confidence\":" + String(ml_.confidence(), 3) +
-        ",\"threshold\":" + String(config::mlAlertConfidence, 2) +
-        ",\"interval_ms\":" + config::mlAlertIntervalMs +
-        ",\"trigger_count\":" + mlAlertPolicy_.triggerCount() +
-        ",\"confirm_count\":" + mlAlertPolicy_.confirmCount() +
-        ",\"veto_count\":" + mlAlertPolicy_.vetoCount() +
-        ",\"release_count\":" + mlAlertPolicy_.releaseCount() +
-        ",\"unconfirmed_count\":" + mlAlertPolicy_.unconfirmedCount() +
-        ",\"last_transition_ms\":" + mlAlertPolicy_.lastTransitionMs() +
-        ",\"count\":" + mlAlertCount_ + "}";
+        ",\"distance_cm\":" + String(mlAlertDistanceCm_, 1) +
+        ",\"raw_cm\":" + mlAlertRawCm_ +
+        ",\"zone\":" + mlAlertZone_ +
+        ",\"interval_ms\":" + mlAlertIntervalMs_ +
+        ",\"count\":" + hlkAlertCount_ +
+        ",\"gate\":" + (mlGate_ ? "true" : "false") +
+        ",\"rule_active\":" + (hlkAlertActive_ ? "true" : "false") +
+        ",\"rule_mode\":" + (hlkAlertEnabled_ ? "true" : "false") + "}";
    s += String(",\"hlk\":{\"enabled\":") + (hlkEnabled_ ? "true" : "false") +
        ",\"valid\":" + (valid ? "true" : "false") + ",\"stale\":" + (reading.received && !valid ? "true" : "false") +
        ",\"received\":" + (reading.received ? "true" : "false") + ",\"uart_bytes\":" + hlkBytes_ +
@@ -662,7 +756,6 @@ void App::tick() {
     hlk_.expire(now);
   }
   sensors_.tick(now);
-  maybeHlkAlert(now);
   {
     const auto& mlReading = hlk_.reading();
     const bool mlHlkValid = hlkEnabled_ && mlReading.received &&
@@ -672,7 +765,8 @@ void App::tick() {
         (safety_.mode() != Mode::Idle && safety_.mode() != Mode::Parked);
     ml_.update(now, mlReading, mlHlkValid, sensors_.running(), mlBusy);
   }
-  maybeMlAlert(now);
+  updateMlGate();
+  maybeHlkAlert(now);
   network_.tick(now);
   if (uint32_t(now - lastPublish_) >= 200) publish(now);
   const uint32_t reboot = rebootAt_.load();

@@ -17,6 +17,7 @@ class MlClassifier {
   bool windowReady() const { return windowReady_; }
   const String& label() const { return label_; }
   float confidence() const { return confidence_; }
+  uint32_t inferences() const { return inferences_; }
 
  private:
   static constexpr uint8_t kWindow = 32;

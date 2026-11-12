@@ -322,7 +322,7 @@ def export_run(scan_id: str, clean: bool = False, run_label: str = "",
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation,
         annotations=annotations, mirror_y=mirror_y,
         mirror_center_m=mirror_center,
-        snap_wall_objects=snap_wall_objects)
+        snap_wall_objects=snap_wall_objects, add_anchors=True)
     boxes = reconstruction.get("boxes") or []
     mount_row_set = set(reconstruction.get("mount_rows") or [])
     ceiling_row_set = set(reconstruction.get("ceiling_rows") or [])

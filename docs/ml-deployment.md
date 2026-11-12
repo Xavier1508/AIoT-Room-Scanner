@@ -30,15 +30,16 @@ buzzer every 700 ms; rule HLK keeps priority. Artifact:
 bytes**, SHA-256
 `5ce5350f2e820c808d3c46d3453502e5506ef0d3fbbaee3e7c8b2f2aff3c3e08`.
 
-**`0.9.0-hybrid-alert` is the current firmware.** It retrains the 32-frame model
-on four sessions (v3) and adds the hybrid policy: HLK `moving_energy >= 70` for
-two frames starts a provisional 700 ms beep; the model confirms `human >= 0.80`;
-a confident empty model vetoes after 6.5 s; HLK `moving_energy < 20` for 1 s
-releases. The 30–75 cm parking rule remains active and takes priority while
-beeping. Artifact:
-`analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
+**`0.9.3-ai-gated-rule` is the current firmware.** It retrains the 32-frame
+model on four sessions (v3) and gates the existing 30–75 cm HLK range rule with
+the AI prediction: the buzzer may sound only when the model says `human` with
+confidence >= 0.80 **and** the target is 30–75 cm. The interval still comes from
+the filtered HLK distance (150 ms near 30 cm, 2000 ms at 75 cm), so there is one
+beep source and no AI beep outside the range. `hlk_alert_on` is the rule-only
+comparison mode (any object) for the exam evaluation. Artifact:
+`analysis/platformio/build-20261112T022751083Z/firmware.bin`, **942,720
 bytes**, SHA-256
-`98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
+`c82805bc5c8015e7af1b560bd6eedddadcdfddd4b32210ac68e6299251c0c6fb`.
 It is OTA-installed from `app0` and reports `ready=true`, model
 `hlk-cnn-20261111T162517Z-logits`, arena **5,128 bytes**.
 
@@ -78,31 +79,28 @@ It is OTA-installed from `app0` and reports `ready=true`, model
 
 ## Firmware behavior
 
-- Version: `0.9.0-hybrid-alert`.
+- Version: `0.9.3-ai-gated-rule`.
 - Library: `nickjgniklu/ESP_TF@2.1.1` (TensorFlow Lite Micro + ESP-NN).
 - Tensor arena: 64 KiB static; the retained build uses **116,576 bytes RAM
-  (35.6%)** including the model; the live allocator reports only
-  **5,128 bytes** used for the logits model.
-- The classifier only runs when:
-  - sensors are running,
-  - HLK is valid and fresh,
-  - scan mode is off,
-  - no servo/stepper motion or actuator test is active,
-  - a full 32-frame window has been collected.
-- It resets the window after scan/motion/invalid data. After the reset it
-  needs about 6.4 s to fill 32 frames at 5 Hz.
-- The **30–75 cm HLK parking rule is independent** and active by default after
-  `sensors_start` (`hlk_alert_off` disables it). Its interval ramps from 150 ms
-  near 30 cm to 2000 ms at 75 cm (closer = faster); while it beeps, the AI alert
-  is muted with `rule_priority`. This is intentional parking-sensor behavior.
-- `ml_alert_on` enables the hybrid AI path: HLK `moving_energy >= 70` for two
-  frames starts a provisional 700 ms beep; model `human >= 0.80` confirms; a
-  confident empty model vetoes after 6.5 s; HLK `moving_energy < 20` for 1 s
-  releases. The beep rhythm continues during the 1 s release hold and stops
-  after it. Both the rule and AI can be enabled at the same time.
-- The model can also start the alert directly when it says `human >= 0.80`,
-  even if HLK movement is below the fast trigger (slow movement). All paths are
-  muted during scan/OTA/actuator motion or when sensors are off.
+  (35.6%)** including the v3 model; the live allocator reports only
+  **5,128 bytes**.
+- The classifier only runs when sensors are running, HLK is valid and fresh,
+  scan mode is off, no servo/stepper motion or actuator test is active, and a
+  full 32-frame window has been collected. It resets after scan/motion/invalid
+  data and needs about 6.4 s to refill 32 frames at 5 Hz.
+- **`ml_alert_on` = AI-gated range beeper.** The v3 model must say `human`
+  with confidence >= 0.80 for two consecutive inferences, and the raw HLK rule
+  distance must be 30-75 cm. The beep interval comes from the distance filtered
+  with a 3-frame median + EMA (150 ms at 30 cm, 2000 ms at 75 cm). There is no
+  AI beep outside 75 cm; the stop is strict at 75 cm in this mode.
+- **`hlk_alert_on` = rule-only comparison mode** (any object, 30-75 cm, 10 cm
+  hysteresis). It is the baseline for the exam comparison; the two modes are
+  exclusive. `sensors_start` defaults to the rule mode; `ml_alert_on` switches
+  to the AI gate.
+- The first human detection from a completely empty room still needs the 32-frame
+  window (about 6.4 s). Once the model is `human`, entering 75 cm triggers the
+  range beep immediately; the demo starts with the person already in the room.
+  All modes are muted during scan/OTA/actuator motion or when sensors are off.
 
 ## Build
 
@@ -125,10 +123,10 @@ analysis/platformio/build-<utc>/
 ```
 
 The installed artifact is
-`analysis/platformio/build-20261111T172341526Z/firmware.bin`, **945,280
+`analysis/platformio/build-20261112T022751083Z/firmware.bin`, **942,720
 bytes**, SHA-256
-`98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`
-(`0.9.0-hybrid-alert`). The earlier `0.8.3` and `0.8.1` artifacts remain as
+`c82805bc5c8015e7af1b560bd6eedddadcdfddd4b32210ac68e6299251c0c6fb`
+(`0.9.3-ai-gated-rule`). The earlier `0.8.3` and `0.8.1` artifacts remain as
 known-good fallbacks: `0.8.0` installed but reported `ml_init_failed` because
 the model uses `MEAN` and the resolver did not register it; `0.8.1` adds
 `resolver.AddMean()` and a 10-op resolver.
@@ -141,7 +139,7 @@ state, then upload only `firmware.bin`:
 ```powershell
 $py = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
 & $py -B .\tools\ops\device.py status
-& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261111T172341526Z\firmware.bin --expect-version 0.9.0-hybrid-alert
+& $py -B .\tools\ops\device.py ota .\analysis\platformio\build-20261112T022751083Z\firmware.bin --expect-version 0.9.3-ai-gated-rule
 ```
 
 Do not upload `bootloader.bin`, `partitions.bin`, or `boot_app0.bin` through the

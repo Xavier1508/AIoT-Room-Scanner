@@ -632,7 +632,7 @@ class Handler(BaseHTTPRequestHandler):
                     _points(scan_id), yaw_scale=yaw_scale,
                     map_rotation_deg=map_rotation, annotations=annotations,
                     mirror_y=mirror_y, mirror_center_m=mirror_center,
-                    snap_wall_objects=snap_wall)
+                    snap_wall_objects=snap_wall, add_anchors=True)
                 reconstruction["sensor_height_m"] = _sensor_height_m(scan_id)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),
@@ -692,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
                     _points(scan_id), yaw_scale=yaw_scale,
                     map_rotation_deg=map_rotation, annotations=annotations,
                     mirror_y=mirror_y, mirror_center_m=mirror_center,
-                    snap_wall_objects=snap_wall)
+                    snap_wall_objects=snap_wall, add_anchors=True)
                 reconstruction["sensor_height_m"] = _sensor_height_m(scan_id)
                 return self._send(200, {"ok": True, "scan_id": scan_id,
                                         "annotations": reconstruction.get("annotations", annotations),

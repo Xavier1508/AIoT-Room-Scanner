@@ -15,7 +15,22 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
+from common import RESEARCH, read_json
+
 WALL_LABELS = ("wall", "wall_edge")
+
+# Known object anchors from the clean 8-sample reference scan
+# 20261110T184241Z (Mirror Y ON, map rotation -1.1 deg). They keep the bed and
+# fan at their usual places even when a fast scan has too few points to fit
+# them reliably. research/mapping/object_anchors.json may override these.
+DEFAULT_ANCHORS = (
+    {"label": "bed", "cx_m": 1.346, "cy_m": 0.004, "angle_deg": -1.2,
+     "length_m": 2.0, "width_m": 1.2, "z_bottom_m": 0.0, "z_top_m": 0.62,
+     "match_m": 0.75, "source": "reference-20261110T184241Z"},
+    {"label": "fan", "cx_m": 0.822, "cy_m": 1.254, "angle_deg": 81.8,
+     "length_m": 0.508, "width_m": 0.446, "z_bottom_m": 0.0, "z_top_m": 0.538,
+     "match_m": 0.60, "source": "reference-20261110T184241Z"},
+)
 
 
 def _sensor_anchor(annotations, mirror_y, mirror_center_m):
@@ -319,7 +334,91 @@ def _resolve_box_id(value, boxes):
     return best_id if best_distance <= 0.80 else None
 
 
-def apply_annotations(result, annotations):
+def _anchor_items(annotations):
+    items = (annotations or {}).get("anchors")
+    if not items:
+        try:
+            items = read_json(RESEARCH / "object_anchors.json", {}).get("anchors")
+        except (OSError, ValueError):
+            items = None
+    return items or list(DEFAULT_ANCHORS)
+
+
+def _apply_anchors(boxes, annotations):
+    """Snap the known bed/fan anchors onto measured boxes, or add a prior.
+
+    The anchors are the tape/reference positions from the 8-sample scan. A new
+    scan keeps them even when its point cloud is sparse; a measured box near an
+    anchor is snapped to the reference centre/angle/size so the bed and fan are
+    always placed at their usual positions.
+    """
+    anchors = _anchor_items(annotations)
+    matches = []
+    for index, anchor in enumerate(anchors):
+        if not isinstance(anchor, dict):
+            continue
+        label = str(anchor.get("label") or "").strip()[:24]
+        if not label:
+            continue
+        try:
+            cx = float(anchor.get("cx_m", 0.0))
+            cy = float(anchor.get("cy_m", 0.0))
+            angle = float(anchor.get("angle_deg", 0.0))
+            length = max(0.05, min(10.0, float(anchor.get("length_m", 0.2))))
+            width = max(0.05, min(10.0, float(anchor.get("width_m", 0.2))))
+            z0 = max(0.0, min(4.0, float(anchor.get("z_bottom_m", 0.0))))
+            z1 = max(z0 + 0.05, min(4.0, float(anchor.get("z_top_m", 0.6))))
+            match_m = max(0.05, min(2.0, float(anchor.get("match_m", 0.6))))
+        except (TypeError, ValueError):
+            continue
+        labelled = [box for box in boxes if str(box.get("label")) == label]
+        candidates = labelled
+        candidate = None
+        if candidates:
+            candidate = min(
+                candidates,
+                key=lambda box: math.hypot(float(box.get("cx_m", 0.0)) - cx,
+                                           float(box.get("cy_m", 0.0)) - cy))
+            distance = math.hypot(float(candidate.get("cx_m", 0.0)) - cx,
+                                  float(candidate.get("cy_m", 0.0)) - cy)
+            if distance > match_m:
+                candidate = None
+        if candidate is not None:
+            candidate.update({
+                "cx_m": round(cx, 3), "cy_m": round(cy, 3),
+                "angle_deg": round(angle, 3),
+                "length_m": round(length, 3), "width_m": round(width, 3),
+                "z_bottom_m": round(z0, 3), "z_top_m": round(z1, 3),
+                "label": label, "label_source": "anchor",
+                "source": "anchor",
+                "anchor_source": str(anchor.get("source", "reference")),
+                "size_source": "anchor", "angle_source": "anchor",
+            })
+            matches.append({"label": label, "box_id": str(candidate.get("id")),
+                            "matched": True,
+                            "distance_m": round(distance, 3)})
+            continue
+        box = {
+            "id": f"anchor:{index}:{label}",
+            "label": label, "label_source": "anchor", "source": "anchor",
+            "anchor_source": str(anchor.get("source", "reference")),
+            "size_source": "anchor", "angle_source": "anchor",
+            "cx_m": round(cx, 3), "cy_m": round(cy, 3),
+            "angle_deg": round(angle, 3),
+            "length_m": round(length, 3), "width_m": round(width, 3),
+            "z_bottom_m": round(z0, 3), "z_top_m": round(z1, 3),
+            "points": 0,
+        }
+        corners = _box_corners_xy(box)
+        box["distance_m"] = round(math.hypot(cx, cy), 2)
+        box["nearest_m"] = round(min(math.hypot(x, y) for x, y in corners), 2)
+        boxes.append(box)
+        matches.append({"label": label, "box_id": box["id"],
+                        "matched": False, "distance_m": None})
+    return anchors, matches
+
+
+def apply_annotations(result, annotations, add_anchors=False):
     """Apply manual label overrides, hidden boxes and pairwise merges."""
     annotations = annotations or {}
     labels = annotations.get("labels") or {}
@@ -430,6 +529,10 @@ def apply_annotations(result, annotations):
             box["label_source"] = "manual"
             resolved_labels[str(box["id"])] = str(override)[:24]
     boxes.extend(manual_boxes)
+    if add_anchors:
+        anchors, anchor_matches = _apply_anchors(boxes, annotations)
+    else:
+        anchors, anchor_matches = [], []
     boxes = [box for box in boxes if str(box.get("id")) not in hidden]
     boxes.sort(key=lambda box: (box.get("label") not in WALL_LABELS,
                                 -int(box.get("points", 0))))
@@ -445,6 +548,8 @@ def apply_annotations(result, annotations):
         "room": annotations.get("room") or {},
         "point_labels": annotations.get("point_labels") or {},
         "label_catalog": annotations.get("label_catalog") or {},
+        "anchors": anchors,
+        "anchor_matches": anchor_matches,
     }
     result["annotation_count"] = (len(resolved_labels) + len(resolved_sizes)
                                   + len(hidden) + len(resolved_merges)
@@ -560,7 +665,8 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                        mount_guard_z_m=0.72, fov_limit_deg=60,
                        yaw_scale=0.76, map_rotation_deg=10.7,
                        annotations=None, mirror_y=False,
-                       mirror_center_m=0.0, snap_wall_objects=False):
+                       mirror_center_m=0.0, snap_wall_objects=False,
+                       add_anchors=False):
     try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):
@@ -644,10 +750,11 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                   "mirror_y": bool(mirror_y),
                   "mirror_center_m": round(float(mirror_center_m), 3),
                   "snap_wall_objects": bool(snap_wall_objects),
+                  "add_anchors": bool(add_anchors),
                   "near_field_m": near_field_m,
                   "mount_guard_m": mount_guard_m,
                   "note": "No points after near-mount filtering."}
-        return apply_annotations(result, annotations)
+        return apply_annotations(result, annotations, add_anchors)
 
     cells = defaultdict(list)
     for point in points:
@@ -772,13 +879,14 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
         "mirror_y": bool(mirror_y),
         "mirror_center_m": round(float(mirror_center_m), 3),
         "snap_wall_objects": bool(snap_wall_objects),
+        "add_anchors": bool(add_anchors),
         "near_field_m": near_field_m,
         "mount_guard_m": mount_guard_m,
         "note": ("Estimated boxes from one fixed viewpoint; hidden sides are inferred. "
                  "Occluded sectors have too few returns. Near-field mount returns are hidden. "
                  "Yaw scale is provisional until a known-target calibration."),
     }
-    return apply_annotations(result, annotations)
+    return apply_annotations(result, annotations, add_anchors)
 
 
 def _axis_residual_deg(angle_deg):

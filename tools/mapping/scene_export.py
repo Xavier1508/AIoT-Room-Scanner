@@ -218,7 +218,7 @@ def export_scene(scan_id: str, yaw_scale: float = 1.0,
         rows, yaw_scale=yaw_scale, map_rotation_deg=map_rotation_deg,
         annotations=annotations, mirror_y=mirror_y,
         mirror_center_m=mirror_center_m,
-        snap_wall_objects=bool(snap_wall_objects))
+        snap_wall_objects=bool(snap_wall_objects), add_anchors=True)
     mount_rows = set(int(index) for index in (reconstruction.get("mount_rows") or []))
     rotation_ca = math.cos(math.radians(map_rotation_deg))
     rotation_sa = math.sin(math.radians(map_rotation_deg))

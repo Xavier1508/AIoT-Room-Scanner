@@ -1,15 +1,18 @@
 # Handoff notes — AIoT ESP32-S3 room scanner
 
-Updated: 2026-11-12. Current firmware: `0.9.0-hybrid-alert` (v3 logits model +
-hybrid HLK/AI alert). ML live (`ready=true`, model `…-v3-logits`, arena 5,128
-bytes). The AI hybrid is verified on 9V: HLK `moving_energy >= 70` starts a
-provisional 700 ms beep, model `human >= 0.80` confirms, HLK no-motion releases
-after 1 s; the 30–75 cm parking rule remains active and has priority with a
-distance-dependent 150–2000 ms interval (closer = faster). The earlier
-`0.8.2-ml-alert` crash was the ESP_TF Softmax Prepare path, not corruption; the
-fix strips the Softmax op (`tools/mapping/ml/strip_softmax.py`) and computes
-softmax in float32 on the ESP32. The two 30-point validation scans are dirty
-(operator active); the clean full scan is deferred.
+Updated: 2026-11-12. Current firmware: `0.9.3-ai-gated-rule` (v3 logits model
++ AI-gated range beeper). ML live (`ready=true`, model
+`hlk-cnn-20261111T162517Z-logits`, arena 5,128 bytes). `ml_alert_on` requires
+the v3 `human` prediction (confidence >= 0.80, two inferences) and a raw HLK
+distance of 30-75 cm; the HLK range rule sets the 150-2000 ms interval from the
+filtered distance. No AI beep occurs outside 75 cm; `hlk_alert_on` is the
+rule-only comparison mode. The earlier `0.8.2-ml-alert` crash was the ESP_TF
+Softmax Prepare path, not corruption; the fix strips the Softmax op
+(`tools/mapping/ml/strip_softmax.py`) and computes softmax in float32 on the
+ESP32. The two 30-point validation scans are dirty (operator active); the fast
+full scan `20261111T154814Z` is a coverage/timing check, not the map. The
+8-sample reference `20261110T184241Z` and its object anchors (bed/fan) are
+canonical; the slow 8-sample scan is pending an empty-room confirmation.
 A unified master dataset exists at
 `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259 rows, timestamped,
 labels empty/human). The current
@@ -27,9 +30,9 @@ rotation `-1.1°`, measured bed/fan labels and no prior bed; see
 - Local 3D/2D mapping dashboard, per-scan priors, Mirror Y, auto-align, PLY
   export and a **TFLite Micro empty/human classifier**. The rule HLK path
   remains the buzzer/safety fallback.
-- Installed firmware: `0.9.0-hybrid-alert`, 945,280 bytes (including the
+- Installed firmware: `0.9.3-ai-gated-rule`, 942,720 bytes (including the
   14,528-byte v3 logits model), RAM 116,576 bytes (35.6%), SHA-256
-  `98e9261c96a4e885f82290295c80fa9f12190f66526f2d67234535be02698fa3`.
+  `c82805bc5c8015e7af1b560bd6eedddadcdfddd4b32210ac68e6299251c0c6fb`.
   The `0.8.3` and `0.8.1` artifacts remain as fallbacks. See
   `docs/ml-deployment.md`.
   The earlier `0.8.1` artifact (940,592 bytes, SHA-256 `3d19fa9b…130e`) is the
