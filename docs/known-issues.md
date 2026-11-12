@@ -286,3 +286,13 @@ remained available during the experimental console failures.
 Failed-run logs, hashes and user-authorized research audit are retained locally.
 Build scratch/objects/ELFs are automatically purged. Do not infer a successful
 hardware or network result from a retained binary or a compiler success line.
+
+**Brownout during fast tracking (2026-11-12):** the board brownout-reset
+during the fast local Track test (`brownout_reset=true`, `reset_reason=9`).
+The sensors stopped and the stepper rejected a nudge (`Stepper nudge rejected:
+None`), leaving the arm at -25 deg. It was parked manually at 0, the servo
+released, and sensors restarted (health OK). The 9V jack/battery is the
+suspect. Do not start another Track until the 9V is verified; a brownout is a
+hard stop, not a software retry. The fast acquisition, ESP cache, radar arc
+and large HUD are implemented and unit-tested, but a full live demo pass is
+pending this supply check.

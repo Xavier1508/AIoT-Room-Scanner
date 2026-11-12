@@ -276,6 +276,90 @@ body:not(.show-advanced) #cloud-stats { display: none; }
 .status-value.bad { color: var(--danger); }
 .status-value.dim { color: var(--dim); }
 
+.demo-hud {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, .8fr);
+  gap: 6px 24px;
+  align-items: center;
+  margin: 0 0 var(--gap);
+  padding: 18px 22px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 92, 26, .08), transparent 45%),
+    var(--panel);
+}
+.demo-hud.is-ok { border-left-color: var(--ok); }
+.demo-hud.is-warn { border-left-color: var(--warn); }
+.demo-hud.is-bad { border-left-color: var(--danger); }
+.hud-main { min-width: 0; }
+.hud-kicker {
+  color: var(--dim);
+  font: 10px/1.2 var(--font-mono);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.hud-state {
+  margin-top: 6px;
+  color: var(--text);
+  font: 700 clamp(30px, 4.2vw, 52px)/1.02 var(--font-sans);
+  letter-spacing: .01em;
+}
+.hud-state.ok { color: var(--ok); }
+.hud-state.warn { color: var(--warn); }
+.hud-state.bad { color: var(--danger); }
+.hud-state.dim { color: var(--dim); }
+.hud-sub {
+  margin-top: 7px;
+  color: var(--muted);
+  font: 11px/1.4 var(--font-mono);
+}
+.hud-metrics {
+  display: flex;
+  gap: 28px;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+.hud-metric { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+.hud-label {
+  color: var(--dim);
+  font: 9px/1.2 var(--font-mono);
+  letter-spacing: .16em;
+}
+.hud-value {
+  color: var(--text);
+  font: 600 clamp(24px, 2.8vw, 38px)/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.hud-value.ok { color: var(--ok); }
+.hud-value.warn { color: var(--warn); }
+.hud-value.dim { color: var(--dim); }
+.hud-progress {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 10px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+.hud-progress > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .2s linear;
+}
+.demo-hud.is-ok .hud-progress > div { background: var(--ok); }
+.hud-hint {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  color: var(--dim);
+  font: 10px/1.4 var(--font-mono);
+}
+@media (max-width: 760px) {
+  .demo-hud { grid-template-columns: 1fr; }
+  .hud-metrics { justify-content: flex-start; }
+}
+
 .signal-chain {
   display: grid;
   grid-template-columns: 1fr 26px 1fr 26px 1fr 26px 1fr;

@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIoT Room Mapping · PC Dashboard</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css?v=20261124">
+<link rel="stylesheet" href="/static/style.css?v=20261127">
 <header class="topbar">
   <div class="brand">
     <h1>AIoT Room Mapping <span class="muted">/ PC dashboard</span></h1>
@@ -82,6 +82,19 @@
 </section>
 
 <section id="tab-cloud" class="tab active">
+  <div class="demo-hud" id="demo-hud">
+    <div class="hud-main">
+      <div class="hud-kicker">TRACK / GUARD</div>
+      <div class="hud-state dim" id="hud-state">OFF</div>
+      <div class="hud-sub" id="hud-sub">Pilih Track atau Guard.</div>
+    </div>
+    <div class="hud-metrics">
+      <div class="hud-metric"><span class="hud-label">JARAK</span><span class="hud-value dim" id="hud-distance">—</span></div>
+      <div class="hud-metric"><span class="hud-label">ARAH</span><span class="hud-value dim" id="hud-bearing">—</span></div>
+    </div>
+    <div class="hud-progress"><div id="hud-progress-fill"></div></div>
+    <div class="hud-hint" id="hud-hint">Berdiri di dalam ruangan, 1–2 m dari sensor.</div>
+  </div>
   <div class="status-strip" id="demo-status-strip">
     <div class="status-item"><span class="status-label">Mode</span><span id="demo-mode" class="status-value dim">OFF</span></div>
     <div class="status-item"><span class="status-label">Track</span><span id="demo-track" class="status-value dim">—</span></div>
@@ -270,6 +283,10 @@
       </aside>
     </div>
   </section>
+  <details class="card demo-advanced" id="track-debug">
+    <summary>Track debug (sweep samples)</summary>
+    <pre id="track-debug-text">—</pre>
+  </details>
 </section>
 
 <section id="tab-presence" class="tab">
@@ -411,10 +428,10 @@
 </section>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<footer class="note">Dashboard PC ini berjalan terpisah dari web diagnostik ESP32. Default bind 127.0.0.1; jangan port-forward ke internet.</footer>
+<footer class="note">Dashboard PC ini berjalan terpisah dari web diagnostik ESP32. Default bind 127.0.0.1; jangan port-forward ke internet. <span id="ui-build">UI 20261127 · track 725 + fast lock</span></footer>
 <script type="importmap">
 {"imports": {"three": "/static/vendor/three.module.js"}}
 </script>
-<script type="module" src="/static/scene3d.js?v=20261124"></script>
-<script src="/static/app.js?v=20261124"></script>
+<script type="module" src="/static/scene3d.js?v=20261127"></script>
+<script src="/static/app.js?v=20261127"></script>
 </html>

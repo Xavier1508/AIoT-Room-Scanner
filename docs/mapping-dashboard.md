@@ -291,15 +291,16 @@ fold 87.96%, human recall 79.1%). Screenshots:
 `analysis/mapping/dashboard-20261112-ui/`. Live evidence:
 `docs/live-gate-test.md`.
 
-**Demo tab (2026-11-12):** the default tab now shows the map and only
-`Track` / `Guard` / `Stop`. **Track** runs a sequential ±60° sweep at 725 µs,
-compares ToF with the measured scan row and draws a measured human box; it is
-silent and the AI gate is off. A single strong return gets a 1 s provisional
-lock; after confirmation the arm stays on the bearing and the lock updates
-distance without rotating. **Guard** parks the arm and runs the AI-gated range
-beeper. **Stop** stops both. Scan, Calibration, AI/Presence, Overview and
-Dataset are behind **Advanced**. Tracking details, including the side/behind
-±60° limit: `docs/tracking-sweep.md`.
+**Demo tab (2026-11-12):** the default tab shows a **large HUD** and only
+`Track` / `Guard` / `Stop`. The HUD states are `MENCARI...`, `MANUSIA
+TERKUNCI`, `TERAKHIR TERLIHAT`, `RADAR SAJA`, `CEK 9V`, with large distance and
+bearing so the operator can read it from ~1.5 m. **Track** starts with a 0°
+probe, a local ±20°/5° pass, an outer ±40°/10° ring, then the full sequential
+±60° sweep; after confirmation the arm stays on the bearing and the lock
+updates distance without rotating. **Guard** parks the arm and runs the
+AI-gated range beeper. **Stop** stops both. Scan, Calibration, AI/Presence,
+Overview and Dataset are behind **Advanced**. Tracking details, including the
+side/behind ±60° limit: `docs/tracking-sweep.md`.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least

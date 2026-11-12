@@ -108,7 +108,43 @@ end.
   screenshot `analysis/mapping/dashboard-20261112-ui/demo-last-seen-725.png`.
 - `Stop` returned the arm to 0, released the servo, and produced no brownout.
 
-## Limits
+## Fast acquisition (2026-11-12, partial live)
+
+The first demo attempt waited at `-10 deg` while the user stood at the centre;
+the sweep had not reached 0 deg, and health/presence polling from the browser
+was contending with the ESP. The following changes target the demo path:
+
+- **0 deg probe first.** Track starts with one sample at the current/0 deg
+  angle. If it is a strong ToF return, a 1 s provisional lock can show the box
+  in roughly 2-3 s.
+- **Local +/-20 deg at 5 deg**, reusing the probe and stopping as soon as two
+  adjacent angles confirm. Then an **outer +/-40 deg ring at 10 deg** only if
+  the local pass failed. The full sequential -60..+60 sweep is the fallback.
+- **Track-priority ESP cache.** While Track runs, `/api/mapping/health` and
+  `/api/mapping/presence` serve the last tracking status instead of calling
+  the ESP. Only the tracking worker reads the board. This prevents a browser
+  tab from slowing the stepper.
+- **Fast stepper wait.** Tracking moves sleep the nominal 100 half-steps/s
+  travel time and verify once, falling back to the safe poll loop if the arm
+  is still moving. Scan/calibration keeps the fully polled path.
+- **Large HUD.** The Demo tab now shows a big state (`MENCARI...`,
+  `MANUSIA TERKUNCI`, `TERAKHIR TERLIHAT`, `RADAR SAJA`, `CEK 9V`) plus large
+  distance/bearing and a sweep progress bar, readable from ~1.5 m.
+- **Radar arc during acquisition.** When only the HLK has a distance, the 2D
+  and 3D views draw a dashed uncertainty arc labelled `RADAR ... sudut?`
+  instead of a false human box. The raw yellow HLK dot is hidden during Track.
+- **Near-field fallback.** If HLK is <=100 cm and the 725 us ToF sees the
+  background, one 800 us sample is tried at the same angle; it is accepted only
+  within 150 cm, inside the room, and not the bed at 1.5 m.
+
+**Live status:** a lock at **16.5 deg / 153.6 cm** was observed with the new
+mode, and the new HUD loaded. During the fast local test the board then
+**brownout-reset** (`brownout_reset=true`, `reset_reason=9`), the sensors
+stopped, and the stepper rejected a nudge (`Stepper nudge rejected: None`).
+The arm was parked at 0, the servo released, and the sensors restarted
+(health OK). A full fast-acquisition demo pass is **paused until the 9V
+jack/battery is verified**. Do not claim a full live pass yet.
+
 
 - The arm is limited to **+-60 deg** by the cable-safe firmware limit
   (`scanStepperLimitHalfSteps = 684`). A person beside/behind the mount at
@@ -127,3 +163,7 @@ end.
   different mount; that case is not claimed here.
 - The scan background is static. If furniture is moved, re-scan or re-annotate;
   otherwise a moved object can appear as a target.
+- **Brownout is a hard stop.** A board reset stops the sensors and can leave
+  the stepper at a non-zero reference; park it manually, restart the sensors,
+  and check the 9V jack/battery before another Track. Do not continue a demo
+  through a brownout.

@@ -120,7 +120,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 76 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 79 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -355,7 +355,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   windows predicted `human`), so v3 replaces it. Deployed logits model:
   `research/mapping/ml/model-empty-human-v3-logits/`. The AI prediction gates
   the rule; the failed distance-regression policy is not deployed. Tests:
-  **87 C++ + 76 Python**.
+  **87 C++ + 79 Python**.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -587,7 +587,17 @@ outside the +-60 deg wedge and outside the room polygon, so no box is drawn.
 The 725 us fan-side re-test locked at **36.6 deg / 101 cm**, point
 `(0.737, 1.206) m`, with a solid 2D box (`demo-lock-725.png`); a lost target
 stayed visible as `HUMAN LAST SEEN` (`demo-last-seen-725.png`).
-See `docs/tracking-sweep.md`. Tests: **87 C++ + 76 Python**.
+See `docs/tracking-sweep.md`. The demo path now starts with a 0 deg probe,
+then a local +/-20 deg/5 deg scan with early stop, an outer +/-40 deg/10 deg
+ring, and the full sequential sweep as fallback. While Track runs the health
+and presence endpoints serve the tracking cache, so browser polling does not
+slow the ESP. The Demo tab has a large HUD (`MENCARI...`, `MANUSIA TERKUNCI`,
+`TERAKHIR TERLIHAT`, `RADAR SAJA`, `CEK 9V`) readable from ~1.5 m, plus a
+dashed radar arc when only HLK distance is known. Live: a 16.5 deg / 153.6 cm
+lock and the HUD were observed. The board then brownout-reset
+(`brownout_reset=true`, `reset_reason=9`); arm parked at 0, servo released,
+sensors restarted (health OK). Full fast-acquisition demo validation is
+**paused until the 9V is verified**. Tests: **87 C++ + 79 Python**.
 
 **Next actions:** use `20261110T184241Z` for the cleanest map or
 `20261112T030324Z` for the newest scan; if the tripod/base moved, put it back

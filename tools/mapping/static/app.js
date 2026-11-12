@@ -114,6 +114,13 @@ function setTone(id, text, tone = 'dim') {
   element.className = `status-value ${tone}`;
 }
 
+function setHud(id, text, tone = 'dim') {
+  const element = $(id);
+  if (!element) return;
+  element.textContent = text;
+  element.className = `${id === 'hud-state' ? 'hud-state' : 'hud-value'} ${tone}`;
+}
+
 function setBadgeTone(id, text, tone = '') {
   const element = $(id);
   if (!element) return;
@@ -234,12 +241,36 @@ function renderTopbar() {
   setText('top-updated', state.healthUpdatedAt ? secondsAgo(state.healthUpdatedAt) : '—');
 }
 
+function renderTrackDebug() {
+  const element = $('track-debug-text');
+  if (!element) return;
+  const progress = state.track?.progress || {};
+  const estimate = progress.estimate || state.track?.estimate || {};
+  const samples = Array.isArray(progress.samples) ? progress.samples : [];
+  const sample = progress.sample || (samples.length ? samples[samples.length - 1] : null);
+  const lines = [
+    `phase ${progress.phase || '-'} ${progress.index || ''}/${progress.total || ''} target ${progress.target_deg ?? '-'}`,
+    `estimate ${estimate.state || '-'} ${estimate.reason || '-'} candidates ${estimate.candidates ?? '-'} clusters ${estimate.clusters ?? '-'}`,
+  ];
+  if (sample) {
+    lines.push(`last yaw ${sample.yaw_deg} tilt ${sample.tilt_us} range ${sample.range_cm ?? '-'} (${sample.source || '-'}) background ${sample.background_cm ?? '-'} delta ${sample.delta_cm ?? '-'} hlk ${sample.hlk_cm ?? '-'} energy ${sample.hlk_energy ?? '-'} match ${sample.hlk_match ?? '-'}`);
+  }
+  if (samples.length) {
+    lines.push('samples:');
+    for (const item of samples.slice(-8)) {
+      lines.push(`  yaw ${item.yaw_deg} range ${item.range_cm ?? '-'} ${item.source || ''} bg ${item.background_cm ?? '-'} delta ${item.delta_cm ?? '-'} hlk ${item.hlk_cm ?? '-'} energy ${item.hlk_energy ?? '-'}`);
+    }
+  }
+  element.textContent = lines.join('\n');
+}
+
 function renderTrack() {
   const track = state.track || {};
   const estimate = track.estimate || {};
   const running = track.state === 'running';
   const aiOn = Boolean(state.health?.esp?.ml_alert?.enabled);
   const ruleOn = Boolean(state.health?.esp?.hlk_alert?.enabled);
+  const brownout = Boolean(state.health?.esp?.diagnostics?.brownout_reset);
   const mode = running ? 'TRACK' : aiOn ? 'GUARD' : ruleOn ? 'RULE' : 'OFF';
   const phase = track.progress?.phase || '';
   const index = track.progress?.index;
@@ -249,6 +280,9 @@ function renderTrack() {
   const hasFix = running && (confirmed || humanState === 'predicted' || humanState === 'stale');
   const bearing = hasFix ? estimate.bearing_deg : null;
   const distance = hasFix ? estimate.distance_cm : null;
+  const radarDistance = running && humanState === 'radar'
+    ? Number(estimate.radar_distance_cm ?? estimate.distance_cm)
+    : null;
 
   setTone('demo-mode', mode,
     mode === 'TRACK' ? 'ok' : mode === 'GUARD' ? 'ok' : mode === 'RULE' ? 'warn' : 'dim');
@@ -279,6 +313,78 @@ function renderTrack() {
   else if (track.state === 'stopped') status = 'STOPPED · pilih Track atau Guard';
   else status = 'OFF · pilih Track atau Guard';
   setText('demo-status', status);
+
+  let hudState = 'OFF';
+  let hudTone = 'dim';
+  let hudHint = 'Pilih Track atau Guard.';
+  if (track.state === 'error') {
+    hudState = 'TRACK ERROR';
+    hudTone = 'bad';
+    hudHint = brownout
+      ? 'Brownout/reset board. Cek jack/baterai 9V lalu power-cycle sebelum Track.'
+      : (track.error || 'Cek koneksi ESP dan coba lagi.');
+  } else if (!running && brownout) {
+    hudState = 'CEK 9V';
+    hudTone = 'bad';
+    hudHint = 'Brownout terdeteksi. Periksa jack/baterai 9V, lalu power-cycle board sebelum Track.';
+  } else if (running) {
+    if (confirmed) {
+      hudState = 'MANUSIA TERKUNCI';
+      hudTone = 'ok';
+      hudHint = 'Target terkunci. Maju/mundur pelan — box mengikuti jarak tanpa arm berputar.';
+    } else if (humanState === 'stale') {
+      hudState = 'TERAKHIR TERLIHAT';
+      hudTone = 'warn';
+      hudHint = 'Target lepas. Arm mencari ulang; box terakhir tetap ditampilkan.';
+    } else if (humanState === 'predicted') {
+      hudState = 'PREDIKSI';
+      hudTone = 'warn';
+      hudHint = 'Target sedang dilacak; tunggu konfirmasi.';
+    } else if (humanState === 'radar') {
+      hudState = 'RADAR SAJA';
+      hudTone = 'warn';
+      hudHint = 'Jarak HLK terdeteksi, sudut belum. Tetap berdiri diam di dalam ruangan.';
+    } else {
+      hudState = 'MENCARI...';
+      hudTone = 'warn';
+      hudHint = 'Berdiri diam di dalam ruangan, 1–2 m dari sensor. Jangan di samping mount.';
+    }
+  } else if (aiOn) {
+    hudState = 'GUARD AKTIF';
+    hudTone = 'ok';
+    hudHint = 'AI gate + buzzer. Berdiri 30–75 cm di depan sensor.';
+  } else if (ruleOn) {
+    hudState = 'RULE AKTIF';
+    hudTone = 'warn';
+    hudHint = 'Rule-only beeper aktif.';
+  }
+  setHud('hud-state', hudState, hudTone);
+  setText('hud-sub', status);
+  setHud('hud-distance',
+    hasFix && distance != null ? `${(Number(distance) / 100).toFixed(2)} m`
+      : radarDistance != null && Number.isFinite(radarDistance)
+        ? `${(radarDistance / 100).toFixed(2)} m ?` : '—',
+    confirmed ? 'ok' : hasFix || radarDistance != null ? 'warn' : 'dim');
+  setHud('hud-bearing',
+    bearing != null && Number.isFinite(Number(bearing))
+      ? `${Number(bearing).toFixed(0)}°` : '—',
+    confirmed ? 'ok' : hasFix ? 'warn' : 'dim');
+  let fraction = 0;
+  if (running) {
+    if (confirmed) fraction = 1;
+    else if (phase === 'sweeping' && total) fraction = Math.min(1, (Number(index) || 0) / Number(total));
+    else if (phase === 'probe') fraction = 0.05;
+    else if (phase === 'locked') fraction = 0.5;
+  }
+  const progressFill = $('hud-progress-fill');
+  if (progressFill) progressFill.style.width = `${Math.round(fraction * 100)}%`;
+  const hud = $('demo-hud');
+  if (hud) {
+    hud.classList.remove('is-ok', 'is-warn', 'is-bad');
+    if (hudTone !== 'dim') hud.classList.add(`is-${hudTone}`);
+  }
+  setText('hud-hint', hudHint);
+  renderTrackDebug();
 
   const trackButton = $('track-start');
   if (trackButton) {
@@ -2504,7 +2610,40 @@ function drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale = 1) {
       `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
     return;
   }
-  if (state.track?.state === 'running') return;
+  if (state.track?.state === 'running') {
+    const radarDistance = tracked
+      ? Number(tracked.radar_distance_cm ?? (tracked.state === 'radar' ? tracked.distance_cm : null))
+      : null;
+    if (Number.isFinite(radarDistance) && radarDistance > 0) {
+      const yaw = displaySensorAngle(
+        Number(tracked?.scan_yaw_deg ?? state.health?.esp?.scan?.yaw_deg_nominal ?? 0)
+        * Math.PI / 180);
+      const half = (Number(state.health?.esp?.presence_uncertainty_deg) || 60)
+        * Math.PI / 180;
+      ctx.beginPath();
+      for (let step = 0; step <= 32; step += 1) {
+        const angle = yaw - half + (2 * half * step) / 32;
+        const point = toScreen(sensor.x + (radarDistance / 100) * Math.cos(angle),
+          sensor.y + (radarDistance / 100) * Math.sin(angle));
+        if (step === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      }
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = 'rgba(217,164,65,0.82)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const mid = toScreen(sensor.x + (radarDistance / 100) * Math.cos(yaw),
+        sensor.y + (radarDistance / 100) * Math.sin(yaw));
+      drawTag(ctx, mid.x, mid.y - 18,
+        `RADAR ${(radarDistance / 100).toFixed(2)} m · sudut?`,
+        '#d9a441', labelScale);
+    }
+    return;
+  }
+  // Guard is the only non-Track mode that draws the radial HLK marker.
+  // The Rule-only comparison stays in the Advanced presence panel.
+  if (!Boolean(state.health?.esp?.ml_alert?.enabled)) return;
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)
       || presence.gate === 'beyond_wall') return;
@@ -2977,6 +3116,7 @@ function drawTopDown() {
 }
 
 function drawHuman3D(ctx, width, height, radius) {
+  if (!Boolean(state.health?.esp?.ml_alert?.enabled)) return;
   const presence = state.presence;
   if (!presence || !['present', 'holding'].includes(presence.state)
       || presence.gate === 'beyond_wall') return;
@@ -3054,15 +3194,24 @@ function update3DScene() {
     color: boxColor(box),
   }));
   const presence = state.presence;
+  const guardOn = Boolean(state.health?.esp?.ml_alert?.enabled);
   const tracked = state.track?.estimate;
   let tracks = [];
   if (state.track?.state === 'running') {
-    tracks = (tracked && tracked.x_m != null
-      && ['confirmed', 'predicted', 'stale'].includes(tracked.state))
-      ? [{ ...tracked, id: 'H1', source: 'sweep', class: 'human',
-        confidence: Number(tracked.confidence || 0) }]
-      : [];
-  } else if (presence && ['present', 'holding'].includes(presence.state)) {
+    const measured = tracked && tracked.x_m != null
+      && ['confirmed', 'predicted', 'stale'].includes(tracked.state);
+    if (measured) {
+      tracks = [{ ...tracked, id: 'H1', source: 'sweep', class: 'human',
+        confidence: Number(tracked.confidence || 0) }];
+    } else {
+      const radarDistance = tracked
+        ? Number(tracked.radar_distance_cm ?? (tracked.state === 'radar' ? tracked.distance_cm : null))
+        : null;
+      tracks = Number.isFinite(radarDistance) && radarDistance > 0
+        ? [{ id: 'R1', state: 'radar', distance_cm: radarDistance, confidence: 0 }]
+        : [];
+    }
+  } else if (guardOn && presence && ['present', 'holding'].includes(presence.state)) {
     tracks = Array.isArray(presence.tracks) && presence.tracks.length
       ? presence.tracks
       : (presence.distance_cm != null ? [{
@@ -3087,7 +3236,8 @@ function update3DScene() {
       ? (tracks[0].state === 'confirmed' ? '1 target' : 'radar')
       : '',
     presenceUncertaintyDeg: Number(presence?.occupancy_uncertainty_deg || 60),
-    presenceYawDeg: Number(state.health?.esp?.scan?.yaw_deg_nominal || 0),
+    presenceYawDeg: Number(state.track?.estimate?.scan_yaw_deg
+      ?? state.health?.esp?.scan?.yaw_deg_nominal ?? 0),
     sensorOrigin: sensor,
     sensorHeightM: Number(sensor.z ?? state.reconstruction?.sensor_height_m ?? 0.77),
     mirrorY: Boolean(state.mirrorY),

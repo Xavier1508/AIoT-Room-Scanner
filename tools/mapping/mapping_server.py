@@ -65,6 +65,12 @@ TRACK_JOB = {
     "thread": None,
     "stop_event": None,
 }
+ESP_CACHE = {
+    "status": None,
+    "presence": None,
+    "at": 0.0,
+    "lock": threading.Lock(),
+}
 PRESENCE_LOCK = threading.Lock()
 PRESENCE = PresenceTracker()
 
@@ -161,6 +167,25 @@ def _public_track():
                 ("state", "scan_id", "estimate", "progress", "error", "started_utc")}
 
 
+def _track_running():
+    with TRACK_LOCK:
+        return TRACK_JOB["state"] == "running"
+
+
+def _cache_esp(status):
+    payload = _presence_from_status(status)
+    with ESP_CACHE["lock"]:
+        ESP_CACHE["status"] = status
+        ESP_CACHE["presence"] = payload
+        ESP_CACHE["at"] = time.monotonic()
+    return payload
+
+
+def _cached_esp():
+    with ESP_CACHE["lock"]:
+        return ESP_CACHE["status"], ESP_CACHE["presence"]
+
+
 def _start_track(config):
     if config.get("confirm_power") is not True:
         raise ValueError("power confirmation required: 9V and arm clearance must be confirmed")
@@ -190,11 +215,17 @@ def _start_track(config):
         threshold_cm=max(5.0, min(50.0, float(config.get("threshold_cm", 20.0)))),
         lock_threshold_cm=max(5.0, min(50.0, float(config.get("lock_threshold_cm", 18.0)))),
         lock_sample_ms=max(100, min(1000, int(config.get("lock_sample_ms", 200)))),
-        lock_lost_s=max(0.5, min(5.0, float(config.get("lock_lost_s", 1.2)))),
+        lock_lost_s=max(0.5, min(5.0, float(config.get("lock_lost_s", 2.0)))),
         lock_verify_s=max(0.3, min(5.0, float(config.get("lock_verify_s", 1.0)))),
-        local_limit_deg=max(5, min(30, int(config.get("local_limit_deg", 20)))),
+        local_limit_deg=max(5, min(60, int(config.get("local_limit_deg", 40)))),
         expire_s=max(5.0, min(120.0, float(config.get("expire_s", 40.0)))),
     )
+
+    def on_status(status):
+        try:
+            _cache_esp(status)
+        except Exception:
+            pass
 
     def progress(value):
         with TRACK_LOCK:
@@ -210,7 +241,8 @@ def _start_track(config):
     def worker():
         client = EspClient()
         try:
-            result = run_tracking_loop(client, tracking_config, progress, stop_event)
+            result = run_tracking_loop(client, tracking_config, progress,
+                                       stop_event, on_status=on_status)
             with TRACK_LOCK:
                 TRACK_JOB.update({"state": "stopped" if stop_event.is_set() else "done",
                                   "estimate": result, "error": None})
@@ -652,8 +684,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len("/static/"):])
             if path == "/api/mapping/health":
                 try:
-                    status = EspClient().status(timeout=4.0)
-                    presence = _presence_from_status(status)
+                    if _track_running():
+                        status, presence = _cached_esp()
+                        if status is None:
+                            raise RuntimeError("tracking owns the ESP; no cached status yet")
+                    else:
+                        status = EspClient().status(timeout=4.0)
+                        presence = _cache_esp(status)
                     esp = {
                         "version": status.get("version"),
                         "mode": status.get("mode"),
@@ -665,6 +702,7 @@ class Handler(BaseHTTPRequestHandler):
                         "ml_alert": status.get("ml_alert"),
                         "hlk": status.get("hlk"),
                         "ml": status.get("ml"),
+                        "diagnostics": status.get("diagnostics"),
                     }
                     return self._send(200, {"ok": True, "esp": esp,
                                             "presence": presence["presence"],
@@ -677,13 +715,24 @@ class Handler(BaseHTTPRequestHandler):
                         presence = PRESENCE.snapshot()
                     return self._send(200, {"ok": False, "error": str(exc),
                                             "presence": presence,
+                                            "track": _public_track(),
                                             "scans": _list_scans(),
                                             "ml_metrics": _ml_metrics(),
                                             "calibration": read_json(CALIBRATION, {}) or {}})
             if path == "/api/mapping/presence":
                 try:
+                    if _track_running():
+                        _, payload = _cached_esp()
+                        if payload is None:
+                            with PRESENCE_LOCK:
+                                presence = PRESENCE.snapshot()
+                            return self._send(200, {"ok": True, "presence": presence,
+                                                    "hlk_alert": None,
+                                                    "scan_mode": True,
+                                                    "mode": "TRACK"})
+                        return self._send(200, {"ok": True, **payload})
                     status = EspClient().status(timeout=4.0)
-                    payload = _presence_from_status(status)
+                    payload = _cache_esp(status)
                     return self._send(200, {"ok": True, **payload})
                 except Exception as exc:
                     with PRESENCE_LOCK:
@@ -691,6 +740,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": False, "error": str(exc),
                                             "presence": presence})
             if path == "/api/mapping/status":
+                if _track_running():
+                    status, _ = _cached_esp()
+                    if status is not None:
+                        return self._send(200, {"ok": True, "status": status,
+                                                "cached": True})
                 return self._send(200, {"ok": True, "status": EspClient().status()})
             if path == "/api/mapping/scans":
                 return self._send(200, {"ok": True, "scans": _list_scans()})

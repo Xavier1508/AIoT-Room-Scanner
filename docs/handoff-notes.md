@@ -114,11 +114,16 @@ green fill. Screenshots: `analysis/mapping/dashboard-20261112-ui/`.
 
 **Demo tab:** default tab has `Track` / `Guard` / `Stop`; Track is a
 sequential ±60° sweep at **725 µs** with a **measured scan-row background**,
-adjacent-angle clustering, a 1 s provisional lock, then a **stationary lock**
-that updates distance without rotating; Guard is the AI-gated beeper.
-Scan/Calibration/AI/Dataset are behind **Advanced**. The track decision and
-limits (including the side/behind-mount ±60° limit and the old 800 µs bed
-false positive) are in `docs/tracking-sweep.md`.
+adjacent-angle clustering, a 0° probe, a local ±20°/5° pass then an outer
+±40°/10° ring, a 1 s provisional lock, then a **stationary lock** that updates
+distance without rotating; Guard is the AI-gated beeper. The Demo tab has a
+**large HUD** (`MENCARI...`, `MANUSIA TERKUNCI`, `TERAKHIR TERLIHAT`,
+`RADAR SAJA`, `CEK 9V`) readable from ~1.5 m, plus a dashed radar arc when
+only HLK distance is known. Scan/Calibration/AI/Dataset are behind **Advanced**.
+**Blocker:** the board brownout-reset during the fast local test
+(`brownout_reset=true`, reset_reason 9); arm parked at 0, sensors restarted,
+but do not run another Track until the 9V jack/battery is verified. The track
+decision and limits are in `docs/tracking-sweep.md`.
 
 ## Next steps
 

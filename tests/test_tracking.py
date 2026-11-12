@@ -6,7 +6,7 @@ MAPPING = Path(__file__).resolve().parents[1] / "tools" / "mapping"
 sys.path.insert(0, str(MAPPING))
 
 from tracking import (BackgroundMap, ScanRangeMap, TrackSmoother,  # noqa: E402
-                      _provisional_candidate, estimate_track)
+                      _provisional_candidate, _targets, estimate_track)
 
 
 def make_background():
@@ -149,6 +149,45 @@ class TrackingTests(unittest.TestCase):
             "state": "radar", "reason": "outside_room",
             "candidates": 1, "tof_count": 1, "scan_yaw_deg": 60.0,
         }))
+
+    def test_radar_only_keeps_hlk_distance_and_yaw(self):
+        background = make_background()
+        samples = [{
+            "yaw_deg": 0.0, "tilt_us": 725, "range_cm": 240.0,
+            "background_cm": 245.0, "hlk_cm": 150.0, "hlk_energy": 90,
+            "source": "tof",
+        }]
+        estimate = estimate_track(samples, background)
+        self.assertEqual(estimate["state"], "radar")
+        self.assertAlmostEqual(estimate["radar_distance_cm"], 150.0)
+        self.assertAlmostEqual(estimate["scan_yaw_deg"], 0.0)
+        self.assertEqual(estimate["tilt_us"], 725)
+
+    def test_single_tof_sample_reports_tilt_and_radar_distance(self):
+        background = make_background()
+        samples = [{
+            "yaw_deg": 20.0, "tilt_us": 725, "range_cm": 100.0,
+            "background_cm": 245.0, "hlk_cm": 105.0, "hlk_energy": 90,
+            "source": "tof",
+        }]
+        estimate = estimate_track(samples, background)
+        self.assertEqual(estimate["state"], "radar")
+        self.assertEqual(estimate["reason"], "single_sample")
+        self.assertAlmostEqual(estimate["radar_distance_cm"], 100.0)
+        self.assertEqual(estimate["tilt_us"], 725)
+
+    def test_sequential_targets_and_reverse(self):
+        forward = _targets(0.0, 60, 10, order="sequential")
+        self.assertEqual(forward[0], -60.0)
+        self.assertEqual(forward[-1], 60.0)
+        reverse = _targets(0.0, 60, 10, order="sequential", reverse=True)
+        self.assertEqual(reverse[0], 60.0)
+        self.assertEqual(reverse[-1], -60.0)
+        local = _targets(30.0, 20, 5, order="center")
+        self.assertEqual(local[0], 30.0)
+        self.assertIn(25.0, local)
+        self.assertIn(35.0, local)
+        self.assertEqual(len(local), 9)
 
 
 if __name__ == "__main__":

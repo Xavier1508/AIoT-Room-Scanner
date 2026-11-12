@@ -54,7 +54,8 @@ class EspClient:
                            "Timed out waiting for device state: " + str(last.get("mode")))
 
     def move_stepper_to(self, target_half_steps: int, timeout_s: float = 20.0,
-                        settle_s: float = 0.35, step_deg: int = 5) -> dict:
+                        settle_s: float = 0.35, step_deg: int = 5,
+                        fast_wait: bool = False) -> dict:
         """Move to a 57-half-step boundary, using 10-degree nudges when aligned."""
         if step_deg not in (5, 10):
             raise ValueError("stepper step must be 5 or 10 degrees")
@@ -87,10 +88,26 @@ class EspClient:
                 continue
             if not result.get("ok"):
                 raise RuntimeError("Stepper nudge rejected: " + str(result.get("message")))
-            current = int(self.wait_for(
-                lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
-                int(s["actuators"]["relative_half_steps"]) == expected,
-                timeout_s=timeout_s)["actuators"]["relative_half_steps"])
+            if fast_wait:
+                # The STEP interval is 10 ms per half-step. Sleep the nominal
+                # move time plus a small margin, then verify once. If the arm
+                # is still moving, fall back to the safe wait path.
+                time.sleep(0.01 * abs(step_half) + 0.12)
+                state = self.status()
+                observed = int(state["actuators"]["relative_half_steps"])
+                if (observed != expected
+                        or state["actuators"].get("stepper_moving")):
+                    state = self.wait_for(
+                        lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
+                        int(s["actuators"]["relative_half_steps"]) == expected,
+                        timeout_s=timeout_s)
+                    observed = int(state["actuators"]["relative_half_steps"])
+                current = observed
+            else:
+                current = int(self.wait_for(
+                    lambda s, expected=expected: bool(s["actuators"].get("stepper_holding")) and
+                    int(s["actuators"]["relative_half_steps"]) == expected,
+                    timeout_s=timeout_s)["actuators"]["relative_half_steps"])
         if settle_s:
             time.sleep(settle_s)
         return self.status()
