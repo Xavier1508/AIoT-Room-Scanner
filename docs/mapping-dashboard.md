@@ -157,9 +157,9 @@ viewer consistently.
 
 The **Point Cloud 3D** tab shows two views side by side:
 
-- **3D isometric:** cyan ToF points, orange HC points, blue estimated wall
-  blocks, light-blue dashed `wall_edge` fragments, green estimated objects,
-  magenta HLK presence dot and a green human capsule when presence is confirmed.
+- **3D isometric:** steel-blue ToF points, orange HC points, gray estimated wall
+  blocks, light-gray dashed `wall_edge` fragments, amber estimated objects,
+  sage HLK presence dot and a sage human capsule when presence is confirmed.
 - **Top-down 2D:** the same points/blocks on a floor plan with a 0.5 m grid,
   sensor origin, effective FOV wedge, scale bar, red occluded sectors, numbered
   blocks, dashed distance leaders and a highlighted human box. Drag to pan,
@@ -251,8 +251,9 @@ subtracts); click empty space, click outside the 3D view, or press **Escape**
 to clear both point and block selection. **Middle-drag** pans, right-drag pans,
 wheel zooms and left-drag orbits.
 
-**AI alert and unified dataset:** the AI/Presence tab has an **AI Alert**
-toggle (firmware 0.9.3+). `ml_alert_on` is an **AI-gated range beeper**: the v3
+**AI alert and unified dataset:** the AI/Presence tab has **Start AI Demo** /
+**Stop**, an **AI Gate / Rule Only** mode switch, and a **Sensors ON/OFF**
+control (firmware 0.9.3+). `ml_alert_on` is an **AI-gated range beeper**: the v3
 logits model must say `human` with confidence >= 0.80 (two inferences) and the
 raw HLK distance must be 30-75 cm. The interval comes from the distance filtered
 with a 3-frame median + EMA (150 ms near 30 cm, 2000 ms at 75 cm); there is no
@@ -276,6 +277,19 @@ annotations; the server passes it to reconstruction. The master CSV now
 includes both 8-sample scans: **8,734 rows** (950 scan points + 7,784 HLK
 frames), SHA-256 `75539aa7...d31c`. `tools/mapping/export_master.py` rebuilds
 it from the selected clean scan runs and all `frames.jsonl` sessions.
+
+**UI 2026-11-12 - industrial instrument:** the dashboard uses a near-black
+canvas, hairline borders, mono numerals and one signal-orange accent. Status is
+a 6 px dot + text, not a filled pill; the toast is a neutral panel with a thin
+left rule, not a green box. The AI/Presence tab shows a signal chain
+(`HLK -> model -> gate -> buzzer`), a status strip (sensors/mode/gate/buzzer/
+updated), and controls: `Start AI Demo`, `Stop`, `AI Gate`/`Rule Only`, and
+`Sensors ON/OFF`. Enabling AI from sensors-off starts the sensors and disables
+rule mode; the session beep count resets on mode changes. `/api/mapping/health`
+now forwards `esp.ml_alert`; `_ml_metrics()` reads v3 (97.28% +/- 4.70%, hard
+fold 87.96%, human recall 79.1%). Screenshots:
+`analysis/mapping/dashboard-20261112-ui/`. Live evidence:
+`docs/live-gate-test.md`.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least
@@ -496,15 +510,15 @@ without resizing it, and clicking a block opens the panel on the **Edit** tab.
   text undo while focused; after Enter the field blurs so global undo works.
 - **Simpan 3D:** writes a self-contained ASCII PLY plus a JSON sidecar under
   `research/mapping/scenes/<scan>/<utc>.ply`. The PLY contains all filtered scan
-  points (cyan ToF, orange HC) and every measured/prior box as 8 vertices +
+  points (steel-blue ToF, orange HC) and every measured/prior box as 8 vertices +
   12 triangles, coloured by label. The sidecar records counts, yaw/rotation,
   mirror state/centre, wall-snap state, box geometry and the SHA-256 of the
   PLY. The status line shows the exact path.
 - **Axis scale:** 2D and 3D draw thin numeric ticks (0.5 m in 2D, 1 m in 3D)
   and the selected-box panel shows the exact coordinates. The **Skala sumbu**
   checkbox toggles the ticks. Every save/nudge/resize/export action also shows a
-  busy spinner and a success/error toast; static JS/HTML/CSS are served with
-  `charset=utf-8` so UI text is not mojibaked.
+  busy spinner and a neutral toast (panel + thin accent rule, no colored fill);
+  static JS/HTML/CSS are served with `charset=utf-8` so UI text is not mojibaked.
 
 **Dataset CSV export (Dataset tab):** pick a scan, enter a run label, mark
 **Run bersih** when the scan/labels are ready for training, and export. The

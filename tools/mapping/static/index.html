@@ -4,9 +4,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIoT Room Mapping · PC Dashboard</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css">
-<h1>AIoT Room Mapping <span class="muted">/ PC dashboard</span></h1>
-<p id="summary" class="muted">Menghubungkan ke ESP32…</p>
+<link rel="stylesheet" href="/static/style.css?v=20261112">
+<header class="topbar">
+  <div class="brand">
+    <h1>AIoT Room Mapping <span class="muted">/ PC dashboard</span></h1>
+    <p id="summary" class="muted">Menghubungkan ke ESP32…</p>
+  </div>
+  <div class="topbar-meta">
+    <div class="status-item"><span class="status-label">Link</span><span id="top-link" class="status-value dim">CONNECTING</span></div>
+    <div class="status-item"><span class="status-label">Updated</span><span id="top-updated" class="status-value dim">—</span></div>
+  </div>
+</header>
 <div class="tabs">
   <button data-tab="overview" class="active">Overview</button>
   <button data-tab="scan">Scan</button>
@@ -18,12 +26,13 @@
 
 <section id="tab-overview" class="tab active">
   <div class="grid">
-    <section class="card"><h2>ESP32</h2><div id="esp-summary" class="big">—</div><p id="esp-detail" class="note">—</p><p><a id="manual-link" href="#" target="_blank" rel="noopener">Buka kontrol manual ESP32</a></p></section>
+    <section class="card"><h2>ESP32</h2><div id="esp-summary" class="big">—</div><p id="esp-detail" class="note">—</p><p><a id="manual-link" href="#" target="_blank" rel="noopener">Buka web UI ESP32 (perlu login)</a></p></section>
     <section class="card"><h2>Sensor suite</h2>
       <div class="sensor"><div><div class="muted">HC-SR04</div><div id="hc" class="big">—</div></div><span id="hc-health" class="badge">—</span></div>
       <div class="sensor"><div><div class="muted">VL53L1X</div><div id="tof" class="big">—</div></div><span id="tof-health" class="badge">—</span></div>
       <div class="sensor"><div><div class="muted">HLK-LD2410C</div><div id="hlk" class="big">—</div></div><span id="hlk-health" class="badge">—</span></div>
       <p id="health" class="note">—</p>
+      <div class="row"><button id="overview-sensors-toggle" class="alt" type="button">Sensors: OFF</button><span id="overview-sensors-state" class="note">—</span></div>
     </section>
     <section class="card"><h2>Pose</h2><div id="pose" class="big">—</div><p id="pose-detail" class="note">—</p><p id="alert" class="note">—</p></section>
   </div>
@@ -44,7 +53,7 @@
       <label class="note">Servo step delay (s)</label><input id="servo-delay" type="number" value="0.1" min="0.05" max="0.5" step="0.01">
       <label class="note">Column cooldown (s)</label><input id="cooldown" type="number" value="0.1" min="0" max="5" step="0.1">
       <label class="note">Sample interval (ms)</label><input id="sample-interval" type="number" value="100" min="50" max="1000">
-      <div class="row"><button id="preset-validation" type="button">Validation ±10°</button><button id="preset-coarse" type="button">Coarse ±60°</button><button id="preset-fine" type="button">Fine ±60°</button></div>
+      <div class="row"><button id="preset-validation" class="alt" type="button">Validation ±10°</button><button id="preset-coarse" class="alt" type="button">Coarse ±60°</button><button id="preset-fine" class="alt" type="button">Fine ±60°</button></div>
       <label class="note">Dwell (ms)</label><input id="dwell" type="number" value="500" min="100" max="2000">
       <label class="note">Samples / point</label><input id="samples" type="number" value="8" min="1" max="10">
       <label class="note"><input id="release-stepper" type="checkbox" checked> Lepas stepper selama sweep servo (hemat arus; di-hold lagi sebelum pindah yaw).</label>
@@ -75,7 +84,7 @@
   <section class="card"><h2>Peta 3D ruangan</h2>
     <div class="row">
       <label class="note">Scan</label><select id="scan-select"></select>
-      <button id="reload-points">Muat ulang</button>
+      <button id="reload-points" class="alt">Muat ulang</button>
       <button id="view-both" class="alt">Points + Blocks</button>
       <button id="view-blocks" class="alt">Blocks</button>
       <button id="view-points" class="alt">Points</button>
@@ -93,7 +102,7 @@
       <input id="yaw-scale" type="number" min="0.50" max="1.00" step="0.01" value="0.76">
       <label class="note">Rotasi</label>
       <input id="map-rotation" type="number" min="-45" max="45" step="0.1" value="10.7">
-      <button id="apply-yaw-scale">Terapkan</button>
+      <button id="apply-yaw-scale" class="alt">Terapkan</button>
       <button id="reset-yaw-scale" class="alt">Reset kal.</button>
       <button id="toggle-mirror-y" class="alt active" type="button" title="Balik hasil scan secara vertikal terhadap rencana">Mirror Y: ON</button>
       <button id="toggle-snap-objects" class="alt active" type="button" title="Objek besar rendah di dekat dinding diproyeksikan sejajar dinding">Objek lurus: ON</button>
@@ -143,7 +152,7 @@
           </div>
         </div>
         <p id="cloud-stats" class="note">Belum ada point cloud.</p>
-        <p id="cloud-legend" class="note">Cyan = ToF, oranye = HC, biru = dinding estimasi, biru muda putus-putus = wall edge, hijau = objek, magenta = presence HLK, silinder hijau = human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor merah = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
+        <p id="cloud-legend" class="note">Steel-blue = ToF, oranye = HC, abu = dinding estimasi, abu terang putus-putus = wall edge, amber = objek/rencana, sage = presence/human candidate. Garis putus-putus + label meter = jarak dari sensor. Sektor redup = area tanpa data/terhalang. Blok adalah estimasi 2.5D dari satu viewpoint; sisi belakang tidak terlihat.</p>
         <p class="note"><b>Sumbu:</b> X = horizontal (kanan), Y = vertikal denah (atas), Z = tinggi. <b>Scan:</b> mulai −60° di sisi kursi → kipas → kasur/lemari → +60°, searah jarum jam.</p>
         <details class="selection-panel">
           <summary>Seleksi titik &amp; depth</summary>
@@ -250,39 +259,108 @@
 </section>
 
 <section id="tab-presence" class="tab">
-  <div class="grid">
-    <section class="card"><h2>Prediksi presence (rule)</h2>
+  <div class="status-strip" id="presence-status">
+    <div class="status-item"><span class="status-label">Sensors</span><span id="presence-sensors" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Mode</span><span id="presence-mode" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Gate</span><span id="presence-gate" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Buzzer</span><span id="presence-buzzer" class="status-value dim">—</span></div>
+    <div class="status-item"><span class="status-label">Updated</span><span id="presence-updated" class="status-value dim">—</span></div>
+  </div>
+
+  <div class="demo-bar">
+    <button id="demo-start" type="button">Start AI Demo</button>
+    <button id="demo-stop" class="alt" type="button">Stop</button>
+    <div class="segmented" role="group" aria-label="Mode aktuator">
+      <button id="mode-ai" type="button" data-mode="ai">AI Gate</button>
+      <button id="mode-rule" type="button" data-mode="rule">Rule Only</button>
+    </div>
+    <button id="sensors-toggle" class="alt" type="button">Sensors: OFF</button>
+    <span id="demo-status" class="note">—</span>
+  </div>
+
+  <section class="card">
+    <div class="panel-head">
+      <div><div class="panel-kicker">Signal path</div><h2 class="panel-title">HLK → model → gate → buzzer</h2></div>
+      <span id="signal-mode" class="badge">—</span>
+    </div>
+    <div class="signal-chain">
+      <div class="signal-node" id="signal-hlk">
+        <div class="signal-label">HLK distance</div>
+        <div class="signal-value" id="signal-hlk-value">—</div>
+        <div class="signal-note" id="signal-hlk-note">energy —</div>
+      </div>
+      <div class="signal-arrow">→</div>
+      <div class="signal-node" id="signal-model">
+        <div class="signal-label">DL model</div>
+        <div class="signal-value" id="signal-model-value">—</div>
+        <div class="signal-note" id="signal-model-note">v3 · — ms</div>
+      </div>
+      <div class="signal-arrow">→</div>
+      <div class="signal-node" id="signal-gate">
+        <div class="signal-label">AI gate</div>
+        <div class="signal-value" id="signal-gate-value">—</div>
+        <div class="signal-note" id="signal-gate-note">range 30–75 cm</div>
+      </div>
+      <div class="signal-arrow">→</div>
+      <div class="signal-node" id="signal-buzzer">
+        <div class="signal-label">Buzzer</div>
+        <div class="signal-value" id="signal-buzzer-value">—</div>
+        <div class="signal-note" id="signal-buzzer-note">— beep</div>
+      </div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Confidence</div><div class="stat-value" id="ml-alert-confidence">—</div><div class="stat-note" id="ml-alert-detail">—</div></div>
+      <div class="stat"><div class="stat-label">Beep sesi ini</div><div class="stat-value" id="ml-alert-session-count">0</div><div class="stat-note" id="ml-alert-total-count">total —</div></div>
+      <div class="stat"><div class="stat-label">Interval</div><div class="stat-value" id="ml-alert-interval">—</div><div class="stat-note">150–2000 ms</div></div>
+      <div class="stat"><div class="stat-label">State</div><div class="stat-value" id="ml-alert-mode">—</div><div class="stat-note" id="ml-alert-mute">—</div></div>
+    </div>
+    <p id="ml-alert-status" class="note">—</p>
+  </section>
+
+  <div class="grid presence-grid">
+    <section class="card rule-panel">
+      <div class="panel-head"><div><div class="panel-kicker">Baseline</div><h2 class="panel-title">Presence HLK (rule)</h2></div><span id="presence-state" class="badge">—</span></div>
       <div id="presence-summary" class="big">—</div>
       <p id="presence-detail" class="note">Menunggu data HLK…</p>
-      <div class="sensor"><div><div class="muted">Class</div><div id="presence-class" class="big">—</div></div><span id="presence-state" class="badge">—</span></div>
-      <div class="sensor"><div><div class="muted">Confidence</div><div id="presence-confidence" class="big">—</div></div><span class="badge">rule</span></div>
-      <div class="sensor"><div><div class="muted">Jarak HLK</div><div id="presence-distance" class="big">-</div></div><span id="presence-energy" class="badge">-</span></div>
-      <div class="sensor"><div><div class="muted">Estimasi target</div><div id="presence-occupancy" class="big">-</div></div><span id="presence-track-count" class="badge">estimasi</span></div>
-      <p id="presence-reason" class="note">-</p>
-      <div class="row"><button id="presence-clear" class="danger">Clear presence</button><button id="ml-alert-toggle" class="alt" type="button">AI Alert: OFF</button><span id="ml-alert-status" class="note">-</span></div>
+      <div class="sensor"><div><div class="muted">Class</div><div id="presence-class" class="big">—</div></div><span class="badge">rule</span></div>
+      <div class="sensor"><div><div class="muted">Probability</div><div id="presence-confidence" class="big">—</div></div><span class="badge">n/a</span></div>
+      <div class="sensor"><div><div class="muted">Jarak HLK</div><div id="presence-distance" class="big">—</div></div><span id="presence-energy" class="badge">—</span></div>
+      <div class="sensor"><div><div class="muted">Estimasi target</div><div id="presence-occupancy" class="big">—</div></div><span id="presence-track-count" class="badge">estimasi</span></div>
+      <p id="presence-reason" class="note">—</p>
+      <button id="presence-clear" class="danger" type="button">Clear presence</button>
     </section>
-    <section class="card"><h2>Aktuator dari prediksi</h2>
-      <div id="actuator-summary" class="big">—</div>
-      <p id="actuator-detail" class="note">—</p>
-      <p class="note">Buzzer proximity dikendalikan rule HLK (energy + jarak + konfirmasi 3 frame). Saat scan/gerakan, buzzer di-mute. Ini aktuator otomatis dari prediksi rule, bukan dari DL.</p>
-    </section>
-    <section class="card"><h2>Model DL</h2>
-      <div id="model-summary" class="big">—</div>
-      <p id="model-detail" class="note">—</p>
-      <p class="note">Model 1D CNN binary empty/human disiapkan untuk berjalan di ESP32-S3 lewat TFLite Micro (firmware 0.8.0). Rule HLK tetap menjadi jalur buzzer/safety; panel ini menampilkan hasil DL live, latensi, dan metrik validasi blok waktu setelah board online.</p>
-    </section>
+
+    <div class="presence-side">
+      <section class="card">
+        <div class="panel-head"><div><div class="panel-kicker">Actuator</div><h2 class="panel-title">Jalur aktuator</h2></div><span id="actuator-mode-badge" class="badge">—</span></div>
+        <div id="actuator-summary" class="big">—</div>
+        <p id="actuator-detail" class="note">—</p>
+        <p id="actuator-explainer" class="note">Saat AI Gate ON, prediksi v3 memegang gate dan HLK hanya memberi timing 30–75 cm. Saat Rule Only, buzzer mengikuti target HLK apa pun dengan histeresis 10 cm.</p>
+      </section>
+
+      <section class="card">
+        <div class="panel-head"><div><div class="panel-kicker">Model</div><h2 class="panel-title">Presence v3</h2></div><span id="model-badge" class="badge">—</span></div>
+        <div id="model-summary" class="big">—</div>
+        <p id="model-detail" class="note">—</p>
+        <p id="model-explainer" class="note">1D-CNN int8, 32 frame HLK, 4 sesi / 7.784 frame. Model memutuskan empty/human; bukan classifier objek. Rule-only adalah mode pembanding, bukan jalur utama.</p>
+      </section>
+    </div>
   </div>
-  <section class="card"><h2>Tren energi &amp; jarak HLK</h2>
+
+  <section class="card">
+    <div class="panel-head"><div><div class="panel-kicker">History</div><h2 class="panel-title">Tren energi &amp; jarak HLK</h2></div></div>
     <canvas id="presence-trend" width="1400" height="260"></canvas>
-    <p class="note">Garis cyan = energy (0–255), garis oranye = jarak (cm). Titik hijau = frame present, kuning = confirming/holding, abu = empty.</p>
+    <p class="note">Garis steel-blue = energy (0–255), garis oranye = jarak (cm). Titik sage = frame present, amber = confirming/holding, abu = empty.</p>
   </section>
-  <section class="card"><h2>Perbandingan rule vs DL</h2>
+
+  <section class="card">
+    <div class="panel-head"><div><div class="panel-kicker">Validation</div><h2 class="panel-title">Rule vs model</h2></div></div>
     <div id="model-comparison" class="note">—</div>
   </section>
 </section>
 
 <section id="tab-dataset" class="tab">
-  <div class="grid">
+  <div class="grid dataset-grid">
     <section class="card"><h2>Rekam dataset HLK</h2>
       <label class="note">Label sesi</label>
       <select id="ml-label">
@@ -323,6 +401,6 @@
 <script type="importmap">
 {"imports": {"three": "/static/vendor/three.module.js"}}
 </script>
-<script type="module" src="/static/scene3d.js"></script>
-<script src="/static/app.js"></script>
+<script type="module" src="/static/scene3d.js?v=20261112"></script>
+<script src="/static/app.js?v=20261112"></script>
 </html>

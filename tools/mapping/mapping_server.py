@@ -144,12 +144,23 @@ def _stop_ml():
 
 
 def _ml_metrics():
-    path = RESEARCH / "ml" / "model-empty-human-v2" / "metrics.json"
+    path = RESEARCH / "ml" / "model-empty-human-v3" / "metrics.json"
+    if not path.is_file():
+        path = RESEARCH / "ml" / "model-empty-human-v2" / "metrics.json"
     if not path.is_file():
         path = RESEARCH / "ml" / "model-empty-human" / "metrics.json"
     metrics = read_json(path, {}) or {}
     metrics["model_dir"] = str(path.parent.relative_to(RESEARCH)).replace("\\", "/")
     metrics["deployed"] = True
+    folds = metrics.get("cv_folds") or []
+    if folds:
+        hard = min(folds, key=lambda fold: float(fold.get("accuracy", 0) or 0))
+        metrics["hard_fold_accuracy"] = hard.get("accuracy")
+        confusion = hard.get("confusion") or []
+        if len(confusion) >= 2 and len(confusion[1]) >= 2:
+            human_total = sum(int(value or 0) for value in confusion[1])
+            if human_total:
+                metrics["hard_fold_human_recall"] = confusion[1][1] / human_total
     summaries = sorted((ROOT / "analysis" / "mapping").glob("ml-training-*/summary.json"),
                        reverse=True)
     summary = read_json(summaries[0], {}) if summaries else {}
@@ -158,11 +169,14 @@ def _ml_metrics():
         metrics["dataset"] = summary.get("dataset", {})
     if metrics.get("model_version"):
         metrics["conclusion"] = (
-            "Model empty/human ini sudah disiapkan untuk firmware 0.8.0 dan "
-            f"memakai validasi blok waktu {metrics.get('cv_accuracy_mean', 0) * 100:.1f}% "
-            f"+/- {metrics.get('cv_accuracy_std', 0) * 100:.1f}%. Rule HLK tetap "
-            "menjadi jalur buzzer/safety; hasil DL live dan OTA masih menunggu "
-            "board online.")
+            "Model presence v3 (32 frame, 4 sesi, 7.784 frame) berjalan di "
+            "firmware 0.9.3 sebagai AI gate aktuator. Validasi blok waktu "
+            f"{metrics.get('cv_accuracy_mean', 0) * 100:.2f}% +/- "
+            f"{metrics.get('cv_accuracy_std', 0) * 100:.2f}%; fold terberat "
+            f"{metrics.get('hard_fold_accuracy', 0) * 100:.2f}% dengan human "
+            f"recall {metrics.get('hard_fold_human_recall', 0) * 100:.1f}%. "
+            "HLK hanya memberi timing jarak 30-75 cm; rule-only adalah mode "
+            "pembanding, bukan jalur utama.")
     elif summary:
         metrics["conclusion"] = summary.get("conclusion")
     return metrics
@@ -559,6 +573,7 @@ class Handler(BaseHTTPRequestHandler):
                         "actuators": status.get("actuators"),
                         "scan": status.get("scan"),
                         "hlk_alert": status.get("hlk_alert"),
+                        "ml_alert": status.get("ml_alert"),
                         "hlk": status.get("hlk"),
                         "ml": status.get("ml"),
                     }

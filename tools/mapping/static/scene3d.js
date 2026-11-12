@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 
 const COLORS = {
-  tof: 0x50dcff,
-  hc: 0xffaa3c,
-  wall: 0x5096e6,
-  wall_edge: 0x82c8ff,
-  prior: 0x9ad6a0,
+  tof: 0x8fa6b8,
+  hc: 0xff5c1a,
+  wall: 0x8fa6b8,
+  wall_edge: 0xb8bcc4,
+  prior: 0xd9a441,
   selected: 0xffffff,
-  presence: 0x5affb0,
+  presence: 0x8fa88b,
 };
 
 const state = {
@@ -78,8 +78,8 @@ function labelSprite(text, textColor = '#ffffff', scale = 1) {
   canvas.height = 96;
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(8, 15, 25, 0.84)';
-  context.strokeStyle = 'rgba(120, 160, 205, 0.65)';
+  context.fillStyle = 'rgba(12, 12, 14, 0.88)';
+  context.strokeStyle = 'rgba(70, 70, 76, 0.80)';
   context.lineWidth = 3;
   const radius = 18;
   context.beginPath();
@@ -205,7 +205,7 @@ function addPresenceTrack(track, index, yawDeg) {
   const yaw = state.payload?.mirrorY === false ? rawYaw : -rawYaw;
   const x = Number(sensor.x) + distance * Math.cos(yaw);
   const y = Number(sensor.y) + distance * Math.sin(yaw);
-  const trackColor = index === 0 ? COLORS.presence : 0x66d9ff;
+  const trackColor = index === 0 ? COLORS.presence : 0x8fa6b8;
   const geometry = new THREE.CapsuleGeometry(0.23, 1.05, 5, 10);
   const material = new THREE.MeshStandardMaterial({
     color: trackColor,
@@ -285,7 +285,7 @@ function updateSensorVisuals() {
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.11, 0.16, 32),
     new THREE.MeshBasicMaterial({
-      color: 0x8dffc6, transparent: true, opacity: 0.85,
+      color: 0x8fa88b, transparent: true, opacity: 0.85,
       side: THREE.DoubleSide, depthWrite: false,
     }),
   );
@@ -296,7 +296,7 @@ function updateSensorVisuals() {
     new THREE.Vector3(Number(origin.x) || 0, Number(origin.y) || 0, height),
   ]);
   const mast = new THREE.Line(mastGeometry, new THREE.LineDashedMaterial({
-    color: 0x8dffc6, dashSize: 0.07, gapSize: 0.05,
+    color: 0x8fa88b, dashSize: 0.07, gapSize: 0.05,
     transparent: true, opacity: 0.55,
   }));
   mast.computeLineDistances();
@@ -304,7 +304,7 @@ function updateSensorVisuals() {
   const sphere = new THREE.Mesh(
     new THREE.SphereGeometry(0.055, 16, 10),
     new THREE.MeshStandardMaterial({
-      color: 0x8dffc6, emissive: 0x5affb0, emissiveIntensity: 1.2,
+      color: 0x8fa88b, emissive: 0x8fa88b, emissiveIntensity: 1.2,
       toneMapped: false,
     }),
   );
@@ -334,7 +334,7 @@ function updateSensorVisuals() {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setIndex(indices);
   const sector = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-    color: 0x66d9ff, transparent: true, opacity: 0.10,
+    color: 0x8fa6b8, transparent: true, opacity: 0.10,
     side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
   }));
   sector.renderOrder = 2;
@@ -351,7 +351,7 @@ function updateSensorVisuals() {
   const arc = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(arcPoints),
     new THREE.LineDashedMaterial({
-      color: 0x66d9ff, dashSize: 0.10, gapSize: 0.08,
+      color: 0x8fa6b8, dashSize: 0.10, gapSize: 0.08,
       transparent: true, opacity: 0.55,
     }),
   );
@@ -368,7 +368,7 @@ function updateSensorVisuals() {
         ),
       ]),
       new THREE.LineBasicMaterial({
-        color: 0x66d9ff, transparent: true, opacity: 0.42,
+        color: 0x8fa6b8, transparent: true, opacity: 0.42,
       }),
     );
     state.groups.scanFov.add(line);
@@ -539,7 +539,7 @@ function update(payload) {
     const points3 = outline.map(([x, y]) => new THREE.Vector3(x, y, 0.01));
     const geometry = new THREE.BufferGeometry().setFromPoints([...points3, points3[0]]);
     const line = new THREE.Line(geometry, new THREE.LineDashedMaterial({
-      color: 0x78ffc8, dashSize: 0.12, gapSize: 0.08,
+      color: 0x8fa88b, dashSize: 0.12, gapSize: 0.08,
       transparent: true, opacity: 0.55,
     }));
     line.computeLineDistances();
@@ -678,7 +678,7 @@ function init() {
   }
   state.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   state.renderer.outputColorSpace = THREE.SRGBColorSpace;
-  state.renderer.setClearColor(0x0a1019, 1);
+  state.renderer.setClearColor(0x0c0c0e, 1);
   container.appendChild(state.renderer.domElement);
   state.selectionBox = document.createElement('div');
   state.selectionBox.className = 'scene3d-selectbox';
@@ -686,7 +686,7 @@ function init() {
   container.appendChild(state.selectionBox);
 
   state.scene = new THREE.Scene();
-  state.scene.background = new THREE.Color(0x0a1019);
+  state.scene.background = new THREE.Color(0x0c0c0e);
   state.camera = new THREE.PerspectiveCamera(50, 1, 0.03, 100);
   state.camera.up.set(0, 0, 1);
   state.controls = new OrbitControls(state.camera, state.renderer.domElement);
@@ -708,7 +708,7 @@ function init() {
     state.renderer.domElement.style.cursor = 'grab';
   });
 
-  state.scene.add(new THREE.HemisphereLight(0xddeeff, 0x18283a, 1.4));
+  state.scene.add(new THREE.HemisphereLight(0xedeae4, 0x1c1c20, 1.4));
   const sun = new THREE.DirectionalLight(0xffffff, 1.3);
   sun.position.set(4, -5, 8);
   state.scene.add(sun);
@@ -718,14 +718,14 @@ function init() {
     makeGroup(name);
   }
 
-  const grid = new THREE.GridHelper(8, 32, 0x2d425c, 0x18283a);
+  const grid = new THREE.GridHelper(8, 32, 0x26262a, 0x1c1c20);
   grid.rotation.x = Math.PI / 2;
   grid.position.set(1.05, 0.35, -0.01);
   state.groups.grid.add(grid);
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(8, 8),
     new THREE.MeshBasicMaterial({
-      color: 0x0e1825, transparent: true, opacity: 0.40, depthWrite: false,
+      color: 0x111113, transparent: true, opacity: 0.40, depthWrite: false,
     }),
   );
   floor.position.set(1.05, 0.35, -0.02);

@@ -107,6 +107,11 @@ actual breakout labels before powering sensors.
 - The build wrapper hashes sources before and after compilation and refuses an
   artifact if a source changed during the build.
 
+**UI 2026-11-12:** the AI/Presence tab now has a signal chain, status strip,
+`Start AI Demo`/`Stop`, `AI Gate`/`Rule Only`, and `Sensors ON/OFF`. The health
+proxy forwards `ml_alert`; v3 metrics are shown; the neutral toast replaces the
+green fill. Screenshots: `analysis/mapping/dashboard-20261112-ui/`.
+
 ## Next steps
 
 1. Two 8-sample maps exist. Use `20261110T184241Z` for the cleanest demo map

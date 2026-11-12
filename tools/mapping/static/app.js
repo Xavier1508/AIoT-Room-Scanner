@@ -23,6 +23,11 @@ function storedMapRotation() {
 
 const state = {
   health: null,
+  healthUpdatedAt: 0,
+  healthStale: false,
+  mlAlertBaseCount: null,
+  demoBusy: false,
+  sensorsBusy: false,
   scans: [],
   calibration: null,
   points: [],
@@ -96,6 +101,133 @@ function badge(id, value) {
 
 function setText(id, text) {
   $(id).textContent = text;
+}
+
+function setTone(id, text, tone = 'dim') {
+  const element = $(id);
+  if (!element) return;
+  element.textContent = text;
+  element.className = `status-value ${tone}`;
+}
+
+function setBadgeTone(id, text, tone = '') {
+  const element = $(id);
+  if (!element) return;
+  element.textContent = text;
+  element.className = `badge ${tone}`;
+}
+
+function toggleSignal(id, active) {
+  const element = $(id);
+  if (!element) return;
+  element.classList.toggle('active', Boolean(active));
+}
+
+function secondsAgo(timestamp) {
+  if (!timestamp) return '—';
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  return `${seconds}s ago`;
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function sendCommand(command) {
+  const data = await api('/api/mapping/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+  if (data.result && data.result.ok === false) {
+    throw new Error(data.result.message || `Command ${command} rejected`);
+  }
+  return data.result;
+}
+
+async function ensureSensors() {
+  if (state.health?.esp?.sensors?.state === 'running') return;
+  setText('demo-status', 'Menyalakan sensor...');
+  await sendCommand('sensors_start');
+  for (let attempt = 0; attempt < 24; attempt++) {
+    await sleep(350);
+    await refreshHealth();
+    if (state.health?.esp?.sensors?.state === 'running') return;
+  }
+  throw new Error('Sensor tidak mencapai state running.');
+}
+
+async function setActuatorMode(mode, button) {
+  if (state.demoBusy) return;
+  state.demoBusy = true;
+  const labels = { ai: 'AI...', rule: 'Rule...', off: 'Stop...' };
+  try {
+    await withBusy(button, async () => {
+      await ensureSensors();
+      if (mode === 'ai') {
+        await sendCommand('hlk_alert_off');
+        await sendCommand('ml_alert_on');
+      } else if (mode === 'rule') {
+        await sendCommand('ml_alert_off');
+        await sendCommand('hlk_alert_on');
+      } else {
+        await sendCommand('ml_alert_off');
+        await sendCommand('hlk_alert_off');
+      }
+      state.mlAlertBaseCount = null;
+      await refreshHealth();
+    }, labels[mode] || 'Mode...');
+    showToast(mode === 'ai' ? 'AI Gate aktif. Model memegang aktuator.'
+      : mode === 'rule' ? 'Rule-only aktif untuk pembanding.'
+        : 'Aktuator dimatikan.', 'success');
+  } catch (error) {
+    setText('demo-status', `Gagal: ${error.message}`);
+    showToast(`Gagal mode aktuator: ${error.message}`, 'error', 4500);
+  } finally {
+    state.demoBusy = false;
+    await refreshHealth();
+  }
+}
+
+async function startDemo() {
+  await setActuatorMode('ai', $('demo-start'));
+}
+
+async function stopDemo() {
+  await setActuatorMode('off', $('demo-stop'));
+}
+
+async function toggleSensors(button) {
+  if (state.sensorsBusy) return;
+  state.sensorsBusy = true;
+  const running = state.health?.esp?.sensors?.state === 'running';
+  try {
+    await withBusy(button, async () => {
+      if (running) {
+        await sendCommand('ml_alert_off');
+        await sendCommand('hlk_alert_off');
+        await sendCommand('sensors_stop');
+      } else {
+        await sendCommand('sensors_start');
+        await sleep(450);
+        await sendCommand('hlk_alert_off');
+      }
+      await refreshHealth();
+    }, running ? 'Mematikan...' : 'Menyalakan...');
+    showToast(running ? 'Sensor dimatikan.' : 'Sensor aktif; pilih AI Gate atau Rule Only.',
+      'success');
+  } catch (error) {
+    showToast(`Gagal sensor: ${error.message}`, 'error', 4500);
+  } finally {
+    state.sensorsBusy = false;
+    await refreshHealth();
+  }
+}
+
+function renderTopbar() {
+  const online = Boolean(state.health?.esp);
+  const stale = state.healthStale;
+  setTone('top-link', online ? (stale ? 'STALE' : 'ONLINE') : 'OFFLINE',
+    online ? (stale ? 'warn' : 'ok') : 'bad');
+  setText('top-updated', state.healthUpdatedAt ? secondsAgo(state.healthUpdatedAt) : '—');
 }
 
 let toastTimer = null;
@@ -180,19 +312,35 @@ async function refreshHealth() {
   try {
     const response = await fetch('/api/mapping/health', { cache: 'no-store' });
     const data = await response.json();
-    state.health = data;
-    state.scans = data.scans || [];
-    state.calibration = data.calibration || {};
-    state.mlMetrics = data.ml_metrics || state.mlMetrics;
-    if (data.presence) state.presence = data.presence;
-    state.presenceError = data.ok === false ? (data.error || 'ESP offline') : null;
+    const previous = state.health;
+    if (data.esp) {
+      state.health = data;
+      state.healthUpdatedAt = Date.now();
+      state.healthStale = false;
+      state.scans = data.scans || [];
+      state.calibration = data.calibration || {};
+      state.mlMetrics = data.ml_metrics || state.mlMetrics;
+      if (data.presence) state.presence = data.presence;
+      state.presenceError = null;
+    } else {
+      state.health = {
+        ...(previous || {}),
+        ok: false,
+        error: data.error || 'ESP offline',
+      };
+      state.healthStale = true;
+      state.presenceError = data.error || 'ESP offline';
+    }
+    renderTopbar();
     renderHealth();
     renderPresence();
     renderScans();
     renderCalibration();
   } catch (error) {
-    setText('summary', `ESP32 belum terhubung: ${error.message}`);
+    state.healthStale = true;
     state.presenceError = error.message;
+    renderTopbar();
+    setText('summary', `ESP32 belum terhubung: ${error.message}`);
     renderPresence();
     await refreshScans();
   }
@@ -214,10 +362,24 @@ function renderHealth() {
   const actuators = esp.actuators || {};
   const scan = esp.scan || {};
   const alert = esp.hlk_alert || {};
-  setText('summary', `${esp.version || '—'} · ${esp.mode || '—'} · ${esp.ip || '—'}`);
+  const sensorState = String(sensors.state || 'stopped').toLowerCase();
+  const sensorsRunning = sensorState === 'running';
+  setText('summary', `${esp.version || '—'} · ${esp.mode || '—'} · ${esp.ip || '—'}${state.healthStale ? ' · STALE' : ''}`);
   setText('esp-summary', `${esp.mode || '—'} · ${esp.version || '—'}`);
   setText('esp-detail', `IP ${esp.ip || '—'} · scan mode ${scan.mode ? 'ON' : 'OFF'} · servo ${actuators.servo_target_us ?? '—'} µs · stepper ${actuators.relative_half_steps ?? '—'} hsteps`);
   $('manual-link').href = esp.ip ? `http://${esp.ip}/` : '#';
+  setTone('presence-sensors', sensorsRunning ? 'RUNNING' : 'STOPPED',
+    sensorsRunning ? 'ok' : 'dim');
+  setTone('presence-updated', state.healthUpdatedAt ? secondsAgo(state.healthUpdatedAt) : '—',
+    state.healthStale ? 'warn' : 'dim');
+  for (const id of ['sensors-toggle', 'overview-sensors-toggle']) {
+    const button = $(id);
+    if (!button) continue;
+    button.textContent = `Sensors: ${sensorsRunning ? 'ON' : 'OFF'}`;
+    button.classList.toggle('sensor-on', sensorsRunning);
+    button.disabled = state.sensorsBusy;
+  }
+  setText('overview-sensors-state', sensorsRunning ? 'RUNNING' : 'STOPPED');
   const hcValue = hc.valid ? (hc.distance_cal_cm ?? hc.distance_cm) : null;
   const tofValue = tof.valid ? (tof.distance_cal_cm ?? tof.distance_cm) : null;
   setText('hc', hcValue != null ? `${fmt(hcValue)} cm` : '—');
@@ -342,81 +504,172 @@ async function refreshCalibration() {
 function renderPresence() {
   const presence = state.presence;
   const ml = state.mlMetrics || state.health?.ml_metrics || {};
-  const alert = state.health?.esp?.hlk_alert || {};
+  const hlkAlert = state.health?.esp?.hlk_alert || {};
+  const mlAlert = state.health?.esp?.ml_alert || {};
+  const liveMl = state.health?.esp?.ml || null;
+  const esp = state.health?.esp || null;
+  const sensors = esp?.sensors || {};
+  const running = sensors.state === 'running';
+  const aiOn = Boolean(mlAlert.enabled);
+  const ruleOn = Boolean(hlkAlert.enabled);
+  const totalBeeps = Number(mlAlert.count ?? hlkAlert.count ?? 0);
+  if ((aiOn || ruleOn) && state.mlAlertBaseCount == null) {
+    state.mlAlertBaseCount = totalBeeps;
+  }
+  if (!aiOn && !ruleOn) state.mlAlertBaseCount = null;
+  const sessionBeeps = state.mlAlertBaseCount == null
+    ? 0 : Math.max(0, totalBeeps - state.mlAlertBaseCount);
+
   if (!presence) {
-    setText('presence-summary', state.presenceError ? 'ESP offline' : 'Menunggu data HLK…');
+    setText('presence-summary', state.presenceError ? 'OFFLINE · no live HLK' : 'Menunggu data HLK…');
     setText('presence-detail', state.presenceError || 'Belum ada data presence.');
     setText('presence-class', '—');
     setText('presence-confidence', '—');
     setText('presence-distance', '—');
     setText('presence-occupancy', '—');
     setText('presence-reason', '—');
-    badge('presence-state', '—');
-    badge('presence-energy', '—');
-    badge('presence-track-count', 'estimasi');
+    setBadgeTone('presence-state', '—', 'OFF');
+    setBadgeTone('presence-energy', 'energy —', '');
+    setBadgeTone('presence-track-count', '0 track', '');
   } else {
     const offlineEmpty = Boolean(state.presenceError) && presence.state === 'empty';
     const confidence = Math.max(0, Math.min(1, Number(presence.confidence) || 0));
-    setText('presence-summary', offlineEmpty
-      ? 'OFFLINE · no live HLK'
-      : `${String(presence.class || 'empty').toUpperCase()} · ${Math.round(confidence * 100)}%`);
+    const ruleClass = String(presence.class || 'empty').toUpperCase();
+    const hasProbability = confidence > 0;
+    setText('presence-summary', offlineEmpty ? 'OFFLINE · no live HLK' : `${ruleClass} · rule`);
     setText('presence-detail', offlineEmpty
       ? `Tidak ada data HLK live: ${state.presenceError}`
-      : `state ${presence.state} · ${presence.reason} · gate ${presence.gate || '-'} · konfirmasi ${presence.confirm_frames}/${presence.confirm_required} frame · hold ${presence.hold_s}s · wall ${presence.max_range_cm ?? '-'} cm`);
+      : `state ${presence.state} · ${presence.reason} · gate ${presence.gate || '—'} · konfirmasi ${presence.confirm_frames}/${presence.confirm_required} frame · hold ${presence.hold_s}s · wall ${presence.max_range_cm ?? '—'} cm`);
     setText('presence-class', offlineEmpty ? '—' : String(presence.class || 'empty'));
-    setText('presence-confidence', offlineEmpty ? '—' : `${Math.round(confidence * 100)}%`);
+    setText('presence-confidence', offlineEmpty ? '—' : (hasProbability ? `${Math.round(confidence * 100)}%` : 'n/a'));
     setText('presence-distance', presence.distance_cm != null ? `${Number(presence.distance_cm).toFixed(1)} cm` : '—');
     const tracks = Array.isArray(presence.tracks) ? presence.tracks : [];
     setText('presence-occupancy', presence.occupancy_label
-      || (tracks.length ? `${tracks.length} orang` : '0'));
-    badge('presence-track-count', `${tracks.length} track`);
-    badge('presence-state', presence.state);
-    badge('presence-energy', presence.energy != null ? `energy ${presence.energy}` : 'energy —');
+      || (tracks.length ? `${tracks.length} target` : 'empty'));
+    setBadgeTone('presence-track-count', `${tracks.length} track`, '');
+    setBadgeTone('presence-state', presence.state, '');
+    setBadgeTone('presence-energy', presence.energy != null ? `energy ${presence.energy}` : 'energy —', '');
     const trackText = tracks.map(track =>
       `${track.id || track.source} ${Number(track.distance_cm || 0).toFixed(0)} cm`).join(' · ');
     setText('presence-reason', `${tracks.length ? `Track: ${trackText}. ` : ''}Rule: ${presence.rule}. ${presence.occupancy_note || ''}`);
-    if (state.presenceError && !offlineEmpty) setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
+    if (state.presenceError && !offlineEmpty) {
+      setText('presence-detail', `${presence.state} · offline: ${state.presenceError}`);
+    }
   }
-  if (alert.enabled != null) {
-    setText('actuator-summary', `${alert.enabled ? 'ON' : 'OFF'} · ${alert.state || 'idle'}`);
-    setText('actuator-detail', `mute ${alert.mute_reason || '—'} · count ${alert.count ?? 0} · last ${alert.last_distance_cm ?? '—'} cm / energy ${alert.last_energy ?? '—'} · range ${alert.min_cm ?? 30}–${alert.max_cm ?? 75} cm`);
-  } else {
-    setText('actuator-summary', 'ESP offline');
-    setText('actuator-detail', state.presenceError || 'Status aktuator belum tersedia.');
+
+  const livePct = Math.round(Math.max(0, Math.min(1, Number(liveMl?.confidence) || 0)) * 100);
+  const liveClass = String(liveMl?.class || '—').toUpperCase();
+  const gateOpen = aiOn ? Boolean(mlAlert.gate)
+    : ruleOn ? ['present', 'holding'].includes(presence?.state) : false;
+  const beeping = aiOn ? Boolean(mlAlert.active)
+    : ruleOn ? hlkAlert.state === 'active' : false;
+  const modeLabel = aiOn ? 'AI GATE' : ruleOn ? 'RULE ONLY' : 'OFF';
+  const aiDistance = Number(mlAlert.distance_cm) > 0 ? fmt(mlAlert.distance_cm) : '—';
+  const gateText = aiOn ? (gateOpen ? 'OPEN' : 'CLOSED') : ruleOn ? 'BYPASS' : '—';
+
+  setTone('presence-mode', modeLabel, aiOn ? 'ok' : ruleOn ? 'warn' : 'dim');
+  setTone('presence-gate', gateText, gateOpen ? 'ok' : 'dim');
+  setTone('presence-buzzer', beeping ? 'BEEP' : 'IDLE', beeping ? 'ok' : 'dim');
+  setTone('presence-updated', state.healthUpdatedAt ? secondsAgo(state.healthUpdatedAt) : '—',
+    state.healthStale ? 'warn' : 'dim');
+  setBadgeTone('signal-mode', modeLabel, aiOn ? 'LIVE' : ruleOn ? 'WARMING' : 'OFF');
+
+  setText('signal-hlk-value', presence?.distance_cm != null ? `${fmt(presence.distance_cm)} cm` : '—');
+  setText('signal-hlk-note', `energy ${presence?.energy ?? '—'}`);
+  toggleSignal('signal-hlk', presence?.distance_cm != null);
+
+  setText('signal-model-value', liveMl?.window_ready ? `${liveClass} ${livePct}%` : 'warming');
+  setText('signal-model-note', liveMl
+    ? `${liveMl.model_version || 'v3'} · ${liveMl.latency_ms ?? '—'} ms`
+    : 'model —');
+  toggleSignal('signal-model', aiOn && Boolean(liveMl?.window_ready));
+  $('signal-model')?.classList.toggle('bypassed', ruleOn);
+
+  setText('signal-gate-value', aiOn ? (gateOpen ? 'OPEN' : 'CLOSED')
+    : ruleOn ? 'BYPASS' : 'OFF');
+  setText('signal-gate-note', aiOn ? 'range 30–75 cm' : ruleOn ? 'rule path' : '—');  toggleSignal('signal-gate', aiOn && gateOpen);
+  $('signal-gate')?.classList.toggle('bypassed', ruleOn);
+
+  setText('signal-buzzer-value', beeping ? 'BEEP' : 'IDLE');
+  setText('signal-buzzer-note', `${sessionBeeps} beep sesi ini`);
+  toggleSignal('signal-buzzer', beeping);
+
+  setText('ml-alert-confidence', liveMl?.window_ready ? `${livePct}%` : '—');
+  setText('ml-alert-detail', liveMl?.window_ready
+    ? `${liveClass} · ${liveMl.mute_reason || 'ok'}`
+    : (liveMl?.mute_reason || 'window belum siap'));
+  setText('ml-alert-session-count', String(sessionBeeps));
+  setText('ml-alert-total-count', `total ${totalBeeps}`);
+  setText('ml-alert-interval', mlAlert.interval_ms ? `${mlAlert.interval_ms} ms` : '—');
+  setText('ml-alert-mode', beeping ? 'BEEP' : 'IDLE');
+  setText('ml-alert-mute', mlAlert.mute_reason || hlkAlert.mute_reason || '—');
+
+  let actuatorSummary = 'OFF';
+  let actuatorDetail = running
+    ? 'Sensors running; pilih AI Gate atau Rule Only untuk mengaktifkan buzzer.'
+    : 'Sensors off. Nyalakan sensor atau tekan Start AI Demo.';
+  if (aiOn) {
+    actuatorSummary = `AI GATE · ${beeping ? 'BEEP' : 'IDLE'}`;
+    actuatorDetail = `class ${mlAlert.class || '—'} ${Math.round((Number(mlAlert.confidence) || 0) * 100)}% · gate ${gateOpen ? 'OPEN' : 'CLOSED'} · ${aiDistance} cm · ${mlAlert.interval_ms || 0} ms · ${sessionBeeps} beep`;
+  } else if (ruleOn) {
+    actuatorSummary = `RULE ONLY · ${beeping ? 'BEEP' : 'IDLE'}`;
+    actuatorDetail = `last beep ${hlkAlert.last_distance_cm ?? '—'} cm · energy ${hlkAlert.last_energy ?? '—'} · interval ${hlkAlert.interval_ms || 0} ms · ${sessionBeeps} beep`;
   }
-  const mlAlert = state.health?.esp?.ml_alert || {};
-  const mlAlertButton = $('ml-alert-toggle');
-  if (mlAlertButton) {
-    const enabled = Boolean(mlAlert.enabled);
-    mlAlertButton.textContent = `AI Alert: ${enabled ? 'ON' : 'OFF'}`;
-    mlAlertButton.classList.toggle('active', enabled);
-    mlAlertButton.disabled = !state.health?.esp || mlAlert.enabled == null;
-  }
-  if (mlAlert.enabled != null) {
-    const distance = Number(mlAlert.distance_cm);
-    setText('ml-alert-status',
-      `${String(mlAlert.mode || 'idle').toUpperCase()} | ${mlAlert.active ? 'BEEP' : 'idle'} | ${mlAlert.class || '-'} `
-      + `${Math.round((Number(mlAlert.confidence) || 0) * 100)}% | ${Number.isFinite(distance) ? distance.toFixed(1) : '-'} cm | `
-      + `${mlAlert.interval_ms || 0} ms | beep ${mlAlert.count ?? 0} | ${mlAlert.mute_reason || '-'}`
-      + ` | gate ${mlAlert.gate ? 'ON' : 'OFF'} | rule ${mlAlert.rule_mode ? 'ON' : 'OFF'}`);
-  } else {
-    setText('ml-alert-status', 'AI alert belum tersedia');
-  }
-  const liveMl = state.health?.esp?.ml || null;
+  setText('actuator-summary', actuatorSummary);
+  setText('actuator-detail', actuatorDetail);
+  setBadgeTone('actuator-mode-badge', aiOn ? 'AI' : ruleOn ? 'RULE' : 'OFF',
+    aiOn ? 'LIVE' : ruleOn ? 'WARMING' : 'OFF');
+
   const cv = ml.cv_accuracy_mean != null
-    ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(1)}%` : '—';
+    ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(2)}%` : '—';
   const classes = Array.isArray(ml.classes) && ml.classes.length
-    ? ml.classes.join(' / ') : 'binary empty / human';
+    ? ml.classes.join(' / ') : 'empty / human';
   if (liveMl && liveMl.enabled) {
-    const confidence = Math.max(0, Math.min(1, Number(liveMl.confidence) || 0));
     setText('model-summary', liveMl.window_ready
-      ? `DL live: ${String(liveMl.class || '—').toUpperCase()} · ${Math.round(confidence * 100)}%`
-      : `DL live: menunggu window (${liveMl.window_ready ? 'siap' : 'mengisi'})`);
-    setText('model-detail', `${liveMl.model_version || '—'} · ${liveMl.window ?? '—'} frame · latency ${liveMl.latency_ms ?? '—'} ms · inferences ${liveMl.inferences ?? 0} · arena ${liveMl.arena_used_bytes ?? '—'} B · ${liveMl.mute_reason || '—'}`);
+      ? `DL ${liveClass} · ${livePct}%`
+      : 'DL warming');
+    setText('model-detail', `${liveMl.model_version || '—'} · ${liveMl.window ?? '—'} frame · latency ${liveMl.latency_ms ?? '—'} ms · ${liveMl.inferences ?? 0} inferences · arena ${liveMl.arena_used_bytes ?? '—'} B`);
+    setBadgeTone('model-badge', liveMl.window_ready ? 'LIVE' : 'WARMING',
+      liveMl.window_ready ? 'LIVE' : 'WARMING');
   } else {
     setText('model-summary', `${classes} · CV ${cv}`);
-    setText('model-detail', `${ml.frames ?? '—'} frame · ${ml.windows ?? '—'} window · ${ml.tflite_bytes ?? '—'} byte TFLite · CV blocks ${ml.cv_blocks ?? '—'}`);
+    setText('model-detail', `${ml.frames ?? '—'} frame · ${ml.windows ?? '—'} window · ${ml.tflite_bytes ?? '—'} byte TFLite · ${ml.cv_blocks ?? '—'} blok`);
+    setBadgeTone('model-badge', 'OFF', 'OFF');
   }
+
+  let demoStatus = '—';
+  if (!esp) demoStatus = 'ESP offline';
+  else if (!running) demoStatus = 'Sensors off — nyalakan untuk demo';
+  else if (aiOn && !liveMl?.window_ready) demoStatus = `AI warming · ${liveMl?.mute_reason || 'mengisi window'}`;
+  else if (aiOn) demoStatus = `AI live · gate ${gateOpen ? 'OPEN' : 'CLOSED'} · ${sessionBeeps} beep`;
+  else if (ruleOn) demoStatus = 'Rule-only comparison';
+  else demoStatus = 'Sensors running · pilih mode';
+  setText('demo-status', demoStatus);
+
+  const modeAi = $('mode-ai');
+  const modeRule = $('mode-rule');
+  if (modeAi) {
+    modeAi.classList.toggle('active', aiOn);
+    modeAi.disabled = !esp || state.demoBusy;
+  }
+  if (modeRule) {
+    modeRule.classList.toggle('active', ruleOn);
+    modeRule.disabled = !esp || state.demoBusy;
+  }
+  const start = $('demo-start');
+  if (start) {
+    start.disabled = !esp || state.demoBusy;
+    start.textContent = aiOn ? 'Restart AI Demo' : 'Start AI Demo';
+  }
+  const stop = $('demo-stop');
+  if (stop) stop.disabled = !esp || state.demoBusy || (!aiOn && !ruleOn);
+  for (const id of ['sensors-toggle', 'overview-sensors-toggle']) {
+    const button = $(id);
+    if (button) button.disabled = !esp || state.sensorsBusy;
+  }
+
+  setText('ml-alert-status', `${modeLabel} · ${aiOn ? (mlAlert.mute_reason || '—') : ruleOn ? (hlkAlert.mute_reason || '—') : 'idle'} · gate ${gateText} · ${fmt(presence?.distance_cm)} cm · ${aiOn ? (mlAlert.interval_ms || 0) : (hlkAlert.interval_ms || 0)} ms · ${sessionBeeps} beep`);
+
   renderModelComparison(ml, liveMl);
   drawPresenceTrend();
 }
@@ -428,18 +681,23 @@ function renderModelComparison(ml, liveMl = null) {
   const rule = ml.rule_baseline || {};
   const presence = state.presence || {};
   const liveConfidence = Math.max(0, Math.min(1, Number(liveMl?.confidence) || 0));
+  const pct = (value, digits = 2) => value == null || Number.isNaN(Number(value))
+    ? '—' : `${(Number(value) * 100).toFixed(digits)}%`;
+  const hardFold = ml.hard_fold_accuracy != null
+    ? `fold terberat ${pct(ml.hard_fold_accuracy)} · human recall ${pct(ml.hard_fold_human_recall, 1)}`
+    : '5 blok waktu kontigu per sesi.';
   const rows = [
     ['Rule HLK (live)',
-      presence.class ? `${String(presence.class).toUpperCase()} · ${Math.round((Number(presence.confidence) || 0) * 100)}%` : '—',
-      `state ${presence.state || '—'} · gate ${presence.gate || '—'}; tetap menjadi jalur buzzer/safety.`],
+      presence.class ? `${String(presence.class).toUpperCase()} · rule` : '—',
+      `state ${presence.state || '—'} · gate ${presence.gate || '—'}; baseline rule, bukan aktuator saat AI ON.`],
     ['DL 1D CNN (live)',
       liveMl?.window_ready ? `${String(liveMl.class || '—').toUpperCase()} · ${Math.round(liveConfidence * 100)}%` : 'menunggu window',
       liveMl?.enabled ? `latency ${liveMl.latency_ms ?? '—'} ms · ${liveMl.mute_reason || '—'}` : 'firmware belum mengirim status ML.'],
-    ['DL validasi blok',
-      ml.cv_accuracy_mean != null ? `${(Number(ml.cv_accuracy_mean) * 100).toFixed(1)}% ± ${(Number(ml.cv_accuracy_std || 0) * 100).toFixed(1)}%` : (ml.final_val_accuracy != null ? `${(Number(ml.final_val_accuracy) * 100).toFixed(1)}%` : '—'),
-      '5 blok waktu kontigu per sesi; angka generalisasi yang dilaporkan.'],
+    ['DL validasi blok v3',
+      ml.cv_accuracy_mean != null ? `${pct(ml.cv_accuracy_mean)} ± ${pct(ml.cv_accuracy_std)}` : (ml.final_val_accuracy != null ? pct(ml.final_val_accuracy, 1) : '—'),
+      hardFold],
     ['Rule baseline',
-      rule.val_accuracy != null ? `${(Number(rule.val_accuracy) * 100).toFixed(1)}%` : '100.0%',
+      rule.val_accuracy != null ? pct(rule.val_accuracy, 1) : '100.0%',
       'Baseline pada split yang sama; bukan model DL.'],
   ];
   const table = document.createElement('table');
@@ -482,8 +740,8 @@ function drawPresenceTrend() {
   ctx.clearRect(0, 0, width, height);
   const history = state.presence?.history || [];
   if (history.length < 2) {
-    ctx.fillStyle = '#9fb1c7';
-    ctx.font = '14px system-ui';
+    ctx.fillStyle = '#8c8c92';
+    ctx.font = '12px "Cascadia Mono", Consolas, monospace';
     ctx.fillText('Belum ada riwayat HLK. Nyalakan board dan buka tab ini.', 20, 34);
     return;
   }
@@ -492,7 +750,7 @@ function drawPresenceTrend() {
   const plotH = height - pad.top - pad.bottom;
   const maxEnergy = 255;
   const maxDistance = Math.max(200, ...history.map(item => Number(item.distance_cm) || 0));
-  ctx.strokeStyle = '#1a2a3d';
+  ctx.strokeStyle = '#1e1e22';
   ctx.lineWidth = 1;
   for (let index = 0; index <= 4; index++) {
     const y = pad.top + plotH * index / 4;
@@ -501,36 +759,36 @@ function drawPresenceTrend() {
   const xAt = (index) => pad.left + plotW * index / Math.max(1, history.length - 1);
   const yEnergy = (value) => pad.top + plotH * (1 - Math.max(0, Math.min(maxEnergy, value)) / maxEnergy);
   const yDistance = (value) => pad.top + plotH * (1 - Math.max(0, Math.min(maxDistance, value)) / maxDistance);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#59e0ff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#8fa6b8';
   ctx.beginPath();
   history.forEach((item, index) => {
     const x = xAt(index), y = yEnergy(Number(item.energy) || 0);
     index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
-  ctx.strokeStyle = '#ffb45c';
+  ctx.strokeStyle = '#ff5c1a';
   ctx.beginPath();
   history.forEach((item, index) => {
     const x = xAt(index), y = yDistance(Number(item.distance_cm) || 0);
     index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
-  const stateColor = (value) => value === 'present' ? '#6bff9c'
-    : (value === 'holding' || value === 'confirming') ? '#ffe06b' : '#5a6b80';
+  const stateColor = (value) => value === 'present' ? '#8fa88b'
+    : (value === 'holding' || value === 'confirming') ? '#d9a441' : '#5f5f66';
   history.forEach((item, index) => {
     const x = xAt(index), y = height - pad.bottom + 8;
     ctx.fillStyle = stateColor(item.state);
     ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
   });
-  ctx.fillStyle = '#9fb1c7';
-  ctx.font = '11px system-ui';
+  ctx.fillStyle = '#8c8c92';
+  ctx.font = '10px "Cascadia Mono", Consolas, monospace';
   ctx.fillText('energy', pad.left, 12);
-  ctx.fillStyle = '#59e0ff';
+  ctx.fillStyle = '#8fa6b8';
   ctx.fillText('0–255', pad.left + 44, 12);
-  ctx.fillStyle = '#ffb45c';
+  ctx.fillStyle = '#ff5c1a';
   ctx.fillText(`jarak 0–${Math.round(maxDistance)} cm`, width - pad.right - 120, 12);
-  ctx.fillStyle = '#9fb1c7';
+  ctx.fillStyle = '#8c8c92';
   ctx.fillText('frame terakhir →', width - pad.right - 90, height - 8);
 }
 
@@ -791,26 +1049,28 @@ function labelColor(label) {
     if (rgb) return rgb;
   }
   const palette = {
-    wall: [80, 150, 230],
-    wall_edge: [130, 200, 255],
-    fan: [255, 190, 80],
-    bed: [170, 140, 255],
-    wardrobe: [205, 130, 255],
-    chair: [255, 150, 120],
-    table: [255, 170, 90],
-    desk: [255, 150, 90],
-    door: [150, 220, 180],
-    mount: [150, 150, 150],
-    object: [70, 210, 150],
+    wall: [143, 166, 184],
+    wall_edge: [184, 188, 196],
+    fan: [217, 164, 65],
+    bed: [143, 168, 139],
+    wardrobe: [130, 136, 146],
+    chair: [196, 150, 120],
+    table: [143, 166, 184],
+    desk: [143, 166, 184],
+    door: [143, 168, 139],
+    mount: [95, 95, 102],
+    object: [164, 154, 144],
   };
   if (palette[label]) return palette[label];
   let hash = 0;
   for (const character of String(label || 'object')) {
     hash = (hash * 31 + character.charCodeAt(0)) & 0xffffffff;
   }
-  const hue = Math.abs(hash) % 360;
-  const channel = (offset) => Math.round(128 + 100 * Math.cos((hue + offset) * Math.PI / 180));
-  return [channel(0), channel(120), channel(240)];
+  const fallback = [
+    [143, 166, 184], [164, 154, 144], [143, 168, 139],
+    [217, 164, 65], [196, 150, 120], [130, 136, 146],
+  ];
+  return fallback[Math.abs(hash) % fallback.length];
 }
 
 function boxColor(box) {
@@ -1606,25 +1866,6 @@ async function clearPresence() {
   }
 }
 
-async function toggleMlAlert() {
-  const current = Boolean(state.health?.esp?.ml_alert?.enabled);
-  const command = current ? 'ml_alert_off' : 'ml_alert_on';
-  try {
-    await withBusy($('ml-alert-toggle'), () => api('/api/mapping/command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command }),
-    }), 'AI alert...');
-    await refreshHealth();
-    showToast(command === 'ml_alert_on'
-      ? 'AI alert aktif: buzzer mengikuti prediksi DL.'
-      : 'AI alert nonaktif.', 'success');
-  } catch (error) {
-    setText('ml-alert-status', `Gagal: ${error.message}`);
-    showToast(`Gagal AI alert: ${error.message}`, 'error', 4500);
-  }
-}
-
 function projectPoint(point, width, height, radius) {
   const x = Number(point.x_mm) / 1000;
   const y = Number(point.y_mm) / 1000;
@@ -1653,21 +1894,21 @@ function drawGrid(ctx, width, height, radius) {
     for (const [a, b] of [[value, -radius], [value, radius]]) {
       const p1 = projectPoint({ x_mm: a * 1000, y_mm: b * 1000, z_mm: 0 }, width, height, radius);
       const p2 = projectPoint({ x_mm: a * 1000, y_mm: (b === -radius ? radius : -radius) * 1000, z_mm: 0 }, width, height, radius);
-      ctx.strokeStyle = index === steps / 2 ? '#2c4562' : '#1a2a3d';
+      ctx.strokeStyle = index === steps / 2 ? '#3a3a40' : '#1e1e22';
       ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
     }
     for (const [a, b] of [[-radius, value], [radius, value]]) {
       const p1 = projectPoint({ x_mm: a * 1000, y_mm: b * 1000, z_mm: 0 }, width, height, radius);
       const p2 = projectPoint({ x_mm: (a === -radius ? radius : -radius) * 1000, y_mm: b * 1000, z_mm: 0 }, width, height, radius);
-      ctx.strokeStyle = index === steps / 2 ? '#2c4562' : '#1a2a3d';
+      ctx.strokeStyle = index === steps / 2 ? '#3a3a40' : '#1e1e22';
       ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
     }
   }
   const origin = projectPoint({ x_mm: 0, y_mm: 0, z_mm: 0 }, width, height, radius);
   const axes = [
-    { p: { x_mm: radius * 1000, y_mm: 0, z_mm: 0 }, color: '#ff6b6b', label: 'X' },
-    { p: { x_mm: 0, y_mm: radius * 1000, z_mm: 0 }, color: '#6bff9c', label: 'Y' },
-    { p: { x_mm: 0, y_mm: 0, z_mm: radius * 1000 }, color: '#6bb8ff', label: 'Z' },
+    { p: { x_mm: radius * 1000, y_mm: 0, z_mm: 0 }, color: '#ff5c1a', label: 'X' },
+    { p: { x_mm: 0, y_mm: radius * 1000, z_mm: 0 }, color: '#8fa88b', label: 'Y' },
+    { p: { x_mm: 0, y_mm: 0, z_mm: radius * 1000 }, color: '#8fa6b8', label: 'Z' },
   ];
   ctx.font = '12px system-ui';
   for (const axis of axes) {
@@ -1678,7 +1919,7 @@ function drawGrid(ctx, width, height, radius) {
   }
   if (state.showAxis) {
     ctx.font = '9px system-ui';
-    ctx.fillStyle = 'rgba(170,195,220,0.65)';
+    ctx.fillStyle = 'rgba(140,140,146,0.65)';
     ctx.textAlign = 'center';
     for (let value = -Math.floor(radius); value <= radius; value += 1) {
       if (value === 0) continue;
@@ -1988,7 +2229,7 @@ function drawBoxes3D(ctx, width, height, radius) {
       const text = `${boxName(box)} ${dimensions}${distance}`;
       ctx.font = `${14 * labelScale}px system-ui`;
       ctx.lineWidth = 3 * labelScale;
-      ctx.strokeStyle = 'rgba(10,17,28,0.85)';
+      ctx.strokeStyle = 'rgba(12,12,14,0.85)';
       ctx.strokeText(text, top.x + 12, top.y - 4);
       ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
       ctx.fillText(text, top.x + 12, top.y - 4);
@@ -2011,7 +2252,7 @@ function drawBoxes3D(ctx, width, height, radius) {
 function drawTag(ctx, x, y, text, color, scale = 1) {
   ctx.font = `${20 * scale}px system-ui`;
   const width = ctx.measureText(text).width + 14 * scale;
-  ctx.fillStyle = 'rgba(10,17,28,0.86)';
+  ctx.fillStyle = 'rgba(12,12,14,0.86)';
   ctx.fillRect(x - width / 2, y - 16 * scale, width, 30 * scale);
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
@@ -2127,9 +2368,9 @@ function drawRoomOutline2D(ctx, toScreen) {
     index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
   });
   ctx.closePath();
-  ctx.fillStyle = 'rgba(120,255,200,0.06)';
+  ctx.fillStyle = 'rgba(143,168,139,0.06)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(120,255,200,0.62)';
+  ctx.strokeStyle = 'rgba(143,168,139,0.62)';
   ctx.lineWidth = 3;
   ctx.setLineDash([12, 7]);
   ctx.stroke();
@@ -2146,7 +2387,7 @@ function drawRoomOutline3D(ctx, width, height, radius) {
     index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
   });
   ctx.closePath();
-  ctx.strokeStyle = 'rgba(120,255,200,0.4)';
+  ctx.strokeStyle = 'rgba(143,168,139,0.4)';
   ctx.lineWidth = 1.4;
   ctx.setLineDash([7, 5]);
   ctx.stroke();
@@ -2234,7 +2475,7 @@ function drawResizeHandles2D(ctx, box, toScreen) {
   const handles = resizeHandleList(box, toScreen);
   ctx.save();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = 'rgba(10,17,28,0.95)';
+  ctx.strokeStyle = 'rgba(12,12,14,0.95)';
   for (const handle of handles) {
     ctx.fillStyle = '#ffffff';
     if (handle.kind === 'corner') {
@@ -2260,8 +2501,8 @@ function drawAxisTicks2D(ctx, view, width, height) {
   const minY = Math.min(topLeft.y, bottomRight.y);
   const maxY = Math.max(topLeft.y, bottomRight.y);
   ctx.save();
-  ctx.fillStyle = 'rgba(180,205,230,0.82)';
-  ctx.strokeStyle = 'rgba(170,195,220,0.45)';
+  ctx.fillStyle = 'rgba(237,234,228,0.82)';
+  ctx.strokeStyle = 'rgba(140,140,146,0.45)';
   ctx.font = '20px system-ui';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -2280,7 +2521,7 @@ function drawAxisTicks2D(ctx, view, width, height) {
   const bottomRightScreen = view.toScreen(maxX, minY);
   const topLeftScreen = view.toScreen(minX, maxY);
   ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(120,180,255,0.95)';
+  ctx.fillStyle = 'rgba(143,166,184,0.95)';
   ctx.fillText('X (m)', bottomRightScreen.x - 40, bottomRightScreen.y + 32);
   ctx.fillText('Y (m)', topLeftScreen.x, topLeftScreen.y - 28);
   ctx.restore();
@@ -2312,14 +2553,14 @@ function drawTopDown() {
   for (let value = startX; value <= worldMaxX; value += gridStep) {
     const p1 = toScreen(value, worldMinY);
     const p2 = toScreen(value, worldMaxY);
-    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#2c4562' : '#1a2a3d';
+    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#3a3a40' : '#1e1e22';
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
   }
   const startY = Math.floor(worldMinY / gridStep) * gridStep;
   for (let value = startY; value <= worldMaxY; value += gridStep) {
     const p1 = toScreen(worldMinX, value);
     const p2 = toScreen(worldMaxX, value);
-    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#2c4562' : '#1a2a3d';
+    ctx.strokeStyle = Math.abs(value) < 0.01 ? '#3a3a40' : '#1e1e22';
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
   }
   drawAxisTicks2D(ctx, view, width, height);
@@ -2330,9 +2571,9 @@ function drawTopDown() {
       + (Number.isFinite(total) ? ` · total ${total.toFixed(1)} m²` : '');
     ctx.font = '20px system-ui';
     const textWidth = ctx.measureText(text).width;
-    ctx.fillStyle = 'rgba(8,15,25,0.80)';
+    ctx.fillStyle = 'rgba(12,12,14,0.80)';
     ctx.fillRect(12, 8, textWidth + 16, 28);
-    ctx.fillStyle = 'rgba(120,255,200,0.95)';
+    ctx.fillStyle = 'rgba(143,168,139,0.95)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 20, 22);
@@ -2348,7 +2589,7 @@ function drawTopDown() {
     state.reconstruction?.occluded_deg || [], fovLimit);
   const fov = fovLimit * Math.PI / 180;
   const facing = displaySensorAngle(0);
-  ctx.strokeStyle = 'rgba(120,180,255,0.45)';
+  ctx.strokeStyle = 'rgba(143,166,184,0.45)';
   ctx.setLineDash([5, 5]);
   for (const angle of [facing - fov, facing + fov]) {
     const end = toScreen(sensor.x + Math.cos(angle) * scanRadius,
@@ -2364,12 +2605,12 @@ function drawTopDown() {
   const scanEnd = toScreen(sensor.x + Math.cos(endAngle) * labelRadius,
     sensor.y + Math.sin(endAngle) * labelRadius);
   drawTag(ctx, scanStart.x, scanStart.y - 18,
-    'start −60° (kursi)', 'rgba(150,200,255,0.98)', 0.82);
+    'start −60° (kursi)', 'rgba(140,140,146,0.98)', 0.82);
   drawTag(ctx, scanEnd.x, scanEnd.y - 18,
-    'end +60° (kasur/lemari)', 'rgba(150,200,255,0.98)', 0.82);
+    'end +60° (kasur/lemari)', 'rgba(140,140,146,0.98)', 0.82);
   drawTag(ctx, origin.x + 0.22 * scale, origin.y + 0.2 * scale,
     state.mirrorY ? 'scan berlawanan arah jarum jam' : 'scan searah jarum jam',
-    'rgba(150,200,255,0.9)', 0.72);
+    'rgba(140,140,146,0.9)', 0.72);
   drawRoomOutline2D(ctx, toScreen);
   if (state.viewMode !== 'blocks') {
     const selected = selectedPointSet();
@@ -2377,7 +2618,7 @@ function drawTopDown() {
       const screen = toScreen(Number(point.x_mm) / 1000, Number(point.y_mm) / 1000);
       const isSelected = selected.has(Number(point.point_index));
       ctx.fillStyle = isSelected ? '#ffffff'
-        : (point.range_source === 'tof' ? 'rgba(80,220,255,0.85)' : 'rgba(255,170,60,0.85)');
+        : (point.range_source === 'tof' ? 'rgba(143,166,184,0.85)' : 'rgba(255,92,26,0.85)');
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, isSelected ? 6.5 : 3.2, 0, Math.PI * 2);
       ctx.fill();
@@ -2439,7 +2680,7 @@ function drawTopDown() {
         const labelY = label.y - 6 - (prior ? (boxIndex % 2) * 15 : 0);
         ctx.font = `bold ${20 * labelScale * fontScale}px system-ui`;
         ctx.lineWidth = 4 * labelScale * fontScale;
-        ctx.strokeStyle = 'rgba(10,17,28,0.92)';
+        ctx.strokeStyle = 'rgba(12,12,14,0.92)';
         ctx.strokeText(text, label.x + 6, labelY);
         ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
         ctx.fillText(text, label.x + 6, labelY);
@@ -2492,17 +2733,17 @@ function drawTopDown() {
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.arc(origin.x, origin.y, 6, 0, Math.PI * 2); ctx.fill();
   ctx.font = '20px system-ui';
-  ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 3;
+  ctx.strokeStyle = '#ff5c1a'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x + 0.5 * scale, origin.y); ctx.stroke();
-  ctx.fillStyle = '#ff6b6b'; ctx.fillText('X', origin.x + 0.5 * scale + 6, origin.y - 6);
-  ctx.strokeStyle = '#6bff9c'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x, origin.y - 0.5 * scale); ctx.stroke();
-  ctx.fillStyle = '#6bff9c'; ctx.fillText('Y', origin.x + 6, origin.y - 0.5 * scale - 6);
+  ctx.fillStyle = '#ff5c1a'; ctx.fillText('X', origin.x + 0.5 * scale + 6, origin.y - 6);
+  ctx.strokeStyle = '#8fa88b'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(origin.x, origin.y - 0.5 * scale); ctx.stroke();
+  ctx.fillStyle = '#8fa88b'; ctx.fillText('Y', origin.x + 6, origin.y - 0.5 * scale - 6);
   const barStart = { x: 30, y: height - 30 };
-  ctx.strokeStyle = '#e6edf6'; ctx.lineWidth = 4;
+  ctx.strokeStyle = '#edeae4'; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y); ctx.lineTo(barStart.x + scale, barStart.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(barStart.x, barStart.y - 8); ctx.lineTo(barStart.x, barStart.y + 8); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(barStart.x + scale, barStart.y - 8); ctx.lineTo(barStart.x + scale, barStart.y + 8); ctx.stroke();
-  ctx.fillStyle = '#e6edf6'; ctx.font = '20px system-ui';
+  ctx.fillStyle = '#edeae4'; ctx.font = '20px system-ui';
   ctx.textAlign = 'center';
   ctx.fillText('1 m', barStart.x + scale / 2, barStart.y - 14);
   ctx.textAlign = 'start';
@@ -2512,10 +2753,10 @@ function drawTopDown() {
       Number(state.health?.esp?.scan?.yaw_deg_nominal || 0) * Math.PI / 180);
     const screen = toScreen(sensor.x + hlkRadius * Math.cos(yaw),
       sensor.y + hlkRadius * Math.sin(yaw));
-    ctx.fillStyle = gated ? 'rgba(255,170,70,0.22)' : 'rgba(255,80,200,0.28)';
-    ctx.strokeStyle = gated ? 'rgba(255,190,90,0.85)' : 'rgba(255,120,220,0.85)';
+    ctx.fillStyle = gated ? 'rgba(255,170,70,0.22)' : 'rgba(217,164,65,0.28)';
+    ctx.strokeStyle = gated ? 'rgba(217,164,65,0.85)' : 'rgba(217,164,65,0.85)';
     ctx.beginPath(); ctx.arc(screen.x, screen.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = gated ? '#ffc46b' : '#ff9be0'; ctx.font = '18px system-ui';
+    ctx.fillStyle = gated ? '#d9a441' : '#d9a441'; ctx.font = '18px system-ui';
     ctx.fillText(gated
       ? `HLK beyond wall ${hlkRadius.toFixed(2)} m`
       : `HLK ${hlkRadius.toFixed(2)} m`, screen.x + 10, screen.y - 10);
@@ -2574,7 +2815,7 @@ function drawHuman3D(ctx, width, height, radius) {
     + `${Math.round(Number(presence.confidence || 0) * 100)}%`;
   ctx.font = `${14 * labelScale}px system-ui`;
   ctx.lineWidth = 3 * labelScale;
-  ctx.strokeStyle = 'rgba(10,17,28,0.85)';
+  ctx.strokeStyle = 'rgba(12,12,14,0.85)';
   ctx.strokeText(text, labelPoint.x + 6, labelPoint.y - 4);
   ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
   ctx.fillText(text, labelPoint.x + 6, labelPoint.y - 4);
@@ -2744,21 +2985,21 @@ function drawCloudCanvas() {
       z_mm: 0,
     }, width, height, maxRadius);
     const markerRadius = 8 + Math.min(18, Number(hlk?.energy || 0) / 6);
-    ctx.fillStyle = gated ? 'rgba(255,170,70,0.20)' : 'rgba(255,80,200,0.22)';
-    ctx.strokeStyle = gated ? 'rgba(255,190,90,0.95)' : 'rgba(255,120,220,0.95)';
+    ctx.fillStyle = gated ? 'rgba(255,170,70,0.20)' : 'rgba(217,164,65,0.22)';
+    ctx.strokeStyle = gated ? 'rgba(217,164,65,0.95)' : 'rgba(217,164,65,0.95)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, markerRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = gated ? '#ffc46b' : '#ffb8e8';
+    ctx.fillStyle = gated ? '#d9a441' : '#d9a441';
     ctx.font = '12px system-ui';
     ctx.fillText(gated
       ? `HLK beyond wall ${hlkRadius.toFixed(2)} m`
       : `HLK ${hlk?.distance_cm ?? '—'} cm`, marker.x + markerRadius + 4, marker.y - 4);
   }
   if (!points.length && !boxes.length) {
-    ctx.fillStyle = '#9fb1c7';
+    ctx.fillStyle = '#8c8c92';
     ctx.font = '16px system-ui';
     ctx.fillText('Belum ada point cloud. Jalankan scan atau pilih scan.', 24, 36);
   }
@@ -3225,7 +3466,16 @@ $('show-axis').addEventListener('change', () => {
 });
 $('export-run').addEventListener('click', exportDataset);
 $('presence-clear').addEventListener('click', clearPresence);
-$('ml-alert-toggle').addEventListener('click', toggleMlAlert);
+for (const [id, mode] of [['mode-ai', 'ai'], ['mode-rule', 'rule']]) {
+  const button = $(id);
+  if (button) button.addEventListener('click', () => setActuatorMode(mode, button));
+}
+if ($('demo-start')) $('demo-start').addEventListener('click', startDemo);
+if ($('demo-stop')) $('demo-stop').addEventListener('click', stopDemo);
+for (const id of ['sensors-toggle', 'overview-sensors-toggle']) {
+  const button = $(id);
+  if (button) button.addEventListener('click', () => toggleSensors(button));
+}
 $('block-filter').addEventListener('input', renderBlockList);
 document.querySelectorAll('[data-sidebar-tab]').forEach(button => {
   button.addEventListener('click', () => setSidebarTab(button.dataset.sidebarTab));
@@ -3589,6 +3839,7 @@ syncSnapButton();
   }
   setInterval(refreshScans, 3000);
   setInterval(refreshHealth, 2000);
+  setInterval(renderTopbar, 1000);
   setInterval(refreshPresence, 1500);
   setInterval(refreshScanStatus, 1000);
   setInterval(refreshMlStatus, 1000);

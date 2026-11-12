@@ -560,6 +560,15 @@ operator was classified `human` up to 1.0, so the binary empty/human model is
 **not** an object classifier; a static object at 75 cm was not detected by the
 HLK at all. Details and evidence: `docs/live-gate-test.md`.
 
+**UI 2026-11-12:** the AI/Presence tab was rebuilt as an industrial instrument
+panel: signal chain (HLK -> model -> gate -> buzzer), status strip,
+`Start AI Demo`/`Stop`, `AI Gate`/`Rule Only`, and `Sensors ON/OFF`. The
+`/api/mapping/health` proxy now forwards `esp.ml_alert` (the missing field was
+why the AI button was disabled), `_ml_metrics()` reads v3, and the toast/status
+styling no longer uses green fills. Screenshots:
+`analysis/mapping/dashboard-20261112-ui/`; details:
+`docs/mapping-dashboard.md` and `docs/live-gate-test.md`.
+
 **Next actions:** use `20261110T184241Z` for the cleanest map or
 `20261112T030324Z` for the newest scan; if the tripod/base moved, put it back
 on its mark and re-zero before another scan. For point h, demonstrate the
