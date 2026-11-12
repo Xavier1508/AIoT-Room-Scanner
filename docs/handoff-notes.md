@@ -109,13 +109,17 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. Empty/human sessions are recorded and v3 is deployed. Optional: run a new
-   **8-sample** clean scan for a fresh canonical map (the 2-sample fast scan
-   `20261111T154814Z` is a coverage/timing check). Keep the fan OFF for the AI
-   demo; the 30–75 cm HLK parking rule is intentional. When the operator
-   confirms the room is empty, regenerate the PLY + dataset manifest.
+1. When the operator confirms the room is empty, run the **Fine** preset
+   (**8 samples/point, 500 ms dwell, about 34 min**) for a fresh canonical map
+   (the 2-sample fast scan `20261111T154814Z` is only a coverage/timing check).
+   Keep the fan OFF while scanning or during the AI demo; the 30-75 cm HLK
+   parking rule is intentional. Reconstruct with the anchors, then regenerate
+   the PLY, dataset manifest and master CSV.
 2. Confirm `/api/status.ml` becomes ready after ~6.4 s, record latency,
-   arena use and the live empty/human result; check no brownout.
+   arena use and the live empty/human result; check no brownout. Then verify
+   the 0.9.3 AI gate with the operator present: `ml_alert_on` beeps only for a
+   human at 30-75 cm, a non-human object stays silent, `hlk_alert_on` beeps
+   for any object, and nothing beeps above 75 cm.
 3. Verify the final scan `20261110T184241Z`: Mirror Y ON, auto-align `-1.1°`,
    bed `-1.2°` wall-snapped, fan `81.8°` preserved, **12 blocks** (3 measured
    walls + bed + fan + 7 priors), no prior bed.
