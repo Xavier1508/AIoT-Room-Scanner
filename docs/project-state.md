@@ -120,7 +120,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   `wifi_scan_in_progress_actuators_idle`, then cancelled scan and returned IDLE.
   Roundtrip 360 ms includes deliberate host pacing; not measured physical stop
   latency. Evidence: `analysis/device/scan-control-20261105T160739Z/`.
-- Portable tests: **87 C++ assertions + 65 Python tests passed**; dashboard JS
+- Portable tests: **87 C++ assertions + 66 Python tests passed**; dashboard JS
   syntax and OpenAPI checks passed. Physical pose direction/clearance remains
   separate from software validation.
 - Earlier USB failures/experimental images are recorded in known-issues.md;
@@ -355,7 +355,7 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   windows predicted `human`), so v3 replaces it. Deployed logits model:
   `research/mapping/ml/model-empty-human-v3-logits/`. The AI prediction gates
   the rule; the failed distance-regression policy is not deployed. Tests:
-  **87 C++ + 65 Python**.
+  **87 C++ + 66 Python**.
 - Next DL target must be harder: human vs non-human, stationary-human presence,
   or activity classification. Keep the rule-based movement/presence baseline
   for the demo until a harder model beats it on a held-out session.
@@ -536,44 +536,35 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current status:** the canonical map is the 8-sample scan `20261110T184241Z`
-(475/475 points, 473 valid; 3 measured walls + 2 measured objects + 8
-transferred priors). The dashboard has a per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
-resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
-PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
-object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
-and fan #6 (`fan`, 81.8 deg, preserved); prior bed removed.
-**0.8.3-ml-alert-logits** was the first logits deployment and passed its 9V
-acceptance test (empty = no beep, human = 700 ms beeps, 4.2 s release); it is
-superseded by `0.9.3-ai-gated-rule`. The two 30-point validation scans
-(`20261111T114928Z`,
-`20261111T115125Z`) are **dirty** because the operator was active in the room;
-they are timing/health checks, not mapping evidence. A unified master dataset
-was regenerated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259
-rows = 475 mapping points + 7,784 HLK frames from four sessions, timestamped,
-labels empty/human; SHA-256 `007fefc5...9038`). New sessions:
-`20261111T152738Z-empty` (1,079 frames, 5 min) and
-`20261111T153448Z-human` (1,129 frames, 5 min). v3 is trained and deployed. The fast full scan is a coverage/timing check, not
-the map: the object anchors snap the bed/fan to the 8-sample reference, and the
-slow 8-sample scan is pending an empty-room confirmation. The master CSV
-includes the rule labels (`rule_beep`, `rule_zone`, `rule_interval_ms`). The final mapping PLY is
-`research/mapping/scenes/20261110T184241Z/20261111T101430Z.ply` (Mirror Y ON,
-auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
-12 boxes, 450 points, SHA-256 `7f907da3…77bc`). The configured sensor anchor is
-`(-0.139, 0.637, 0.77)` (partition centre); 2D/3D axes, FOV, distance leaders
-and presence marks use it, and the 3D axes sit at sensor height 0.77 m.
-The UI calls prior boxes **Rencana** (gambaran tambahan, bukan hasil ukur) and
-shows a grouped distance/size legend below the 3D view. The deployed DL model is
-`research/mapping/ml/model-empty-human-v3-logits/`; deployment steps are in
-`docs/ml-deployment.md`. `hlk_alert_on` is the rule-only comparison path, not a
-fallback for the AI gate.
+**Current status:** two 8-sample maps exist. The cleanest is still
+`20261110T184241Z` (475/475, 473 valid; 450 filtered points; bed 68 at anchor,
+fan 33). The newest is `20261112T030324Z` (475/475, 475 valid; 443 filtered
+points; 4 walls + bed 36 + fan 23 + 3 objects = 9 boxes), scanned after the
+operator bump, aborted at 373 points by a local PC socket error (`WinError
+10048`) and resumed from the raw samples; per-scan `eps_m=0.25`, rotation
+`3.5 deg`, Mirror Y centre `0.356`, anchors pinned bed/fan. Its PLY is
+`research/mapping/scenes/20261112T030324Z/20261112T034943Z.ply` (443 points,
+9 boxes, 108 faces, 19,237 bytes, SHA-256 `2b1e99ab...de96`). The master CSV
+now contains both scans: **8,734 rows** (950 scan points + 7,784 HLK frames),
+SHA-256 `75539aa7...d31c`; rule labels are included. The dashboard prefers the
+newest 8-sample scan, so it shows `20261112T030324Z`; choose
+`20261110T184241Z` for the cleanest demo map. Object anchors and the per-scan
+`eps_m` override are applied by the server/exporters; `hlk_alert_on` is the
+rule-only comparison path, not a fallback for the AI gate.
 
-**Next actions:** confirm the room is empty, then run the Fine preset (8
-samples/point, 500 ms dwell, about 34 min), reconstruct with the anchors and
-export PLY + CSV. With the operator present, verify 0.9.3 live: `ml_alert_on`
-beeps only for a human at 30-75 cm, a non-human object in range stays silent,
-`hlk_alert_on` beeps for any object, nothing beeps above 75 cm, and measure the
-gate latency.
+**Live 0.9.3 test (2026-11-12):** with a human at 62-78 cm the model was
+`human` 0.993-1.0, gate opened, the buzzer ran at 1425-2000 ms and stopped
+outside 75 cm; count 390-399. Rule-only beeped for a moving target at 75 cm
+(energy 100, interval 2000 ms, count 373-383). A moving object held by the
+operator was classified `human` up to 1.0, so the binary empty/human model is
+**not** an object classifier; a static object at 75 cm was not detected by the
+HLK at all. Details and evidence: `docs/live-gate-test.md`.
+
+**Next actions:** use `20261110T184241Z` for the cleanest map or
+`20261112T030324Z` for the newest scan; if the tripod/base moved, put it back
+on its mark and re-zero before another scan. For point h, demonstrate the
+moving-target rule case and state the binary-model limitation honestly; do not
+claim the AI rejects human-held objects.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.

@@ -267,13 +267,15 @@ bed/fan always appear at their usual positions. Anchors are applied by the
 mapping server and by the scene/dataset exports (`add_anchors=True`); the
 low-level reconstruction default does not add them, so synthetic geometry
 tests are unaffected. The fast 2-sample scan's sparse bed box is forced to the
-anchor; the 8-sample reference remains the map, and a slow 8-sample scan is
-pending an empty-room confirmation. The final
-dataset can be collected as one long-format CSV
-(`research/mapping/dataset/aiot_room_dataset_v1.csv`) with `record_type`
-`scan_point`/`hlk_frame`, UTC timestamps, labels, session IDs and split.
-`tools/mapping/export_master.py` rebuilds it from the latest clean scan run and
-all `frames.jsonl` sessions.
+anchor. A second 8-sample scan `20261112T030324Z` completed 475/475 after a
+373-point resume (local PC `WinError 10048`) and uses a per-scan
+`room.eps_m=0.25` plus anchors; its 9-box map has bed 36/fan 23. The cleanest
+map remains `20261110T184241Z` (450 points, bed 68/fan 33); the 2-sample fast
+scan is only coverage evidence. A scan may set `room.eps_m` (0.10-0.60) in
+annotations; the server passes it to reconstruction. The master CSV now
+includes both 8-sample scans: **8,734 rows** (950 scan points + 7,784 HLK
+frames), SHA-256 `75539aa7...d31c`. `tools/mapping/export_master.py` rebuilds
+it from the selected clean scan runs and all `frames.jsonl` sessions.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least
@@ -349,11 +351,16 @@ selection:
 Annotations are stored per scan in
 `research/mapping/scans/<id>/annotations.json` and include labels, hidden,
 merges, point labels, label catalog, manual/prior boxes, room outline and room
-metadata. The current scan `20261110T184241Z` has measured labels `bed` (#5,
+metadata. The clean reference `20261110T184241Z` has measured labels `bed` (#5,
 wall-snapped) and `fan` (#6, PCA), plus prior wardrobe, desk, chair, partition
 and both doors. The prior bed was removed. The final map is 12 blocks:
-3 measured walls + bed + fan + 7 priors. The 2.70×2.51 m room outline is the
-prior rectangle aligned to the measured walls.
+3 measured walls + bed + fan + 7 priors. The 2.70 x 2.51 m room outline is the
+prior rectangle aligned to the measured walls. The newest scan
+`20261112T030324Z` uses `room.eps_m=0.25`, rotation 3.5 deg, Mirror Y centre
+0.356; it has 443 filtered points and 9 boxes (4 walls + bed 36 + fan 23 + 3
+objects), PLY
+`research/mapping/scenes/20261112T030324Z/20261112T034943Z.ply` (19,237 bytes,
+SHA-256 `2b1e99ab...de96`). Choose the older reference for the cleanest demo.
 
 **3D object dataset:** `tools/mapping/ml/export_pointcloud.py` exports point
 labels and object boxes:

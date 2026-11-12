@@ -230,6 +230,12 @@ class Reconstruction(unittest.TestCase):
         self.assertTrue(merged["boxes"][0]["id"].startswith("merged:"))
         self.assertEqual(merged["boxes"][0]["points"], wall["points"] + obj["points"])
 
+    def test_room_eps_override(self):
+        rows = [{"x_mm": 880, "y_mm": 0, "z_mm": 600, "range_mm": 880}] * 8
+        result = reconstruct.reconstruct_points(
+            rows, annotations={"room": {"eps_m": 0.22}})
+        self.assertAlmostEqual(result["eps_m"], 0.22)
+
     def test_object_anchors_snap_labelled_box_and_add_prior(self):
         def measured():
             return {"boxes": [{

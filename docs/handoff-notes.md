@@ -9,16 +9,16 @@ filtered distance. No AI beep occurs outside 75 cm; `hlk_alert_on` is the
 rule-only comparison mode. The earlier `0.8.2-ml-alert` crash was the ESP_TF
 Softmax Prepare path, not corruption; the fix strips the Softmax op
 (`tools/mapping/ml/strip_softmax.py`) and computes softmax in float32 on the
-ESP32. The two 30-point validation scans are dirty (operator active); the fast
-full scan `20261111T154814Z` is a coverage/timing check, not the map. The
-8-sample reference `20261110T184241Z` and its object anchors (bed/fan) are
-canonical; the slow 8-sample scan is pending an empty-room confirmation.
-A unified master dataset exists at
-`research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259 rows, timestamped,
-labels empty/human). The current
-mapping reference is scan `20261110T184241Z` with Mirror Y ON, auto-align
-rotation `-1.1°`, measured bed/fan labels and no prior bed; see
-[project-state.md](project-state.md) for current numbers.
+ESP32. The two 30-point validation scans are dirty (operator active); the fast full
+scan `20261111T154814Z` is a coverage/timing check. Two 8-sample maps exist:
+`20261110T184241Z` is the cleanest (bed 68/fan 33 at anchors);
+`20261112T030324Z` is the newest (475/475, resumed from 373 after a local PC
+`WinError 10048`; bed 36/fan 23 at per-scan `eps_m=0.25`, anchors pinned). The
+master CSV contains both: 8,734 rows (950 scan points + 7,784 HLK frames),
+SHA-256 `75539aa7...d31c`. Live 0.9.3 gate verified for a human at 62-78 cm; a
+moving object held by the operator is classified human (binary model
+limitation), and a static object at 75 cm is not detected by the HLK. See
+`docs/live-gate-test.md` for evidence.
 
 ## Project shape
 
@@ -109,20 +109,21 @@ actual breakout labels before powering sensors.
 
 ## Next steps
 
-1. When the operator confirms the room is empty, run the **Fine** preset
-   (**8 samples/point, 500 ms dwell, about 34 min**) for a fresh canonical map
-   (the 2-sample fast scan `20261111T154814Z` is only a coverage/timing check).
-   Keep the fan OFF while scanning or during the AI demo; the 30-75 cm HLK
-   parking rule is intentional. Reconstruct with the anchors, then regenerate
-   the PLY, dataset manifest and master CSV.
-2. Confirm `/api/status.ml` becomes ready after ~6.4 s, record latency,
-   arena use and the live empty/human result; check no brownout. Then verify
-   the 0.9.3 AI gate with the operator present: `ml_alert_on` beeps only for a
-   human at 30-75 cm, a non-human object stays silent, `hlk_alert_on` beeps
-   for any object, and nothing beeps above 75 cm.
-3. Verify the final scan `20261110T184241Z`: Mirror Y ON, auto-align `-1.1°`,
-   bed `-1.2°` wall-snapped, fan `81.8°` preserved, **12 blocks** (3 measured
-   walls + bed + fan + 7 priors), no prior bed.
+1. Two 8-sample maps exist. Use `20261110T184241Z` for the cleanest demo map
+   (bed 68/fan 33) or `20261112T030324Z` for the newest scan (bed 36/fan 23,
+   anchors pinned, per-scan `eps_m=0.25`). If the tripod/base moved, put it
+   back on its mark, re-zero yaw, then run the **Fine** preset again
+   (**8 samples/point, 500 ms dwell, about 34 min**). Keep the fan OFF while
+   scanning or during the AI demo; the 30-75 cm HLK parking rule is intentional.
+2. Live 0.9.3 gate is verified for a human at 62-78 cm (model 0.993-1.0, gate
+   true, beeps 1425-2000 ms, stops above 75 cm). Repeat with the operator:
+   `ml_alert_on` for a human, `hlk_alert_on` for a moving target at 75 cm.
+   A moving object held by the operator is classified human by the binary
+   model; a static object at 75 cm is not detected by the HLK. Do not claim
+   non-human rejection; see `docs/live-gate-test.md`.
+3. Verify the maps: `20261110T184241Z` uses rotation `-1.1 deg`, bed `-1.2 deg`,
+   fan `81.8 deg`, 12 blocks; `20261112T030324Z` uses rotation `3.5 deg`, 9
+   boxes, bed/fan at the anchors, 443 filtered points.
 4. Export final PLY and clean dataset after labels are confirmed.
 5. Record demo: boot, calibration, short scan, 2D/3D, Mirror Y, auto-align,
    prior edit, PLY save, AI/Presence DL vs rule.

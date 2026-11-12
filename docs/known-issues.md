@@ -201,8 +201,15 @@ moving targets. Firmware `0.9.3-ai-gated-rule` runs the separate v3 empty/human
 DL classifier (14,528-byte int8 logits 1D CNN, 97.28% +- 4.70% contiguous-block
 validation); `ml_alert_on` uses the DL class (human + confidence >= 0.80) to
 gate the 30-75 cm HLK range beeper, while `hlk_alert_on` is the rule-only
-comparison (any object + 10 cm hysteresis). Non-human live markers wait for the
-3-class model.
+comparison (any object + 10 cm hysteresis). **HLK range/model limitation
+(2026-11-12):** the LD2410 distance gate resolution is about 75 cm; a target at
+50 cm was not detected at all (`raw=0`), and a static object at 75 cm was not
+detected because the radar needs movement. The 30-75 cm rule therefore starts
+at the first gate. The binary empty/human model can classify a moving object
+held by a person as `human` (observed confidence up to 1.0); it is not an
+object classifier. Point h must be demonstrated with a moving target the HLK
+can see, and this limitation must be stated. Non-human live markers wait for
+the 3-class model.
 
 **Binary empty/human is rule-separable:** the clean dataset has 2,234 empty
 frames with zero moving-energy positives and 3,342 human frames with 93.9%

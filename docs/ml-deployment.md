@@ -76,6 +76,12 @@ It is OTA-installed from `app0` and reports `ready=true`, model
   **99.6% human**, real empty window **99.6% empty**
   (`analysis/mapping/ml-deployment-20261111/parity.json`). This is not an
   ESP32 latency/OTA result.
+- Live 0.9.3 verification (2026-11-12): a human at 62-78 cm gave `human`
+  **0.993-1.0**, gate open, beeps 1425-2000 ms, stopped above 75 cm. Rule-only
+  beeped for a moving target at 75 cm (energy 100). A moving object held by the
+  operator was classified `human` up to 1.0 (binary-model limitation), and a
+  static object at 75 cm was not detected by the HLK. See
+  `docs/live-gate-test.md`.
 
 ## Firmware behavior
 

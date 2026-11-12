@@ -283,7 +283,7 @@ def _clean_annotations(payload):
         for key in ("width_m", "depth_m", "bathroom_m2", "desk_niche_m2",
                     "bedroom_m2", "total_m2", "reference_scale", "yaw_scale",
                     "map_rotation_deg", "mirror_y", "mirror_center_m",
-                    "snap_wall_objects"):
+                    "snap_wall_objects", "eps_m"):
             if key in room:
                 try:
                     clean_room[key] = round(float(room[key]), 3)

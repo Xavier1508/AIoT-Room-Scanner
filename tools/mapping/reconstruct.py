@@ -671,6 +671,12 @@ def reconstruct_points(rows, cell_m=0.10, eps_m=0.30, min_points=5,
                        mirror_center_m=0.0, snap_wall_objects=False,
                        add_anchors=False):
     try:
+        requested_eps = ((annotations or {}).get("room") or {}).get("eps_m")
+        if requested_eps is not None:
+            eps_m = max(0.10, min(0.60, float(requested_eps)))
+    except (TypeError, ValueError):
+        pass
+    try:
         yaw_scale = max(0.40, min(1.0, float(yaw_scale)))
     except (TypeError, ValueError):
         yaw_scale = 1.0
