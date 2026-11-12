@@ -389,9 +389,11 @@ def _apply_anchors(boxes, annotations):
                 "angle_deg": round(angle, 3),
                 "length_m": round(length, 3), "width_m": round(width, 3),
                 "z_bottom_m": round(z0, 3), "z_top_m": round(z1, 3),
-                "label": label, "label_source": "anchor",
-                "source": "anchor",
+                "label": label,
+                "label_source": ("manual" if candidate.get("label_source") == "manual"
+                                 else "anchor"),
                 "anchor_source": str(anchor.get("source", "reference")),
+                "snapped_to_anchor": True,
                 "size_source": "anchor", "angle_source": "anchor",
             })
             matches.append({"label": label, "box_id": str(candidate.get("id")),
@@ -400,8 +402,9 @@ def _apply_anchors(boxes, annotations):
             continue
         box = {
             "id": f"anchor:{index}:{label}",
-            "label": label, "label_source": "anchor", "source": "anchor",
+            "label": label, "label_source": "prior", "source": "prior",
             "anchor_source": str(anchor.get("source", "reference")),
+            "snapped_to_anchor": False,
             "size_source": "anchor", "angle_source": "anchor",
             "cx_m": round(cx, 3), "cy_m": round(cy, 3),
             "angle_deg": round(angle, 3),
