@@ -128,8 +128,11 @@ was contending with the ESP. The following changes target the demo path:
   travel time and verify once, falling back to the safe poll loop if the arm
   is still moving. Scan/calibration keeps the fully polled path.
 - **Large HUD.** The Demo tab now shows a big state (`MENCARI...`,
-  `MANUSIA TERKUNCI`, `TERAKHIR TERLIHAT`, `RADAR SAJA`, `CEK 9V`) plus large
-  distance/bearing and a sweep progress bar, readable from ~1.5 m.
+  `MANUSIA TERKUNCI`, `TERAKHIR TERLIHAT`, `RADAR SAJA`, `CEK 9V`,
+  `DI LUAR RUANGAN`) plus large distance/bearing and a sweep progress bar,
+  readable from ~1.5 m. A consistent reject cluster outside the room polygon
+  is shown as a dashed red `OUTSIDE ROOM` box at the measured point, never as
+  a confirmed human.
 - **Radar arc during acquisition.** When only the HLK has a distance, the 2D
   and 3D views draw a dashed uncertainty arc labelled `RADAR ... sudut?`
   instead of a false human box. The raw yellow HLK dot is hidden during Track.

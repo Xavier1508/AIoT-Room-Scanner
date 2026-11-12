@@ -283,6 +283,11 @@ function renderTrack() {
   const radarDistance = running && humanState === 'radar'
     ? Number(estimate.radar_distance_cm ?? estimate.distance_cm)
     : null;
+  const outsideRoom = running && humanState === 'radar'
+    && estimate.reason === 'outside_room'
+    && estimate.bearing_deg != null && estimate.distance_cm != null;
+  const displayBearing = outsideRoom ? estimate.bearing_deg : bearing;
+  const displayDistance = outsideRoom ? estimate.distance_cm : distance;
 
   setTone('demo-mode', mode,
     mode === 'TRACK' ? 'ok' : mode === 'GUARD' ? 'ok' : mode === 'RULE' ? 'warn' : 'dim');
@@ -340,6 +345,10 @@ function renderTrack() {
       hudState = 'PREDIKSI';
       hudTone = 'warn';
       hudHint = 'Target sedang dilacak; tunggu konfirmasi.';
+    } else if (humanState === 'radar' && outsideRoom) {
+      hudState = 'DI LUAR RUANGAN';
+      hudTone = 'bad';
+      hudHint = 'Target terdeteksi di luar denah (samping/belakang partisi). Pindah ke sisi kasur/kipas, di dalam ruangan.';
     } else if (humanState === 'radar') {
       hudState = 'RADAR SAJA';
       hudTone = 'warn';
@@ -361,14 +370,15 @@ function renderTrack() {
   setHud('hud-state', hudState, hudTone);
   setText('hud-sub', status);
   setHud('hud-distance',
-    hasFix && distance != null ? `${(Number(distance) / 100).toFixed(2)} m`
+    displayDistance != null
+      ? `${(Number(displayDistance) / 100).toFixed(2)} m${outsideRoom ? ' !' : ''}`
       : radarDistance != null && Number.isFinite(radarDistance)
         ? `${(radarDistance / 100).toFixed(2)} m ?` : '—',
-    confirmed ? 'ok' : hasFix || radarDistance != null ? 'warn' : 'dim');
+    confirmed ? 'ok' : outsideRoom ? 'bad' : hasFix || radarDistance != null ? 'warn' : 'dim');
   setHud('hud-bearing',
-    bearing != null && Number.isFinite(Number(bearing))
-      ? `${Number(bearing).toFixed(0)}°` : '—',
-    confirmed ? 'ok' : hasFix ? 'warn' : 'dim');
+    displayBearing != null && Number.isFinite(Number(displayBearing))
+      ? `${Number(displayBearing).toFixed(0)}°` : '—',
+    confirmed ? 'ok' : outsideRoom ? 'bad' : hasFix ? 'warn' : 'dim');
   let fraction = 0;
   if (running) {
     if (confirmed) fraction = 1;
@@ -2608,6 +2618,23 @@ function drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale = 1) {
     const label = `${labelState} ${distance.toFixed(2)} m · ${bearing}`;
     drawTag(ctx, point.x, point.y - depth / 2 - 18, label,
       `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
+    return;
+  }
+  if (state.track?.state === 'running' && tracked?.state === 'radar'
+      && tracked.reason === 'outside_room' && tracked.x_m != null) {
+    const point = toScreen(Number(tracked.x_m), Number(tracked.y_m));
+    const width = 0.55 * scale;
+    const depth = 0.35 * scale;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = 'rgba(217,108,95,0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(point.x - width / 2, point.y - depth / 2, width, depth);
+    ctx.setLineDash([]);
+    const distance = Number(tracked.distance_cm) / 100;
+    const bearing = tracked.bearing_deg != null ? `${Number(tracked.bearing_deg).toFixed(0)}°` : '—';
+    drawTag(ctx, point.x, point.y - depth / 2 - 18,
+      `OUTSIDE ROOM ${distance.toFixed(2)} m · ${bearing}`,
+      '#d96c5f', labelScale);
     return;
   }
   if (state.track?.state === 'running') {
