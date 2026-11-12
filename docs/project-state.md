@@ -536,9 +536,9 @@ contiguous-block validation; the rule path remains the buzzer/safety fallback.
   implementation commit (see `git log -1 --oneline`). No remote and no push;
   hosting details unconfirmed. Firmware, research and local secrets are ignored.
 
-**Current next action:** the new full scan `20261110T184241Z` is complete:
-475/475 points, 3 measured walls + 2 measured objects + 8 transferred priors,
-per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
+**Current status:** the canonical map is the 8-sample scan `20261110T184241Z`
+(475/475 points, 473 valid; 3 measured walls + 2 measured objects + 8
+transferred priors). The dashboard has a per-scan prior, block sidebar with Daftar/Edit tabs, 2D drag + one-side handle
 resize + numeric prior editing, selection priority/cycle, axis ticks, Ctrl+Z,
 PLY scene export, Mirror Y toggle (default ON), auto-align and wall-constrained
 object fit. Labels are final: measured bed #5 (`bed`, `-1.2°`, wall-snapped)
@@ -546,7 +546,7 @@ and fan #6 (`fan`, 81.8 deg, preserved); prior bed removed.
 **0.8.3-ml-alert-logits** was the first logits deployment and passed its 9V
 acceptance test (empty = no beep, human = 700 ms beeps, 4.2 s release); it is
 superseded by `0.9.3-ai-gated-rule`. The two 30-point validation scans
-The two 30-point validation scans (`20261111T114928Z`,
+(`20261111T114928Z`,
 `20261111T115125Z`) are **dirty** because the operator was active in the room;
 they are timing/health checks, not mapping evidence. A unified master dataset
 was regenerated at `research/mapping/dataset/aiot_room_dataset_v1.csv` (8,259
@@ -563,9 +563,17 @@ auto-align -1.1°, wall snap ON, bed 2.00×1.20 m size lock, partition 0.76 m,
 `(-0.139, 0.637, 0.77)` (partition centre); 2D/3D axes, FOV, distance leaders
 and presence marks use it, and the 3D axes sit at sensor height 0.77 m.
 The UI calls prior boxes **Rencana** (gambaran tambahan, bukan hasil ukur) and
-shows a grouped distance/size legend below the 3D view. The DL model is
-`research/mapping/ml/model-empty-human-v2/`; deployment steps are in
-`docs/ml-deployment.md`. The rule path remains the buzzer/safety fallback.
+shows a grouped distance/size legend below the 3D view. The deployed DL model is
+`research/mapping/ml/model-empty-human-v3-logits/`; deployment steps are in
+`docs/ml-deployment.md`. `hlk_alert_on` is the rule-only comparison path, not a
+fallback for the AI gate.
+
+**Next actions:** confirm the room is empty, then run the Fine preset (8
+samples/point, 500 ms dwell, about 34 min), reconstruct with the anchors and
+export PLY + CSV. With the operator present, verify 0.9.3 live: `ml_alert_on`
+beeps only for a human at 30-75 cm, a non-human object in range stays silent,
+`hlk_alert_on` beeps for any object, nothing beeps above 75 cm, and measure the
+gate latency.
 
 SSID discovery is passive 2.4 GHz only, not host/IP/port scanning. At most 48
 deduplicated strongest choices are retained. Hidden SSID has a manual fallback.
