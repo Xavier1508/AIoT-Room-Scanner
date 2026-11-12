@@ -25,6 +25,7 @@ const state = {
   health: null,
   healthUpdatedAt: 0,
   healthStale: false,
+  lastHealthAt: 0,
   mlAlertBaseCount: null,
   demoBusy: false,
   sensorsBusy: false,
@@ -255,8 +256,8 @@ function renderTrack() {
     running ? (phase === 'sweeping' && index ? `SWEEP ${index}/${total}` : phase.toUpperCase() || 'RUNNING')
       : track.state === 'error' ? 'ERROR' : track.state === 'stopped' ? 'STOPPED' : 'IDLE',
     track.state === 'error' ? 'bad' : running ? 'warn' : 'dim');
-  setTone('demo-human', humanState ? humanState.toUpperCase() : '—',
-    confirmed ? 'ok' : humanState === 'radar' || humanState === 'predicted' ? 'warn' : 'dim');
+  setTone('demo-human', humanState ? humanState.toUpperCase() : '-',
+    confirmed ? 'ok' : humanState === 'radar' || humanState === 'predicted' || humanState === 'stale' ? 'warn' : 'dim');
   setTone('demo-bearing', bearing != null ? `${Number(bearing).toFixed(1)}°` : '—',
     confirmed ? 'ok' : 'dim');
   setTone('demo-distance', distance != null ? `${Number(distance).toFixed(0)} cm` : '—',
@@ -266,7 +267,11 @@ function renderTrack() {
   if (track.state === 'error') status = `TRACK ERROR · ${track.error || 'unknown'}`;
   else if (running) {
     if (confirmed) status = `TRACK · CONFIRMED ${(Number(distance) / 100).toFixed(2)} m / ${Number(bearing).toFixed(1)}°`;
+    else if (humanState === 'stale') status = `TRACK · LAST SEEN ${(Number(distance) / 100).toFixed(2)} m / ${Number(bearing).toFixed(1)}° (mencari ulang)`;
+    else if (humanState === 'predicted') status = `TRACK · PREDICTED ${(Number(distance) / 100).toFixed(2)} m / ${Number(bearing).toFixed(1)}°`;
     else if (humanState === 'radar') status = 'TRACK · RADAR ONLY (belum terkonfirmasi)';
+    else if (phase === 'reacquire') status = 'TRACK · LOST, mencari ulang';
+    else if (phase === 'locked') status = 'TRACK · LOCKED (menunggu target)';
     else if (phase === 'sweeping') status = `SWEEPING ${index || 0}/${total || 0}`;
     else status = 'TRACK · SWEEPING';
   } else if (aiOn) status = 'GUARD · AI GATE';
@@ -323,7 +328,7 @@ async function startTrack() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         confirm_power: true, scan_id: scanId, yaw_limit_deg: 60,
-        tilt_us: 800, samples: 2, dwell_ms: 150, interval_s: 1.0,
+        tilt_us: 725, samples: 1, dwell_ms: 100, interval_s: 1.0,
       }),
     }), 'Track...');
     await refreshTrack();
@@ -486,6 +491,9 @@ async function refreshScans() {
 }
 
 async function refreshHealth() {
+  if (!state.demoBusy && state.track?.state === 'running'
+      && Date.now() - state.lastHealthAt < 5000) return;
+  state.lastHealthAt = Date.now();
   try {
     const response = await fetch('/api/mapping/health', { cache: 'no-store' });
     const data = await response.json();
@@ -964,6 +972,7 @@ function drawPresenceTrend() {
 }
 
 async function refreshPresence() {
+  if (state.track?.state === 'running' && !state.demoBusy) return;
   if (state.presenceBusy) return;
   state.presenceBusy = true;
   try {
@@ -2488,8 +2497,9 @@ function drawHumanTopDown(ctx, toScreen, sensor, scale, labelScale = 1) {
     ctx.stroke();
     const distance = Number(tracked.distance_cm) / 100;
     const bearing = tracked.bearing_deg != null ? `${Number(tracked.bearing_deg).toFixed(0)}°` : '—';
-    const label = `${tracked.state === 'confirmed' ? 'HUMAN CONFIRMED' : `HUMAN ${tracked.state.toUpperCase()}`}`
-      + ` ${distance.toFixed(2)} m · ${bearing}`;
+    const labelState = tracked.state === 'confirmed' ? 'HUMAN CONFIRMED'
+      : tracked.state === 'stale' ? 'HUMAN LAST SEEN' : 'HUMAN PREDICTED';
+    const label = `${labelState} ${distance.toFixed(2)} m · ${bearing}`;
     drawTag(ctx, point.x, point.y - depth / 2 - 18, label,
       `rgb(${color[0]},${color[1]},${color[2]})`, labelScale);
     return;
@@ -2948,7 +2958,7 @@ function drawTopDown() {
   ctx.textAlign = 'center';
   ctx.fillText('1 m', barStart.x + scale / 2, barStart.y - 14);
   ctx.textAlign = 'start';
-  if (hlkRadius > 0 && state.track?.state === 'running'
+  if (hlkRadius > 0 && state.track?.state !== 'running'
       && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
     const yaw = displaySensorAngle(
@@ -3186,7 +3196,7 @@ function drawCloudCanvas() {
   }
   if (state.viewMode !== 'points') drawBoxes3D(ctx, width, height, maxRadius);
   drawHuman3D(ctx, width, height, maxRadius);
-  if (hlkRadius > 0 && state.track?.state === 'running'
+  if (hlkRadius > 0 && state.track?.state !== 'running'
       && !(presence && ['present', 'holding'].includes(presence.state))) {
     const gated = presence?.gate === 'beyond_wall';
     const yawDeg = Number(state.health?.esp?.scan?.yaw_deg_nominal || 0);

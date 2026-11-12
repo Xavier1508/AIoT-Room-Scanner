@@ -112,10 +112,13 @@ actual breakout labels before powering sensors.
 proxy forwards `ml_alert`; v3 metrics are shown; the neutral toast replaces the
 green fill. Screenshots: `analysis/mapping/dashboard-20261112-ui/`.
 
-**Demo tab:** default tab has `Track` / `Guard` / `Stop`; Track is the yaw
-sweep + measured human box (buzzer silent), Guard is the AI-gated beeper.
+**Demo tab:** default tab has `Track` / `Guard` / `Stop`; Track is a
+sequential ±60° sweep at **725 µs** with a **measured scan-row background**,
+adjacent-angle clustering, a 1 s provisional lock, then a **stationary lock**
+that updates distance without rotating; Guard is the AI-gated beeper.
 Scan/Calibration/AI/Dataset are behind **Advanced**. The track decision and
-limits are in `docs/tracking-sweep.md`.
+limits (including the side/behind-mount ±60° limit and the old 800 µs bed
+false positive) are in `docs/tracking-sweep.md`.
 
 ## Next steps
 

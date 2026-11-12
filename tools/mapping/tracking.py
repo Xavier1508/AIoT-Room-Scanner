@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Bounded yaw sweep for a measured human bearing.
+"""Measured human tracking for a range-only HLK radar.
 
-The LD2410C has no angle. The arm (and the HLK with it) is rotated in small
-yaw steps; at each step ToF/HC are compared with the static scan background.
-A return closer than the mapped surface is a candidate human. The final track
-is a normal human-sized box at the measured bearing/distance, not a radial
-marker at the parked yaw.
+The LD2410C has no angle. The arm rotates the sensor cluster in 5/10 degree
+steps; at each step ToF/HC are compared with the *measured* static scan
+background for that yaw and tilt. A return closer than the scan surface is a
+candidate. Adjacent candidates are clustered before a bearing is computed, so
+a wall return and a real target at another angle can never average into one
+false position.
+
+After the first confirmed bearing the arm parks on that bearing. The lock loop
+keeps sampling ToF/HC without rotating, so the box follows the person moving
+closer/farther. If the beam loses the person, a short local sweep reacquires
+the bearing, then a full sweep is the last resort.
 """
 from __future__ import annotations
 
@@ -13,11 +19,8 @@ import csv
 import math
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
-from common import (CALIBRATION, SCANS, median, read_json, tilt_from_pulse,
-                    utc_iso)
-from esp_client import EspClient
+from common import (CALIBRATION, SCANS, median, read_json, tilt_from_pulse)
 from reconstruct import reconstruct_points
 
 OCCUPIABLE = {"bed"}
@@ -25,6 +28,7 @@ SOLID_SKIP = {"mount", "ceiling"}
 MIN_RANGE_CM = 25.0
 MAX_RANGE_CM = 450.0
 MAX_BACKGROUND_CM = 600.0
+HUMAN_HEIGHT_M = 1.7
 
 
 def _box_corners(box):
@@ -87,9 +91,59 @@ def _ray_box_t(box, ox, oy, dx, dy):
     return tmin
 
 
+class ScanRangeMap:
+    """Static range lookup from the measured scan rows.
+
+    A ray-cast from approximate boxes can be 10-30 cm away from the real wall.
+    That was enough to confirm a wall as a person. The scan CSV contains the
+    actual ToF/HC range for every yaw and servo pulse, so use that directly.
+    """
+
+    def __init__(self, scan_id, rows):
+        self.scan_id = scan_id
+        self.rows = []
+        for row in rows:
+            try:
+                distance_cm = float(row.get("range_mm") or 0.0) / 10.0
+                yaw_deg = float(row.get("yaw_deg") or 0.0)
+                servo_us = int(float(row.get("servo_us") or 0))
+            except (TypeError, ValueError):
+                continue
+            source = str(row.get("range_source") or "")
+            if source not in ("tof", "hc"):
+                continue
+            if not (MIN_RANGE_CM <= distance_cm <= MAX_BACKGROUND_CM):
+                continue
+            self.rows.append((yaw_deg, servo_us, distance_cm, source))
+
+    def __bool__(self):
+        return bool(self.rows)
+
+    def range_cm(self, scan_yaw_deg, tilt_us):
+        if not self.rows:
+            return None
+        exact = [row for row in self.rows
+                 if row[1] == int(tilt_us) and abs(row[0] - float(scan_yaw_deg)) <= 0.8]
+        if exact:
+            return round(median([row[2] for row in exact]), 1)
+        near = [row for row in self.rows
+                if abs(row[1] - int(tilt_us)) <= 50
+                and abs(row[0] - float(scan_yaw_deg)) <= 2.6]
+        if not near:
+            return None
+        servo_delta = min(abs(row[1] - int(tilt_us)) for row in near)
+        near = [row for row in near if abs(row[1] - int(tilt_us)) == servo_delta]
+        yaw_delta = min(abs(row[0] - float(scan_yaw_deg)) for row in near)
+        near = [row for row in near if abs(row[0] - float(scan_yaw_deg)) == yaw_delta]
+        return round(median([row[2] for row in near]), 1)
+
+    def snapshot(self):
+        return {"scan_id": self.scan_id, "cells": len(self.rows)}
+
+
 class BackgroundMap:
     def __init__(self, scan_id, boxes, polygon, origin, sensor_z,
-                 map_rotation_deg, mirror_y, calibration):
+                 map_rotation_deg, mirror_y, calibration, scan_range=None):
         self.scan_id = scan_id
         self.boxes = boxes
         self.polygon = polygon
@@ -98,6 +152,7 @@ class BackgroundMap:
         self.map_rotation_deg = map_rotation_deg
         self.mirror_y = mirror_y
         self.calibration = calibration
+        self.scan_range = scan_range
 
     def display_yaw_deg(self, scan_yaw_deg):
         rotated = float(scan_yaw_deg) + self.map_rotation_deg
@@ -127,6 +182,7 @@ class BackgroundMap:
         return None
 
     def raycast_cm(self, scan_yaw_deg, tilt_us):
+        """Box ray-cast fallback used when the scan has no matching row."""
         yaw = math.radians(self.display_yaw_deg(scan_yaw_deg))
         dx, dy = math.cos(yaw), math.sin(yaw)
         tilt = math.radians(tilt_from_pulse(tilt_us, self.calibration))
@@ -147,6 +203,13 @@ class BackgroundMap:
                 best = min(best, t * 100.0)
         return round(best, 1)
 
+    def background_cm(self, scan_yaw_deg, tilt_us):
+        if self.scan_range:
+            measured = self.scan_range.range_cm(scan_yaw_deg, tilt_us)
+            if measured is not None:
+                return measured
+        return self.raycast_cm(scan_yaw_deg, tilt_us)
+
     def snapshot(self):
         return {
             "scan_id": self.scan_id,
@@ -155,6 +218,7 @@ class BackgroundMap:
             "map_rotation_deg": round(self.map_rotation_deg, 2),
             "mirror_y": self.mirror_y,
             "boxes": len(self.boxes),
+            "scan_cells": len(self.scan_range.rows) if self.scan_range else 0,
             "polygon": [[round(x, 3), round(y, 3)] for x, y in self.polygon],
         }
 
@@ -232,6 +296,7 @@ def load_background(scan_id=None):
         float(room.get("map_rotation_deg", 0.0) or 0.0),
         bool(float(room.get("mirror_y", 1.0) or 1.0)),
         calibration,
+        scan_range=ScanRangeMap(selected, rows),
     )
     _BACKGROUND_CACHE[selected] = background
     return background
@@ -271,7 +336,91 @@ def _sample_hlk(status):
         return None, 0.0
 
 
-def estimate_track(samples, background, threshold_cm=15.0):
+def _polar(background, scan_yaw_deg, distance_cm, tilt_us):
+    bearing = background.display_yaw_deg(scan_yaw_deg)
+    yaw = math.radians(bearing)
+    x = background.origin[0] + (float(distance_cm) / 100.0) * math.cos(yaw)
+    y = background.origin[1] + (float(distance_cm) / 100.0) * math.sin(yaw)
+    tilt = math.radians(tilt_from_pulse(tilt_us, background.calibration))
+    z = background.sensor_z + (float(distance_cm) / 100.0) * math.tan(tilt)
+    return round(bearing, 1), x, y, z
+
+
+def _cluster_candidates(candidates, max_gap_deg=11.0):
+    ordered = sorted(candidates, key=lambda sample: float(sample["yaw_deg"]))
+    clusters = []
+    for sample in ordered:
+        if (clusters
+                and abs(float(sample["yaw_deg"]) - float(clusters[-1][-1]["yaw_deg"]))
+                <= max_gap_deg):
+            clusters[-1].append(sample)
+        else:
+            clusters.append([sample])
+    return clusters
+
+
+def _cluster_estimate(cluster, background):
+    weights = []
+    for sample in cluster:
+        weight = max(0.1, min(1.0, float(sample["delta_cm"]) / 80.0))
+        weight *= 1.0 + min(1.0, float(sample.get("hlk_energy") or 0) / 180.0) * 0.35
+        weights.append(weight)
+    total = sum(weights) or 1.0
+    display_angles = [background.display_yaw_deg(sample["yaw_deg"]) for sample in cluster]
+    bearing = sum(angle * weight for angle, weight in zip(display_angles, weights)) / total
+    distance = median([float(sample["range_cm"]) for sample in cluster])
+    scan_yaw = median([float(sample["yaw_deg"]) for sample in cluster])
+    tilt_us = int(cluster[0].get("tilt_us", 800) or 800)
+    measured_bearing, x, y, z = _polar(background, scan_yaw, distance, tilt_us)
+    inside = background.inside_room(x, y)
+    solid = background.solid_at(x, y, z)
+    span = max(float(sample["yaw_deg"]) for sample in cluster) - min(
+        float(sample["yaw_deg"]) for sample in cluster)
+    spread = max(float(sample["range_cm"]) for sample in cluster) - min(
+        float(sample["range_cm"]) for sample in cluster)
+    tof_count = sum(1 for sample in cluster
+                    if str(sample.get("source") or "tof") == "tof")
+    confirmed = (len(cluster) >= 2 and span >= 4.0 and tof_count >= 1
+                 and spread <= 55.0 and inside and solid is None)
+    if confirmed:
+        reason = "confirmed"
+    elif not inside:
+        reason = "outside_room"
+    elif solid:
+        reason = f"inside_{solid}"
+    elif len(cluster) < 2:
+        reason = "single_sample"
+    elif tof_count < 1:
+        reason = "hc_only"
+    elif span < 4.0:
+        reason = "too_narrow"
+    else:
+        reason = "distance_spread"
+    confidence = 0.0
+    if confirmed:
+        confidence = min(0.99, 0.48 + 0.0025 * sum(float(s["delta_cm"]) for s in cluster)
+                         + 0.0012 * sum(float(s.get("hlk_energy") or 0) for s in cluster)
+                         + 0.05 * len(cluster))
+    return {
+        "state": "confirmed" if confirmed else "radar",
+        "confirmed": confirmed,
+        "bearing_deg": round(measured_bearing, 1),
+        "scan_yaw_deg": round(scan_yaw, 1),
+        "distance_cm": round(distance, 1),
+        "x_m": round(x, 3),
+        "y_m": round(y, 3),
+        "height_m": HUMAN_HEIGHT_M,
+        "z_bottom_m": 0.0,
+        "confidence": round(confidence, 3),
+        "reason": reason,
+        "candidates": len(cluster),
+        "tof_count": tof_count,
+        "span_deg": round(span, 1),
+        "spread_cm": round(spread, 1),
+    }
+
+
+def _candidate_samples(samples, threshold_cm):
     candidates = []
     for sample in samples:
         distance = sample.get("range_cm")
@@ -287,63 +436,47 @@ def estimate_track(samples, background, threshold_cm=15.0):
         sample["hlk_match"] = bool(hlk_ok)
         if delta >= threshold_cm and hlk_ok and MIN_RANGE_CM <= float(distance) <= MAX_RANGE_CM:
             candidates.append(sample)
-    hlk_samples = [sample for sample in samples
-                   if (sample.get("hlk_energy") or 0) >= 40
-                   and sample.get("hlk_cm") is not None
-                   and 30 <= float(sample.get("hlk_cm") or 0) <= 600]
+    return candidates
+
+
+def _hlk_samples(samples):
+    return [sample for sample in samples
+            if (sample.get("hlk_energy") or 0) >= 40
+            and sample.get("hlk_cm") is not None
+            and 30 <= float(sample.get("hlk_cm") or 0) <= 600]
+
+
+def estimate_track(samples, background, threshold_cm=20.0):
+    candidates = _candidate_samples(samples, threshold_cm)
+    hlk_samples = _hlk_samples(samples)
     if not candidates:
         state = "radar" if hlk_samples else "empty"
         return {
             "state": state, "confirmed": False, "bearing_deg": None,
             "distance_cm": None, "x_m": None, "y_m": None,
-            "height_m": 1.7, "z_bottom_m": 0.0, "confidence": 0.0,
+            "height_m": HUMAN_HEIGHT_M, "z_bottom_m": 0.0, "confidence": 0.0,
             "reason": "hlk_only" if hlk_samples else "no_target",
-            "candidates": 0,
+            "candidates": 0, "clusters": 0,
         }
-    weights = []
-    for sample in candidates:
-        weight = max(0.1, min(1.0, float(sample["delta_cm"]) / 80.0))
-        weight *= 1.0 + min(1.0, float(sample.get("hlk_energy") or 0) / 180.0) * 0.35
-        weights.append(weight)
-    total = sum(weights) or 1.0
-    display_angles = [background.display_yaw_deg(sample["yaw_deg"]) for sample in candidates]
-    bearing = sum(angle * weight for angle, weight in zip(display_angles, weights)) / total
-    distance = median([float(sample["range_cm"]) for sample in candidates])
-    yaw = math.radians(bearing)
-    x = background.origin[0] + (distance / 100.0) * math.cos(yaw)
-    y = background.origin[1] + (distance / 100.0) * math.sin(yaw)
-    tilt = math.radians(tilt_from_pulse(candidates[0].get("tilt_us", 800),
-                                        background.calibration))
-    z = background.sensor_z + (distance / 100.0) * math.tan(tilt)
-    inside = background.inside_room(x, y)
-    solid = background.solid_at(x, y, z)
-    confirmed = len(candidates) >= 2 and inside and solid is None
-    reason = "confirmed" if confirmed else (
-        "outside_room" if not inside else f"inside_{solid}" if solid else "single_sample")
-    confidence = 0.0
+    clusters = _cluster_candidates(candidates)
+    estimates = [_cluster_estimate(cluster, background) for cluster in clusters]
+    confirmed = [estimate for estimate in estimates if estimate["confirmed"]]
     if confirmed:
-        confidence = min(0.99, 0.45 + 0.003 * sum(float(s["delta_cm"]) for s in candidates)
-                         + 0.0015 * sum(float(s.get("hlk_energy") or 0) for s in candidates)
-                         + 0.05 * len(candidates))
-    return {
-        "state": "confirmed" if confirmed else "radar",
-        "confirmed": confirmed,
-        "bearing_deg": round(bearing, 1),
-        "scan_yaw_deg": round(median([float(s["yaw_deg"]) for s in candidates]), 1),
-        "distance_cm": round(distance, 1),
-        "x_m": round(x, 3),
-        "y_m": round(y, 3),
-        "height_m": 1.7,
-        "z_bottom_m": 0.0,
-        "confidence": round(confidence, 3),
-        "reason": reason,
-        "candidates": len(candidates),
-    }
+        best = max(confirmed, key=lambda item: (item["candidates"],
+                                                item["confidence"]))
+    else:
+        best = max(estimates, key=lambda item: (item["candidates"],
+                                                item["confidence"]))
+    best["clusters"] = len(clusters)
+    best["candidates_total"] = len(candidates)
+    return best
 
 
 class TrackSmoother:
-    def __init__(self, stale_s=3.0):
-        self.stale_s = max(1.0, float(stale_s))
+    def __init__(self, stale_s=3.0, expire_s=40.0, predict_s=1.5):
+        self.stale_s = max(0.5, float(stale_s))
+        self.expire_s = max(self.stale_s, float(expire_s))
+        self.predict_s = max(0.2, float(predict_s))
         self.last = None
         self.last_seen = 0.0
         self.velocity = (0.0, 0.0)
@@ -367,17 +500,19 @@ class TrackSmoother:
             return track
         if self.last:
             age = max(0.0, float(now) - self.last_seen)
+            if age > self.expire_s:
+                return estimate
             track = dict(self.last)
             track["age_s"] = round(age, 1)
-            if age > self.stale_s:
-                track["state"] = "stale"
-                track["confirmed"] = False
-                track["reason"] = "stale"
-            else:
+            if age <= self.predict_s:
                 track["state"] = "predicted"
                 track["confirmed"] = False
                 track["x_m"] = round(track["x_m"] + self.velocity[0] * age, 3)
                 track["y_m"] = round(track["y_m"] + self.velocity[1] * age, 3)
+            else:
+                track["state"] = "stale"
+                track["confirmed"] = False
+                track["reason"] = "stale"
             return track
         return estimate
 
@@ -388,54 +523,56 @@ class TrackingConfig:
     yaw_limit_deg: int = 60
     coarse_step_deg: int = 10
     fine_step_deg: int = 5
-    tilt_us: int = 800
+    tilt_us: int = 725
     samples: int = 2
     dwell_ms: int = 150
     sample_interval_ms: int = 100
     servo_delay_s: float = 0.1
     interval_s: float = 1.0
-    threshold_cm: float = 15.0
+    threshold_cm: float = 20.0
+    lock_threshold_cm: float = 18.0
+    lock_sample_ms: int = 200
+    lock_lost_s: float = 1.2
+    lock_verify_s: float = 1.0
+    local_limit_deg: int = 20
+    expire_s: float = 40.0
 
 
-def _targets(limit_deg, step_deg):
-    count = int(round(limit_deg * 2 / step_deg))
-    return [(-limit_deg + index * step_deg) for index in range(count + 1)]
+def _targets(center_deg, span_deg, step_deg, arm_limit_deg=60.0,
+             order="center", reverse=False):
+    targets = []
+    seen = set()
+
+    def add(value):
+        value = round(float(value), 1)
+        if value < -arm_limit_deg - 1e-6 or value > arm_limit_deg + 1e-6:
+            return
+        key = int(round(value))
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append(value)
+
+    if order == "sequential":
+        start = float(center_deg) - float(span_deg)
+        end = float(center_deg) + float(span_deg)
+        value = start
+        while value <= end + 1e-6:
+            add(value)
+            value += float(step_deg)
+        if reverse:
+            targets.reverse()
+        return targets
+    add(center_deg)
+    distance = int(step_deg)
+    while distance <= int(span_deg):
+        add(float(center_deg) - distance)
+        add(float(center_deg) + distance)
+        distance += int(step_deg)
+    return targets
 
 
-def _sample(client, target_deg, background, config, progress, stop_event):
-    if stop_event is not None and stop_event.is_set():
-        raise InterruptedError("tracking stopped")
-    state = client.move_stepper_to(
-        int(round(target_deg * 4096 / 360 / 57)) * 57,
-        settle_s=0.25, step_deg=config.coarse_step_deg)
-    time.sleep(max(0.0, config.dwell_ms) / 1000.0)
-    statuses = []
-    for index in range(max(1, config.samples)):
-        statuses.append(client.status())
-        if index + 1 < max(1, config.samples):
-            time.sleep(max(0.02, config.sample_interval_ms) / 1000.0)
-    status = statuses[-1]
-    scan_yaw = float((status.get("scan") or {}).get("yaw_deg_nominal", target_deg) or target_deg)
-    distance, source = _sample_distance(status)
-    hlk_cm, hlk_energy = _sample_hlk(status)
-    background_cm = background.raycast_cm(scan_yaw, config.tilt_us)
-    sample = {
-        "yaw_deg": round(scan_yaw, 1),
-        "tilt_us": config.tilt_us,
-        "range_cm": distance,
-        "source": source,
-        "background_cm": background_cm,
-        "hlk_cm": round(hlk_cm, 1) if hlk_cm is not None else None,
-        "hlk_energy": int(hlk_energy),
-    }
-    if progress:
-        progress({"phase": "sampling", "target_deg": target_deg,
-                  "sample": sample, "background": background.snapshot()})
-    return sample
-
-
-def run_tracking_sweep(client, config, progress=None, stop_event=None):
-    background = load_background(config.scan_id or None)
+def _prepare_tracking(client, config):
     client.ensure_sensors()
     client.command("ml_alert_off")
     client.command("hlk_alert_off")
@@ -446,69 +583,302 @@ def run_tracking_sweep(client, config, progress=None, stop_event=None):
     client.command("park_servo")
     client.servo_to(config.tilt_us, step_delay_s=config.servo_delay_s)
     time.sleep(0.25)
+
+
+def _park_tracking(client, config):
+    try:
+        try:
+            client.move_stepper_to(0, settle_s=0.2, step_deg=config.coarse_step_deg)
+            client.command("park_stepper")
+        except Exception:
+            pass
+    finally:
+        for command in ("release_servo", "release_stepper"):
+            try:
+                client.command(command)
+            except Exception:
+                pass
+
+
+def _sample(client, target_deg, background, config, step_deg):
+    half_steps = int(round(float(target_deg) * 4096.0 / 360.0 / 57.0)) * 57
+    client.move_stepper_to(half_steps, settle_s=0.15, step_deg=step_deg)
+    time.sleep(max(0.0, config.dwell_ms) / 1000.0)
+    statuses = []
+    for index in range(max(1, config.samples)):
+        statuses.append(client.status())
+        if index + 1 < max(1, config.samples):
+            time.sleep(max(0.02, config.sample_interval_ms) / 1000.0)
+    status = statuses[-1]
+    scan_yaw = float((status.get("scan") or {}).get("yaw_deg_nominal", target_deg) or target_deg)
+    distance, source = _sample_distance(status)
+    hlk_cm, hlk_energy = _sample_hlk(status)
+    return {
+        "yaw_deg": round(scan_yaw, 1),
+        "tilt_us": config.tilt_us,
+        "range_cm": distance,
+        "source": source,
+        "background_cm": background.background_cm(scan_yaw, config.tilt_us),
+        "hlk_cm": round(hlk_cm, 1) if hlk_cm is not None else None,
+        "hlk_energy": int(hlk_energy),
+    }
+
+
+def _emit(progress, phase, estimate, samples=None, background=None, final=False):
+    if not progress:
+        return
+    value = {"phase": phase, "estimate": estimate}
+    if samples is not None:
+        value["samples"] = samples
+    if background is not None:
+        value["background"] = background
+    if final:
+        value["final"] = True
+    progress(value)
+
+
+def run_tracking_sweep(client, config, progress=None, stop_event=None, background=None,
+                       center_deg=0.0, span_deg=None, step_deg=None, local=False,
+                       prepare=True, reverse=False):
+    if background is None:
+        background = load_background(config.scan_id or None)
+    if prepare:
+        _prepare_tracking(client, config)
+    span = config.yaw_limit_deg if span_deg is None else min(config.yaw_limit_deg, span_deg)
+    step = int(config.coarse_step_deg if step_deg is None else step_deg)
+    targets = _targets(center_deg, span, step, config.yaw_limit_deg,
+                       order="center" if local else "sequential",
+                       reverse=reverse)
     samples = []
     try:
-        targets = _targets(config.yaw_limit_deg, config.coarse_step_deg)
         for index, target in enumerate(targets):
+            if stop_event is not None and stop_event.is_set():
+                raise InterruptedError("tracking stopped")
+            estimate = estimate_track(samples, background, config.threshold_cm)
             if progress:
                 progress({"phase": "sweeping", "index": index + 1,
                           "total": len(targets), "target_deg": target,
-                          "estimate": estimate_track(samples, background, config.threshold_cm)})
-            samples.append(_sample(client, target, background, config, progress, stop_event))
+                          "estimate": estimate})
+            samples.append(_sample(client, target, background, config, step))
         estimate = estimate_track(samples, background, config.threshold_cm)
-        best = None
-        if estimate.get("scan_yaw_deg") is not None:
-            best = float(estimate["scan_yaw_deg"])
-        if best is not None:
+        if not local and step > config.fine_step_deg:
+            candidates = _candidate_samples(samples, config.threshold_cm)
+            clusters = _cluster_candidates(candidates)
+            clusters.sort(key=lambda cluster: (
+                len(cluster),
+                max(float(sample["delta_cm"]) for sample in cluster)), reverse=True)
+            centers = []
+            for cluster in clusters[:2]:
+                center = median([float(sample["yaw_deg"]) for sample in cluster])
+                if all(abs(center - other) > config.fine_step_deg for other in centers):
+                    centers.append(center)
+            seen = {int(round(float(sample["yaw_deg"]))) for sample in samples}
             fine_targets = []
-            for delta in (-2 * config.fine_step_deg, -config.fine_step_deg,
-                          config.fine_step_deg, 2 * config.fine_step_deg):
-                target = best + delta
-                if -config.yaw_limit_deg <= target <= config.yaw_limit_deg:
+            for center in centers:
+                for delta in (-2 * config.fine_step_deg, -config.fine_step_deg,
+                              config.fine_step_deg, 2 * config.fine_step_deg):
+                    target = float(center) + delta
+                    if not (-config.yaw_limit_deg <= target <= config.yaw_limit_deg):
+                        continue
+                    key = int(round(target))
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     fine_targets.append(target)
             for target in fine_targets:
-                samples.append(_sample(client, target, background, config, progress, stop_event))
-        estimate = estimate_track(samples, background, config.threshold_cm)
+                if stop_event is not None and stop_event.is_set():
+                    raise InterruptedError("tracking stopped")
+                samples.append(_sample(client, target, background, config,
+                                       config.fine_step_deg))
+            estimate = estimate_track(samples, background, config.threshold_cm)
+        _emit(progress, "tracking", estimate, samples, background.snapshot(), final=True)
         return {"estimate": estimate, "samples": samples,
                 "background": background.snapshot()}
     finally:
-        try:
-            client.move_stepper_to(0, settle_s=0.2, step_deg=config.coarse_step_deg)
-            client.command("park_stepper")
-        finally:
-            try:
-                client.command("release_servo")
-            except Exception:
-                pass
-            try:
-                client.command("release_stepper")
-            except Exception:
-                pass
+        if prepare:
+            _park_tracking(client, config)
+
+
+def _locked_estimate(background, scan_yaw, distance_cm, delta_cm, source,
+                     hlk_cm, hlk_energy, config):
+    bearing, x, y, z = _polar(background, scan_yaw, distance_cm, config.tilt_us)
+    if not background.inside_room(x, y):
+        return None
+    if background.solid_at(x, y, z):
+        return None
+    confidence = min(0.99, 0.62 + min(0.22, float(delta_cm) / 220.0)
+                     + min(0.12, float(hlk_energy) / 900.0))
+    return {
+        "state": "confirmed", "confirmed": True,
+        "bearing_deg": bearing,
+        "scan_yaw_deg": round(float(scan_yaw), 1),
+        "distance_cm": round(float(distance_cm), 1),
+        "x_m": round(x, 3), "y_m": round(y, 3),
+        "height_m": HUMAN_HEIGHT_M, "z_bottom_m": 0.0,
+        "confidence": round(confidence, 3),
+        "reason": "locked", "candidates": 1, "source": "lock",
+        "tof_source": source, "delta_cm": round(float(delta_cm), 1),
+        "hlk_cm": round(float(hlk_cm), 1) if hlk_cm is not None else None,
+        "hlk_energy": int(hlk_energy),
+    }
+
+
+def run_locked_tracking(client, config, background, scan_yaw_deg, smoother,
+                        progress=None, stop_event=None, verify_s=None):
+    target = int(round(float(scan_yaw_deg) / 5.0)) * 5
+    target = max(-config.yaw_limit_deg, min(config.yaw_limit_deg, target))
+    client.move_stepper_to(
+        int(round(target * 4096.0 / 360.0 / 57.0)) * 57,
+        settle_s=0.15, step_deg=config.fine_step_deg)
+    time.sleep(max(0.0, config.dwell_ms) / 1000.0)
+    history = []
+    lost_since = None
+    valid_since = None
+    last_track = None
+    while stop_event is None or not stop_event.is_set():
+        status = client.status()
+        actual_yaw = float((status.get("scan") or {}).get("yaw_deg_nominal", target)
+                           or target)
+        distance, source = _sample_distance(status)
+        hlk_cm, hlk_energy = _sample_hlk(status)
+        baseline = background.background_cm(actual_yaw, config.tilt_us)
+        delta = None
+        if distance is not None and baseline is not None:
+            delta = float(baseline) - float(distance)
+            history.append((float(distance), float(delta), float(source != "tof"),
+                            float(hlk_energy)))
+            history = history[-3:]
+        tof_history = [item for item in history if item[2] == 0.0]
+        valid = False
+        estimate = None
+        if tof_history:
+            distance_med = median([item[0] for item in tof_history])
+            delta_med = median([item[1] for item in tof_history])
+            energy_max = max(item[3] for item in history)
+            if (delta_med >= config.lock_threshold_cm
+                    and MIN_RANGE_CM <= distance_med <= MAX_RANGE_CM):
+                estimate = _locked_estimate(
+                    background, actual_yaw, distance_med, delta_med, "tof",
+                    hlk_cm, energy_max, config)
+                valid = estimate is not None
+        if valid:
+            lost_since = None
+            now = time.monotonic()
+            if valid_since is None:
+                valid_since = now
+            last_track = smoother.update(estimate, time.time())
+            _emit(progress, "locked", last_track,
+                  background=background.snapshot())
+            if verify_s is not None and now - valid_since >= max(0.2, verify_s):
+                return {"estimate": last_track, "lost": False, "verified": True}
+        else:
+            valid_since = None
+            last_track = smoother.update({"state": "radar", "confirmed": False},
+                                         time.time())
+            _emit(progress, "locked", last_track,
+                  background=background.snapshot())
+            now = time.monotonic()
+            if lost_since is None:
+                lost_since = now
+            elif now - lost_since >= max(0.5, config.lock_lost_s):
+                return {"estimate": last_track, "lost": True}
+        time.sleep(max(0.05, config.lock_sample_ms) / 1000.0)
+    return {"estimate": last_track, "lost": False}
+
+
+def _wait_interval(seconds, stop_event):
+    until = time.monotonic() + max(0.2, float(seconds))
+    while time.monotonic() < until:
+        if stop_event is not None and stop_event.is_set():
+            raise InterruptedError("tracking stopped")
+        time.sleep(0.1)
+
+
+def _provisional_candidate(estimate):
+    """A single strong ToF return that deserves a short stationary lock test."""
+    return (estimate.get("state") == "radar"
+            and estimate.get("reason") == "single_sample"
+            and int(estimate.get("candidates") or 0) >= 1
+            and int(estimate.get("tof_count") or 0) >= 1
+            and estimate.get("scan_yaw_deg") is not None)
 
 
 def run_tracking_loop(client, config, progress=None, stop_event=None):
-    smoother = TrackSmoother()
+    background = load_background(config.scan_id or None)
+    smoother = TrackSmoother(stale_s=3.0, expire_s=config.expire_s)
     last = None
+    last_yaw = None
+    sweep_reverse = False
+    _prepare_tracking(client, config)
     try:
         while stop_event is None or not stop_event.is_set():
-            result = run_tracking_sweep(client, config, progress, stop_event)
-            last = smoother.update(result["estimate"], time.time())
-            if progress:
-                progress({"phase": "tracking", "estimate": last,
-                          "samples": result["samples"], "background": result["background"]})
-            until = time.monotonic() + max(0.5, config.interval_s)
-            while time.monotonic() < until:
-                if stop_event is not None and stop_event.is_set():
-                    break
-                time.sleep(0.1)
+            if last_yaw is not None:
+                locked = run_locked_tracking(
+                    client, config, background, last_yaw, smoother,
+                    progress, stop_event)
+                last = locked.get("estimate")
+                if not locked.get("lost"):
+                    if last and last.get("scan_yaw_deg") is not None:
+                        last_yaw = float(last["scan_yaw_deg"])
+                    continue
+                _emit(progress, "reacquire", last, final=True)
+                local = run_tracking_sweep(
+                    client, config, progress, stop_event, background=background,
+                    center_deg=last_yaw, span_deg=config.local_limit_deg,
+                    step_deg=config.fine_step_deg, local=True, prepare=False)
+                last = smoother.update(local["estimate"], time.time())
+                _emit(progress, "tracking", last, local["samples"],
+                      local["background"], final=True)
+                if last.get("state") == "confirmed":
+                    last_yaw = float(last["scan_yaw_deg"])
+                    continue
+                if _provisional_candidate(last):
+                    verify_smoother = TrackSmoother(stale_s=3.0,
+                                                    expire_s=config.expire_s)
+                    verified = run_locked_tracking(
+                        client, config, background, float(last["scan_yaw_deg"]),
+                        verify_smoother, None, stop_event,
+                        verify_s=config.lock_verify_s)
+                    candidate = verified.get("estimate")
+                    if (verified.get("verified") and candidate
+                            and candidate.get("state") == "confirmed"):
+                        last = smoother.update(candidate, time.time())
+                        _emit(progress, "tracking", last, final=True)
+                        last_yaw = float(last["scan_yaw_deg"])
+                        continue
+                last_yaw = None
+            full = run_tracking_sweep(
+                client, config, progress, stop_event, background=background,
+                center_deg=0.0, span_deg=config.yaw_limit_deg,
+                step_deg=config.coarse_step_deg, local=False, prepare=False,
+                reverse=sweep_reverse)
+            sweep_reverse = not sweep_reverse
+            last = smoother.update(full["estimate"], time.time())
+            _emit(progress, "tracking", last, full["samples"],
+                  full["background"], final=True)
+            if last.get("state") == "confirmed":
+                last_yaw = float(last["scan_yaw_deg"])
+            elif _provisional_candidate(last):
+                verify_smoother = TrackSmoother(stale_s=3.0,
+                                                expire_s=config.expire_s)
+                verified = run_locked_tracking(
+                    client, config, background, float(last["scan_yaw_deg"]),
+                    verify_smoother, None, stop_event,
+                    verify_s=config.lock_verify_s)
+                candidate = verified.get("estimate")
+                if (verified.get("verified") and candidate
+                        and candidate.get("state") == "confirmed"):
+                    last = smoother.update(candidate, time.time())
+                    _emit(progress, "tracking", last, final=True)
+                    last_yaw = float(last["scan_yaw_deg"])
+                    continue
+                last_yaw = None
+                _wait_interval(config.interval_s, stop_event)
+            else:
+                last_yaw = None
+                _wait_interval(config.interval_s, stop_event)
     except InterruptedError:
         pass
     finally:
-        try:
-            client.move_stepper_to(0, settle_s=0.2, step_deg=config.coarse_step_deg)
-            client.command("park_stepper")
-            client.command("release_servo")
-            client.command("release_stepper")
-        except Exception:
-            pass
+        _park_tracking(client, config)
     return last

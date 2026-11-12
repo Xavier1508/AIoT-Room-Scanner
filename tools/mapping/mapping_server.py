@@ -182,19 +182,26 @@ def _start_track(config):
         yaw_limit_deg=max(10, min(60, int(config.get("yaw_limit_deg", 60)))),
         coarse_step_deg=10,
         fine_step_deg=5,
-        tilt_us=max(500, min(950, int(config.get("tilt_us", 800)))),
-        samples=max(1, min(3, int(config.get("samples", 2)))),
-        dwell_ms=max(50, min(500, int(config.get("dwell_ms", 150)))),
+        tilt_us=max(500, min(950, int(config.get("tilt_us", 725)))),
+        samples=max(1, min(3, int(config.get("samples", 1)))),
+        dwell_ms=max(50, min(500, int(config.get("dwell_ms", 100)))),
         sample_interval_ms=max(50, min(300, int(config.get("sample_interval_ms", 100)))),
         interval_s=max(0.5, min(5.0, float(config.get("interval_s", 1.0)))),
-        threshold_cm=max(5.0, min(50.0, float(config.get("threshold_cm", 15.0)))),
+        threshold_cm=max(5.0, min(50.0, float(config.get("threshold_cm", 20.0)))),
+        lock_threshold_cm=max(5.0, min(50.0, float(config.get("lock_threshold_cm", 18.0)))),
+        lock_sample_ms=max(100, min(1000, int(config.get("lock_sample_ms", 200)))),
+        lock_lost_s=max(0.5, min(5.0, float(config.get("lock_lost_s", 1.2)))),
+        lock_verify_s=max(0.3, min(5.0, float(config.get("lock_verify_s", 1.0)))),
+        local_limit_deg=max(5, min(30, int(config.get("local_limit_deg", 20)))),
+        expire_s=max(5.0, min(120.0, float(config.get("expire_s", 40.0)))),
     )
 
     def progress(value):
         with TRACK_LOCK:
             TRACK_JOB["progress"] = value
             estimate = value.get("estimate") or {}
-            if estimate.get("state") in ("confirmed", "predicted", "stale"):
+            if (estimate.get("state") in ("confirmed", "predicted", "stale")
+                    or value.get("final")):
                 TRACK_JOB["estimate"] = estimate
             background = value.get("background") or {}
             if background.get("scan_id"):

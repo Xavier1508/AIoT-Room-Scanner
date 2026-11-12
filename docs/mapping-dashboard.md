@@ -292,11 +292,14 @@ fold 87.96%, human recall 79.1%). Screenshots:
 `docs/live-gate-test.md`.
 
 **Demo tab (2026-11-12):** the default tab now shows the map and only
-`Track` / `Guard` / `Stop`. **Track** runs the bounded yaw sweep, compares
-ToF/HC with the scan background and draws a measured human box; it is silent
-and the AI gate is off. **Guard** parks the arm and runs the AI-gated range
+`Track` / `Guard` / `Stop`. **Track** runs a sequential ±60° sweep at 725 µs,
+compares ToF with the measured scan row and draws a measured human box; it is
+silent and the AI gate is off. A single strong return gets a 1 s provisional
+lock; after confirmation the arm stays on the bearing and the lock updates
+distance without rotating. **Guard** parks the arm and runs the AI-gated range
 beeper. **Stop** stops both. Scan, Calibration, AI/Presence, Overview and
-Dataset are behind **Advanced**. Tracking details: `docs/tracking-sweep.md`.
+Dataset are behind **Advanced**. Tracking details, including the side/behind
+±60° limit: `docs/tracking-sweep.md`.
 
 **Dual-track occupancy estimate:** the HLK status exposes separate moving and
 stationary distances/energies. When both are valid and separated by at least

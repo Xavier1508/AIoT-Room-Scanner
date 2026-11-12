@@ -263,7 +263,7 @@ function addPresenceTrack(track, index, yawDeg) {
     ).computeLineDistances());
     const bearing = track.bearing_deg != null ? `${Number(track.bearing_deg).toFixed(0)}°` : '';
     const label = addLabel(
-      `${confirmed ? 'HUMAN' : 'PREDICTED'} ${Number(track.distance_cm || distance * 100).toFixed(0)} cm ${bearing}`,
+      `${confirmed ? 'HUMAN' : track.state === 'stale' ? 'LAST SEEN' : 'PREDICTED'} ${Number(track.distance_cm || distance * 100).toFixed(0)} cm ${bearing}`,
       new THREE.Vector3(x, y, z0 + height + 0.28),
       labelColor, 0.58,
     );
